@@ -75,6 +75,81 @@ final class Sheet {
         return d;
     }
 
+    /** Griglia di app (contenuto di una cartella): tocco = apri, pressione prolungata = azione secondaria. */
+    static Dialog grid(Activity a, Theme th, String title, int count,
+                       java.util.function.IntFunction<android.graphics.Bitmap> icon,
+                       java.util.function.IntFunction<String> label,
+                       java.util.function.IntConsumer click,
+                       java.util.function.IntConsumer longClick) {
+        float dp = a.getResources().getDisplayMetrics().density;
+        Dialog d = base(a);
+        LinearLayout box = panel(a, th, title);
+        LinearLayout rows = new LinearLayout(a);
+        rows.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout row = null;
+        for (int i = 0; i < count; i++) {
+            if (i % 4 == 0) {
+                row = new LinearLayout(a);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                rows.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT));
+            }
+            final int which = i;
+            LinearLayout cell = new LinearLayout(a);
+            cell.setOrientation(LinearLayout.VERTICAL);
+            cell.setGravity(Gravity.CENTER_HORIZONTAL);
+            cell.setPadding(0, px(dp, 10), 0, px(dp, 10));
+            cell.setBackground(pressed(th, dp));
+            android.widget.ImageView iv = new android.widget.ImageView(a);
+            iv.setImageBitmap(icon.apply(i));
+            cell.addView(iv, new LinearLayout.LayoutParams(px(dp, 54), px(dp, 54)));
+            TextView tv = new TextView(a);
+            tv.setText(label.apply(i));
+            tv.setTypeface(Fonts.regular);
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+            tv.setTextColor(th.onTile);
+            tv.setSingleLine(true);
+            tv.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            tv.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            tl.topMargin = px(dp, 6);
+            cell.addView(tv, tl);
+            cell.setOnClickListener(v -> {
+                d.dismiss();
+                click.accept(which);
+            });
+            cell.setOnLongClickListener(v -> {
+                d.dismiss();
+                longClick.accept(which);
+                return true;
+            });
+            row.addView(cell, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        }
+        // celle vuote per allineare l'ultima riga
+        if (row != null) {
+            for (int i = count % 4; i != 0 && i < 4; i++) {
+                row.addView(new View(a), new LinearLayout.LayoutParams(0, 1, 1f));
+            }
+        }
+        TextView hint = new TextView(a);
+        hint.setText("Tieni premuta un'app per toglierla dalla cartella");
+        hint.setTypeface(Fonts.regular);
+        hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        hint.setTextColor(th.sub);
+        hint.setPadding(px(dp, 14), px(dp, 8), px(dp, 14), 0);
+        ScrollView sv = new ScrollView(a);
+        sv.setVerticalScrollBarEnabled(false);
+        sv.addView(rows);
+        int screenH = a.getResources().getDisplayMetrics().heightPixels;
+        int estimate = ((count + 3) / 4) * px(dp, 100);
+        int h = estimate > screenH * 0.55f ? (int) (screenH * 0.55f) : ViewGroup.LayoutParams.WRAP_CONTENT;
+        box.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, h));
+        box.addView(hint);
+        show(d, box, dp);
+        return d;
+    }
+
     static Dialog confirm(Activity a, Theme th, String title, String message, String ok, Runnable onOk) {
         float dp = a.getResources().getDisplayMetrics().density;
         Dialog d = base(a);

@@ -93,7 +93,8 @@ final class Theme {
     static String signature(SharedPreferences p) {
         return p.getString("style", "classic") + "|" + p.getString("mode", "dark") + "|"
                 + p.getString("icons", "auto") + "|" + p.getBoolean("wall", false) + "|"
-                + p.getBoolean("labels", false) + "|" + p.getInt("wallVer", 0);
+                + p.getBoolean("labels", false) + "|" + p.getInt("wallVer", 0) + "|"
+                + p.getString("iconPack", "");
     }
 
     /** Colore principale dello sfondo di sistema, reso abbastanza vivo da fare da accento. */

@@ -67,9 +67,10 @@ final class IconFactory {
         }
         p.setColor(0xFFFFFFFF); // il simbolo va disegnato pieno, non con la trasparenza del bordo
 
-        Bitmap mask = glyph(d, size * 2); // lavoro a risoluzione doppia per bordi puliti
+        boolean[] official = new boolean[1];
+        Bitmap mask = glyph(d, size * 2, official); // lavoro a risoluzione doppia per bordi puliti
         Rect box = bounds(mask);
-        if (box == null || isBlob(mask, box)) {
+        if (box == null || (!official[0] && isBlob(mask, box))) {
             // nessun simbolo riconoscibile (es. immagine di un gioco): icona originale a colori nel cerchio
             drawOriginal(c, d, size, p);
             return out;
@@ -83,36 +84,73 @@ final class IconFactory {
         return out;
     }
 
-    /** La sagoma riempie quasi tutto il suo rettangolo: non è un simbolo ma una macchia piena. */
+    /**
+     * La sagoma è una macchia piena (cerchio, quadrato, rettangolo senza dettagli interni)?
+     * Si controlla l'ellisse inscritta nel suo rettangolo: un vero simbolo ha sempre dei vuoti.
+     */
     private static boolean isBlob(Bitmap mask, Rect box) {
-        int w = mask.getWidth();
-        int[] px = new int[box.width() * box.height()];
-        mask.getPixels(px, 0, box.width(), box.left, box.top, box.width(), box.height());
-        int full = 0;
-        for (int c : px) if ((c >>> 24) > 128) full++;
-        float fill = full / (float) px.length;
-        float aspect = box.width() / (float) box.height();
-        return fill > 0.80f && aspect > 0.7f && aspect < 1.4f;
+        int bw = box.width(), bh = box.height();
+        if (bw < 4 || bh < 4) return true;
+        int[] px = new int[bw * bh];
+        mask.getPixels(px, 0, bw, box.left, box.top, bw, bh);
+        float cx = bw / 2f, cy = bh / 2f, rx = bw / 2f * 0.92f, ry = bh / 2f * 0.92f;
+        int inside = 0, full = 0;
+        for (int y = 0; y < bh; y += 2) {
+            for (int x = 0; x < bw; x += 2) {
+                float dx = (x - cx) / rx, dy = (y - cy) / ry;
+                if (dx * dx + dy * dy > 1f) continue;
+                inside++;
+                if ((px[y * bw + x] >>> 24) > 128) full++;
+            }
+        }
+        return inside > 0 && full / (float) inside > 0.95f;
     }
 
-    /** Icona originale, ritagliata a cerchio e un po' rimpicciolita dentro il cerchio di sfondo. */
+    /**
+     * Icona originale a colori: si prende il disegno vero (senza la cornice aggiunta da Android
+     * alle app vecchie), lo si ritaglia e lo si mette grande al centro del cerchio, con angoli arrotondati.
+     */
     private static void drawOriginal(Canvas c, Drawable d, int size, Paint p) {
-        Bitmap src = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        int big = size * 2;
+        Bitmap src = Bitmap.createBitmap(big, big, Bitmap.Config.ARGB_8888);
         Canvas sc = new Canvas(src);
-        d.setBounds(0, 0, size, size);
-        d.draw(sc);
-        float in = size * 0.14f;
+        Drawable layer = d;
+        int extra = 0;
+        if (d instanceof AdaptiveIconDrawable && ((AdaptiveIconDrawable) d).getForeground() != null) {
+            layer = ((AdaptiveIconDrawable) d).getForeground();
+            extra = big / 4;
+        }
+        layer.setBounds(-extra, -extra, big + extra, big + extra);
+        layer.draw(sc);
+        Rect box = bounds(src);
+        if (box == null) return;
+        float target = size * 0.60f;
+        float scale = target / Math.max(box.width(), box.height());
+        float w = box.width() * scale, h = box.height() * scale;
+        RectF dst = new RectF((size - w) / 2f, (size - h) / 2f, (size + w) / 2f, (size + h) / 2f);
         android.graphics.Path clip = new android.graphics.Path();
-        clip.addCircle(size / 2f, size / 2f, size / 2f - in, android.graphics.Path.Direction.CW);
+        float r = Math.min(w, h) * 0.24f;
+        clip.addRoundRect(dst, r, r, android.graphics.Path.Direction.CW);
         c.save();
         c.clipPath(clip);
         p.setColorFilter(null);
-        c.drawBitmap(src, null, new RectF(in, in, size - in, size - in), p);
+        p.setColor(0xFFFFFFFF);
+        c.drawBitmap(src, box, dst, p);
         c.restore();
     }
 
+    /** Icona di un pacchetto di icone: si disegna così com'è. */
+    static Bitmap fromPack(Drawable d, int size) {
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        synchronized (d) {
+            d.setBounds(0, 0, size, size);
+            d.draw(new Canvas(out));
+        }
+        return out;
+    }
+
     /** Bitmap in cui conta solo l'alfa: la forma del simbolo. */
-    private static Bitmap glyph(Drawable d, int size) {
+    private static Bitmap glyph(Drawable d, int size, boolean[] official) {
         Bitmap b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(b);
         int extra = size / 4;
@@ -122,6 +160,7 @@ final class IconFactory {
                 Drawable m = a.getMonochrome().mutate();
                 m.setBounds(-extra, -extra, size + extra, size + extra);
                 m.draw(c);
+                official[0] = true;
                 return b; // icona tematica ufficiale: già pronta
             }
             Drawable f = a.getForeground();
@@ -190,6 +229,11 @@ final class IconFactory {
             plate = edge > 0 && edgeHit > edge * 0.6f;
         }
 
+        if (!plate && lumaPlate(px, w, h)) {
+            b.setPixels(px, 0, w, 0, 0, w, h);
+            return;
+        }
+
         int[] out = new int[px.length];
         int kept = 0;
         if (plate) {
@@ -227,6 +271,65 @@ final class IconFactory {
             for (int i = 0; i < px.length; i++) out[i] = px[i] & 0xFF000000;
         }
         b.setPixels(out, 0, w, 0, 0, w, h);
+    }
+
+    /**
+     * Piastrella sfumata (es. sfondo con gradiente e simbolo bianco): il bordo della forma ha
+     * luminosità simile; il simbolo è ciò che esce da quell'intervallo di luminosità.
+     * Se riesce, scrive il risultato in px e restituisce true.
+     */
+    private static boolean lumaPlate(int[] px, int w, int h) {
+        int l = w, t = h, r = -1, bo = -1;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if ((px[y * w + x] >>> 24) >= 160) {
+                    if (x < l) l = x;
+                    if (x > r) r = x;
+                    if (y < t) t = y;
+                    if (y > bo) bo = y;
+                }
+            }
+        }
+        if (r < 0) return false;
+        int band = Math.max(3, (r - l) / 12);
+        float min = 1f, max = 0f;
+        int samples = 0, opaque = 0;
+        for (int y = t; y <= bo; y += 2) {
+            for (int x = l; x <= r; x += 2) {
+                boolean edge = x - l < band || r - x < band || y - t < band || bo - y < band;
+                if (!edge) continue;
+                samples++;
+                int c = px[y * w + x];
+                if ((c >>> 24) < 160) continue;
+                opaque++;
+                float lum = luma(c);
+                if (lum < min) min = lum;
+                if (lum > max) max = lum;
+            }
+        }
+        // la forma deve essere piena ai bordi e di luminosità abbastanza uniforme
+        if (samples == 0 || opaque < samples * 0.55f || max - min > 0.35f) return false;
+        int[] out = new int[px.length];
+        int kept = 0, total = 0;
+        float lo = min - 0.14f, hi = max + 0.14f;
+        for (int i = 0; i < px.length; i++) {
+            int a = px[i] >>> 24;
+            if (a == 0) continue;
+            total++;
+            float lum = luma(px[i]);
+            float d = lum > hi ? lum - hi : (lum < lo ? lo - lum : 0f);
+            if (d <= 0f) continue;
+            float k = Math.min(1f, d / 0.12f);
+            out[i] = ((int) (a * k)) << 24;
+            if (k > 0.5f) kept++;
+        }
+        if (kept < total * 0.02f || kept > total * 0.7f) return false;
+        System.arraycopy(out, 0, px, 0, px.length);
+        return true;
+    }
+
+    private static float luma(int c) {
+        return (0.299f * ((c >> 16) & 0xFF) + 0.587f * ((c >> 8) & 0xFF) + 0.114f * (c & 0xFF)) / 255f;
     }
 
     /** Rettangolo che contiene i pixel visibili del simbolo. */

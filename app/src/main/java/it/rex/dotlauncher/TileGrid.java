@@ -16,6 +16,8 @@ class TileGrid extends ViewGroup {
         void onItemMoved(Item it);
         void onItemMenu(Item it);
         void onEmptyLongPress(int page, int col, int row);
+        /** Elemento lasciato sopra un altro (es. app su app = cartella). true se gestito. */
+        boolean onDropOnto(Item dragged, int page, int col, int row);
     }
 
     static boolean anyDragging;
@@ -185,6 +187,15 @@ class TileGrid extends ViewGroup {
                 it.col = col;
                 it.row = row;
                 host.onItemMoved(it);
+            } else {
+                // cella sotto il centro dell'elemento trascinato
+                int cc = (int) Math.floor((v.getLeft() + dx + v.getWidth() / 2f - padH) / (cell + gap));
+                int cr = (int) Math.floor((v.getTop() + dy + v.getHeight() / 2f - padTop) / (cell + gap));
+                if (host.onDropOnto(it, page, cc, cr)) {
+                    v.setTranslationX(0);
+                    v.setTranslationY(0);
+                    return;
+                }
             }
         }
         v.setTranslationX(0);

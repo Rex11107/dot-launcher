@@ -94,6 +94,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_BIND = 1;
     private static final int REQ_CONFIG = 2;
     private static final int REQ_LOC = 3;
+    private static final int REQ_EXPORT = 4;
+    private static final int REQ_IMPORT = 5;
     private static final int HOST_ID = 0x0D07;
     private static final int MAX_DOCK = 5;
 
@@ -129,6 +131,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private AppWidgetManager awm;
     private WidgetHost host;
     private int pendingWidgetId = -1;
+    private volatile IconPacks iconPack;
     private int pendingPage, pendingCol, pendingRow;
 
     private final ExecutorService appExec = Executors.newSingleThreadExecutor();
@@ -663,6 +666,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 AppEntry a = appsByKey.get(it.data);
                 if (a != null) launch(a, x);
             });
+        } else if ("folder".equals(it.type)) {
+            FolderTile ft = new FolderTile(this, it, this, th);
+            ft.setOnClickListener(x -> {
+                int idx = ft.tappedIndex();
+                List<String> apps = FolderTile.apps(it);
+                if (idx >= 0) {
+                    AppEntry a = appsByKey.get(apps.get(idx));
+                    if (a != null) launch(a, x);
+                } else {
+                    openFolder(it);
+                }
+            });
+            v = ft;
         } else if (it.isSys()) {
             int id;
             try {
@@ -784,6 +800,103 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     @Override
+    public boolean onDropOnto(Item dragged, int page, int col, int row) {
+        if (!dragged.isApp()) return false;
+        Item target = null;
+        for (Item o : items) {
+            if (o == dragged || o.page != page) continue;
+            if (col >= o.col && col < o.col + o.w && row >= o.row && row < o.row + o.h) {
+                target = o;
+                break;
+            }
+        }
+        if (target == null) return false;
+        if ("folder".equals(target.type)) {
+            List<String> apps = FolderTile.apps(target);
+            if (!apps.contains(dragged.data)) apps.add(dragged.data);
+            FolderTile.set(target, FolderTile.name(target), apps);
+            items.remove(dragged);
+        } else if (target.isApp()) {
+            Item f = new Item("folder", target.col, target.row, 1, 1, 0, target.page);
+            List<String> apps = new ArrayList<>();
+            apps.add(target.data);
+            if (!apps.contains(dragged.data)) apps.add(dragged.data);
+            FolderTile.set(f, "Cartella", apps);
+            items.remove(target);
+            items.remove(dragged);
+            items.add(f);
+            toast("Cartella creata");
+        } else {
+            return false;
+        }
+        saveLayout();
+        ui.post(this::buildPages);
+        return true;
+    }
+
+    private void openFolder(Item folder) {
+        List<String> keys = FolderTile.apps(folder);
+        List<AppEntry> apps = new ArrayList<>();
+        for (String k : keys) {
+            AppEntry a = appsByKey.get(k);
+            if (a != null) apps.add(a);
+        }
+        String[] labels = new String[apps.size()];
+        for (int i = 0; i < labels.length; i++) labels[i] = apps.get(i).label;
+        Sheet.grid(this, th, FolderTile.name(folder), apps.size(),
+                i -> iconFor(apps.get(i).key, px(54)), i -> labels[i],
+                i -> launch(apps.get(i), null),
+                i -> {
+                    // pressione prolungata: togli dalla cartella e rimetti sulla home
+                    List<String> left = FolderTile.apps(folder);
+                    left.remove(apps.get(i).key);
+                    if (left.size() <= 1) {
+                        items.remove(folder);
+                        for (String k : left) {
+                            Item it = new Item("app", folder.col, folder.row, 1, 1, 0, folder.page);
+                            it.data = k;
+                            items.add(it);
+                        }
+                    } else {
+                        FolderTile.set(folder, FolderTile.name(folder), left);
+                    }
+                    Item out = new Item("app", 0, 0, 1, 1, 0, folder.page);
+                    out.data = apps.get(i).key;
+                    saveLayout();
+                    addItem(out, folder.page, 0, 0);
+                    toast(apps.get(i).label + " tolta dalla cartella");
+                });
+    }
+
+    private void renameFolder(Item folder) {
+        Sheet.input(this, th, "Nome della cartella", "es. Social", FolderTile.name(folder), n -> {
+            FolderTile.set(folder, n.isEmpty() ? "Cartella" : n, FolderTile.apps(folder));
+            saveLayout();
+            if (folder.view != null) folder.view.invalidate();
+        });
+    }
+
+    private void addToFolder(AppEntry a) {
+        final List<Item> folders = new ArrayList<>();
+        for (Item it : items) if ("folder".equals(it.type)) folders.add(it);
+        if (folders.isEmpty()) {
+            toast("Nessuna cartella: trascina un'app sopra un'altra per crearne una");
+            return;
+        }
+        String[] names = new String[folders.size()];
+        for (int i = 0; i < names.length; i++) names[i] = FolderTile.name(folders.get(i));
+        Sheet.list(this, th, "Aggiungi a una cartella", names, -1, w -> {
+            Item f = folders.get(w);
+            List<String> apps = FolderTile.apps(f);
+            if (!apps.contains(a.key)) apps.add(a.key);
+            FolderTile.set(f, FolderTile.name(f), apps);
+            saveLayout();
+            if (f.view != null) f.view.invalidate();
+            closeDrawer();
+        });
+    }
+
+    @Override
     public void onItemMoved(Item it) {
         saveLayout();
     }
@@ -818,9 +931,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             labels.add("Sposta alla pagina precedente");
             acts.add(() -> moveToPage(it, it.page - 1));
         }
+        if ("folder".equals(it.type)) {
+            labels.add("Rinomina");
+            acts.add(() -> renameFolder(it));
+        }
         labels.add("Rimuovi");
         acts.add(() -> removeItem(it));
-        String title = it.isApp() ? labelFor(it.data) : it.isSys() ? "Widget" : Widgets.name(it.type);
+        String title = it.isApp() ? labelFor(it.data) : it.isSys() ? "Widget"
+                : "folder".equals(it.type) ? FolderTile.name(it) : Widgets.name(it.type);
         Sheet.list(this, th, title, labels.toArray(new String[0]), -1, w -> acts.get(w).run());
     }
 
@@ -1104,6 +1222,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_EXPORT || req == REQ_IMPORT) {
+            if (res != RESULT_OK || data == null || data.getData() == null) return;
+            Uri uri = data.getData();
+            try {
+                if (req == REQ_EXPORT) {
+                    Backup.export(this, prefs, uri);
+                    toast("Configurazione esportata");
+                } else {
+                    int dropped = Backup.restore(this, prefs, uri);
+                    toast(dropped > 0
+                            ? "Configurazione importata. " + dropped + " widget di sistema vanno riaggiunti"
+                            : "Configurazione importata");
+                    recreate();
+                }
+            } catch (Exception e) {
+                toast(req == REQ_EXPORT ? "Esportazione non riuscita" : "File di configurazione non valido");
+            }
+            return;
+        }
         if (req == REQ_BIND) {
             if (res == RESULT_OK && pendingWidgetId != -1) configureOrAdd(pendingWidgetId);
             else cancelPending();
@@ -1144,14 +1281,16 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             final int size = px(54);
             final String style = prefs.getString("icons", IconFactory.AUTO);
             final Set<String> reds = new HashSet<>(prefs.getStringSet("redApps", new HashSet<>()));
+            final IconPacks pack = IconPacks.load(this, prefs.getString("iconPack", ""));
             for (AppEntry a : list) {
                 if (a.icon == null) continue;
                 try {
-                    pre.put(a.key + "@" + size, IconFactory.make(a.icon, size, style, reds.contains(a.key), th));
+                    pre.put(a.key + "@" + size, makeIcon(a, size, style, reds.contains(a.key), pack));
                 } catch (Exception ignored) {
                 }
             }
             ui.post(() -> {
+                iconPack = pack;
                 allApps.clear();
                 allApps.addAll(list);
                 appsByKey.clear();
@@ -1160,9 +1299,23 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 iconCache.putAll(pre);
                 adapter.refresh();
                 buildDock();
-                for (Item it : items) if (it.view instanceof AppTile) it.view.invalidate();
+                refreshAppViews();
             });
         });
+    }
+
+    private Bitmap makeIcon(AppEntry a, int size, String style, boolean red, IconPacks pack) {
+        if (pack != null && !red) {
+            Drawable pd = pack.iconFor(a.component);
+            if (pd != null) return IconFactory.fromPack(pd, size);
+        }
+        return IconFactory.make(a.icon, size, style, red, th);
+    }
+
+    private void refreshAppViews() {
+        for (Item it : items) {
+            if (it.view instanceof AppTile || it.view instanceof FolderTile) it.view.invalidate();
+        }
     }
 
     private boolean isRed(String key) {
@@ -1176,7 +1329,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         iconCache.clear();
         adapter.notifyDataSetChanged();
         buildDock();
-        for (Item it : items) if (it.view instanceof AppTile) it.view.invalidate();
+        refreshAppViews();
     }
 
     @Override
@@ -1188,7 +1341,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         AppEntry a = appsByKey.get(key);
         if (a == null || a.icon == null) return null;
         try {
-            b = IconFactory.make(a.icon, size, prefs.getString("icons", IconFactory.AUTO), isRed(key), th);
+            b = makeIcon(a, size, prefs.getString("icons", IconFactory.AUTO), isRed(key), iconPack);
         } catch (Exception e) {
             return null;
         }
@@ -1327,6 +1480,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         labels.add(isRed(a.key) ? "Icona normale" : "Icona rossa");
         acts.add(() -> toggleRed(a.key));
         if (fromDock == null) {
+            labels.add("Aggiungi a una cartella");
+            acts.add(() -> addToFolder(a));
             labels.add("Nascondi dal cassetto");
             acts.add(() -> {
                 Set<String> h = hidden();
@@ -1419,7 +1574,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 "Nomi delle app sulla home: " + (labels ? "sì" : "no"),
                 "Orologio: " + (h24 ? "24 ore" : "12 ore"),
                 "Meteo: " + (city.isEmpty() ? "posizione automatica" : city),
-                "App nascoste…"
+                "Pacchetto di icone: " + packLabel(),
+                "App nascoste…",
+                "Esporta configurazione",
+                "Importa configurazione"
         };
         Sheet.list(this, th, "Impostazioni", items, -1, w -> {
             switch (w) {
@@ -1442,7 +1600,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     recreate();
                     break;
                 case 6: askCity(); break;
-                case 7: manageHidden(); break;
+                case 7: pickIconPack(); break;
+                case 8: manageHidden(); break;
+                case 9: exportBackup(); break;
+                case 10: importBackup(); break;
             }
         });
     }
@@ -1454,6 +1615,60 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             prefs.edit().putString(key, values[w]).apply();
             recreate();
         });
+    }
+
+    private String packLabel() {
+        String pkg = prefs.getString("iconPack", "");
+        if (pkg.isEmpty()) return "nessuno";
+        String name = IconPacks.installed(this).get(pkg);
+        return name == null ? "non più installato" : name;
+    }
+
+    private void pickIconPack() {
+        final Map<String, String> packs = IconPacks.installed(this);
+        final List<String> pkgs = new ArrayList<>(packs.keySet());
+        String[] labels = new String[pkgs.size() + 1];
+        labels[0] = "Nessuno (conversione automatica)";
+        String cur = prefs.getString("iconPack", "");
+        int sel = 0;
+        for (int i = 0; i < pkgs.size(); i++) {
+            labels[i + 1] = packs.get(pkgs.get(i));
+            if (pkgs.get(i).equals(cur)) sel = i + 1;
+        }
+        if (pkgs.isEmpty()) toast("Nessun pacchetto di icone installato");
+        Sheet.list(this, th, "Pacchetto di icone", labels, sel, w -> {
+            String v = w == 0 ? "" : pkgs.get(w - 1);
+            if (v.equals(cur)) return;
+            if (!v.isEmpty() && IconPacks.load(this, v) == null) {
+                toast("Questo pacchetto non è leggibile");
+                return;
+            }
+            prefs.edit().putString("iconPack", v).apply();
+            recreate();
+        });
+    }
+
+    private void exportBackup() {
+        Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("application/json");
+        i.putExtra(Intent.EXTRA_TITLE, "dotlauncher-backup.json");
+        try {
+            startActivityForResult(i, REQ_EXPORT);
+        } catch (Exception e) {
+            toast("Impossibile aprire il selettore di file");
+        }
+    }
+
+    private void importBackup() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        try {
+            startActivityForResult(i, REQ_IMPORT);
+        } catch (Exception e) {
+            toast("Impossibile aprire il selettore di file");
+        }
     }
 
     private void manageHidden() {
