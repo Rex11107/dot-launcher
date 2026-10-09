@@ -105,6 +105,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private FrameLayout root;
     private LinearLayout homeBox;
+    private SystemBars.Scrim scrim;
+    private boolean noLimits;
     private Pager pager;
     private int gestureBottom;
     private int navBottom;
@@ -329,6 +331,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void buildUi() {
         root = new FrameLayout(this);
+        scrim = new SystemBars.Scrim(this);
+        root.addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
 
         homeBox = new LinearLayout(this);
         LinearLayout home = homeBox;
@@ -336,7 +341,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         home.setPadding(0, px(32), 0, px(6));
 
         pager = new Pager(this);
-        pager.setListener(p -> indicator.setCurrent(p));
+        pager.setListener(p -> {
+            indicator.setCurrent(p);
+            // il vetro smerigliato dipende dalla posizione sullo schermo: si ridisegna a pagina ferma
+            if (th.glass) ui.postDelayed(() -> refreshTiles(null), 450);
+        });
         home.addView(pager, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
         indicator = new IndicatorView(this);
@@ -370,6 +379,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         SystemBars.edgeToEdge(getWindow(), th.darkIcons);
         root.setOnApplyWindowInsetsListener((v, in) -> {
             int[] r = SystemBars.read(in);
+            if (noLimits && r[1] == 0) {
+                // piano di riserva: dimensioni delle barre lette dalle risorse di sistema
+                r[1] = SystemBars.systemDimen(this, "status_bar_height");
+                r[3] = SystemBars.systemDimen(this, "navigation_bar_height");
+                r[6] = r[3];
+            }
+            if (th.wall) scrim.set(r[1], r[3], th.light ? 0x99FFFFFF : 0x80000000);
             homeBox.setPadding(r[0], r[1] + px(8), r[2], r[3] + px(6));
             drawer.setPadding(px(16) + r[0], r[1] + px(20), px(16) + r[2], r[7]);
             grid.setPadding(0, 0, 0, px(24) + (r[7] > 0 ? 0 : r[3]));
@@ -379,6 +395,16 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             return in;
         });
         root.requestApplyInsets();
+        // Se MagicOS non ci lascia disegnare sotto la barra di stato, si usa l'opzione di riserva
+        root.post(() -> {
+            int[] loc = new int[2];
+            root.getLocationOnScreen(loc);
+            if (loc[1] > 0 && !noLimits) {
+                noLimits = true;
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS);
+                root.requestApplyInsets();
+            }
+        });
     }
 
     private void buildDrawer() {
@@ -401,6 +427,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         search.setHint("Cerca");
         search.setHintTextColor(th.sub);
         search.setTextColor(th.onTile);
+        search.setTypeface(th.bodyFace);
         search.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
         search.setSingleLine(true);
         search.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS);
@@ -602,6 +629,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             pager.setPageNow(target);
             indicator.setCurrent(target);
             updateSysWidgetSizes();
+            if (th.glass) pager.postDelayed(() -> refreshTiles(null), 300);
         });
     }
 
@@ -793,14 +821,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         labels.add("Rimuovi");
         acts.add(() -> removeItem(it));
         String title = it.isApp() ? labelFor(it.data) : it.isSys() ? "Widget" : Widgets.name(it.type);
-        dialog().setTitle(title).setItems(labels.toArray(new String[0]), (d, w) -> acts.get(w).run()).show();
+        Sheet.list(this, th, title, labels.toArray(new String[0]), -1, w -> acts.get(w).run());
     }
 
     @Override
     public void onEmptyLongPress(int page, int col, int row) {
         String[] opts = {"Widget Nothing", "Widget di sistema", "Aggiungi app", "Sfondi", "Impostazioni",
                 "Aggiungi pagina", "Rimuovi questa pagina", "Launcher predefinito"};
-        dialog().setItems(opts, (d, w) -> {
+        Sheet.list(this, th, "Home", opts, -1, w -> {
             switch (w) {
                 case 0: pickNothingWidget(page, col, row); break;
                 case 1: pickSysWidget(page, col, row); break;
@@ -816,7 +844,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 case 6: removePage(page); break;
                 default: safeStart(new Intent(Settings.ACTION_HOME_SETTINGS)); break;
             }
-        }).show();
+        });
     }
 
     private void chooseSize(Item it) {
@@ -827,8 +855,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             labels[i] = sizes[i][0] + " × " + sizes[i][1];
             if (sizes[i][0] == it.w && sizes[i][1] == it.h) sel = i;
         }
-        dialog().setTitle("Dimensione").setSingleChoiceItems(labels, sel, (d, w) -> {
-            d.dismiss();
+        Sheet.list(this, th, "Dimensione", labels, sel, w -> {
             int nw = sizes[w][0], nh = sizes[w][1];
             if (canPlace(it, it.page, it.col, it.row, nw, nh)) {
                 it.w = nw;
@@ -850,17 +877,16 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             saveLayout();
             buildPages();
-        }).show();
+        });
     }
 
     private void chooseTone(Item it) {
         String[] labels = {"Standard", "Contrasto", "Accento (rosso)"};
-        dialog().setTitle("Colore").setSingleChoiceItems(labels, it.tone, (d, w) -> {
-            d.dismiss();
+        Sheet.list(this, th, "Colore", labels, it.tone, w -> {
             it.tone = w;
             saveLayout();
             if (it.view != null) it.view.invalidate();
-        }).show();
+        });
     }
 
     private void moveToPage(Item it, int page) {
@@ -902,9 +928,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             toast("Serve almeno una pagina");
             return;
         }
-        dialog().setTitle("Rimuovere la pagina?")
-                .setMessage("Gli elementi presenti su questa pagina verranno tolti dalla home.")
-                .setPositiveButton("Rimuovi", (d, w) -> {
+        Sheet.confirm(this, th, "Rimuovere la pagina?",
+                "Gli elementi presenti su questa pagina verranno tolti dalla home.", "Rimuovi", () -> {
                     for (Item it : new ArrayList<>(items)) {
                         if (it.page == page) {
                             items.remove(it);
@@ -921,26 +946,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     pages--;
                     saveLayout();
                     buildPages();
-                })
-                .setNegativeButton("Annulla", null).show();
+                }));
     }
 
     private void pickNothingWidget(int page, int col, int row) {
         String[] names = new String[Widgets.TYPES.length];
         for (int i = 0; i < names.length; i++) names[i] = Widgets.name(Widgets.TYPES[i]);
-        dialog().setTitle("Widget Nothing").setItems(names, (d, w) -> {
+        Sheet.list(this, th, "Widget Nothing", names, -1, w -> {
             String type = Widgets.TYPES[w];
             int[] s = Widgets.sizes(type)[0];
             int tone = "alarm".equals(type) ? 2 : 0;
             addItem(new Item(type, col, row, s[0], s[1], tone, page), page, col, row);
-        }).show();
+        });
     }
 
     private void pickAppForHome(int page, int col, int row) {
         if (allApps.isEmpty()) return;
         String[] labels = new String[allApps.size()];
         for (int i = 0; i < labels.length; i++) labels[i] = allApps.get(i).label;
-        dialog().setTitle("Aggiungi app").setItems(labels, (d, w) -> addAppToHome(allApps.get(w), page, col, row)).show();
+        Sheet.list(this, th, "Aggiungi app", labels, -1, w -> addAppToHome(allApps.get(w), page, col, row));
     }
 
     private void addAppToHome(AppEntry a, int page, int col, int row) {
@@ -970,12 +994,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             arr[i] = labels.get(order.get(i));
             infos[i] = providers.get(order.get(i));
         }
-        dialog().setTitle("Widget di sistema").setItems(arr, (d, w) -> {
+        Sheet.list(this, th, "Widget di sistema", arr, -1, w -> {
             pendingPage = page;
             pendingCol = col;
             pendingRow = row;
             bindWidget(infos[w]);
-        }).show();
+        });
     }
 
     private String widgetLabel(PackageManager pm, AppWidgetProviderInfo p) {
@@ -1115,12 +1139,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             final Collator col = Collator.getInstance(Locale.ITALIAN);
             Collections.sort(list, (x, y) -> col.compare(x.label, y.label));
+            // icone del cassetto e del dock preparate in background: il cassetto si apre senza scatti
+            final Map<String, Bitmap> pre = new HashMap<>();
+            final int size = px(54);
+            final String style = prefs.getString("icons", IconFactory.AUTO);
+            final Set<String> reds = new HashSet<>(prefs.getStringSet("redApps", new HashSet<>()));
+            for (AppEntry a : list) {
+                if (a.icon == null) continue;
+                try {
+                    pre.put(a.key + "@" + size, IconFactory.make(a.icon, size, style, reds.contains(a.key), th));
+                } catch (Exception ignored) {
+                }
+            }
             ui.post(() -> {
                 allApps.clear();
                 allApps.addAll(list);
                 appsByKey.clear();
                 for (AppEntry a : list) appsByKey.put(a.key, a);
                 iconCache.clear();
+                iconCache.putAll(pre);
                 adapter.refresh();
                 buildDock();
                 for (Item it : items) if (it.view instanceof AppTile) it.view.invalidate();
@@ -1257,6 +1294,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             TextView t = new TextView(this);
             t.setText("Tieni premuta un'app nel cassetto per aggiungerla qui");
             t.setTextColor(th.sub);
+            t.setTypeface(th.bodyFace);
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
             t.setGravity(Gravity.CENTER);
             dock.addView(t);
@@ -1302,7 +1340,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         labels.add("Disinstalla");
         acts.add(() -> safeStart(new Intent(Intent.ACTION_DELETE,
                 Uri.fromParts("package", a.component.getPackageName(), null))));
-        dialog().setTitle(a.label).setItems(labels.toArray(new String[0]), (d, w) -> acts.get(w).run()).show();
+        Sheet.list(this, th, a.label, labels.toArray(new String[0]), -1, w -> acts.get(w).run());
     }
 
     private class AppAdapter extends BaseAdapter {
@@ -1365,12 +1403,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     // ---------- impostazioni ----------
 
-    private AlertDialog.Builder dialog() {
-        return new AlertDialog.Builder(this, th.light
-                ? android.R.style.Theme_Material_Light_Dialog_Alert
-                : android.R.style.Theme_Material_Dialog_Alert);
-    }
-
     private void showSettings() {
         String style = prefs.getString("style", "classic");
         String mode = prefs.getString("mode", "dark");
@@ -1389,7 +1421,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 "Meteo: " + (city.isEmpty() ? "posizione automatica" : city),
                 "App nascoste…"
         };
-        dialog().setTitle("Impostazioni").setItems(items, (d, w) -> {
+        Sheet.list(this, th, "Impostazioni", items, -1, w -> {
             switch (w) {
                 case 0: choose("Stile", new String[]{"Classico", "Nuovo (5.0)"},
                         new String[]{"classic", "nuovo"}, "style", style); break;
@@ -1412,17 +1444,16 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 case 6: askCity(); break;
                 case 7: manageHidden(); break;
             }
-        }).show();
+        });
     }
 
     private void choose(String title, String[] labels, String[] values, String key, String cur) {
         int sel = Arrays.asList(values).indexOf(cur);
-        dialog().setTitle(title).setSingleChoiceItems(labels, sel, (d, w) -> {
-            d.dismiss();
+        Sheet.list(this, th, title, labels, sel, w -> {
             if (values[w].equals(cur)) return;
             prefs.edit().putString(key, values[w]).apply();
             recreate();
-        }).show();
+        });
     }
 
     private void manageHidden() {
@@ -1435,38 +1466,34 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         String[] labels = new String[hiddenApps.size()];
         for (int i = 0; i < labels.length; i++) labels[i] = "Mostra " + hiddenApps.get(i).label;
-        dialog().setTitle("App nascoste").setItems(labels, (d, w) -> {
+        Sheet.list(this, th, "App nascoste", labels, -1, w -> {
             Set<String> s = hidden();
             s.remove(hiddenApps.get(w).key);
             prefs.edit().putStringSet("hidden", s).apply();
             adapter.refresh();
-        }).show();
+        });
     }
 
     private void askCity() {
-        EditText et = new EditText(this);
-        et.setText(prefs.getString("city", ""));
-        et.setHint("es. Milano (vuoto = posizione automatica)");
-        et.setSingleLine(true);
-        FrameLayout box = new FrameLayout(this);
-        box.setPadding(px(20), px(8), px(20), 0);
-        box.addView(et);
-        dialog().setTitle("Città per il meteo").setView(box)
-                .setPositiveButton("OK", (d, w) -> {
-                    String c = et.getText().toString().trim();
+        Sheet.input(this, th, "Città per il meteo", "es. Milano (vuoto = posizione automatica)",
+                prefs.getString("city", ""), c -> {
                     if (c.isEmpty()) {
                         prefs.edit().remove("city").remove("mlat").remove("mlon").apply();
                         refreshWeather(true);
                     } else {
                         geocode(c);
                     }
-                })
-                .setNegativeButton("Annulla", null).show();
+                });
     }
 
     // ---------- meteo (Open-Meteo, gratuito e senza chiave) ----------
 
     private void maybeRefreshWeather() {
+        if (!State.wOk && !prefs.contains("mlat") && !prefs.getBoolean("askedLoc", false)) {
+            prefs.edit().putBoolean("askedLoc", true).apply();
+            ui.postDelayed(() -> refreshWeather(true), 800);
+            return;
+        }
         long age = System.currentTimeMillis() - prefs.getLong("wt", 0);
         if (age > 30 * 60 * 1000L) refreshWeather(false);
     }

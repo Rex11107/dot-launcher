@@ -84,6 +84,7 @@ public class WallpaperActivity extends Activity {
         TextView hint = new TextView(this);
         hint.setText("Tocca per applicare · tieni premuto per una nuova variante");
         hint.setTextColor(th.sub);
+        hint.setTypeface(th.bodyFace);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         LinearLayout.LayoutParams hl = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -146,18 +147,12 @@ public class WallpaperActivity extends Activity {
         void go(int which);
     }
 
-    private AlertDialog.Builder dialog() {
-        return new AlertDialog.Builder(this, th.light
-                ? android.R.style.Theme_Material_Light_Dialog_Alert
-                : android.R.style.Theme_Material_Dialog_Alert);
-    }
-
     private void askTarget(Target t) {
         if (busy) return;
         String[] items = {"Schermata home", "Home e schermata di blocco"};
-        dialog().setTitle("Applica sfondo").setItems(items, (d, w) ->
+        Sheet.list(this, th, "Applica sfondo", items, -1, w ->
                 t.go(w == 0 ? WallpaperManager.FLAG_SYSTEM
-                        : WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK)).show();
+                        : WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK));
     }
 
     private int[] screen() {
@@ -175,6 +170,7 @@ public class WallpaperActivity extends Activity {
             try {
                 Bitmap b = WallpaperGen.make(style, sz[0], sz[1], seed);
                 WallpaperManager.getInstance(this).setBitmap(b, null, true, which);
+                Glass.save(this, b);
                 done();
             } catch (Exception e) {
                 fail();
@@ -215,8 +211,8 @@ public class WallpaperActivity extends Activity {
         if (req != REQ_IMAGE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
         String[] modes = {"Originale", "A puntini (colori)", "A puntini (bianco e nero)"};
-        dialog().setTitle("Come vuoi la foto?").setItems(modes, (d, mode) ->
-                askTarget(which -> applyPhoto(uri, mode, which))).show();
+        Sheet.list(this, th, "Come vuoi la foto?", modes, -1, mode ->
+                askTarget(which -> applyPhoto(uri, mode, which)));
     }
 
     private void applyPhoto(Uri uri, int mode, int which) {
@@ -230,11 +226,14 @@ public class WallpaperActivity extends Activity {
                     try (InputStream in = getContentResolver().openInputStream(uri)) {
                         wm.setStream(in, null, true, which);
                     }
+                    Bitmap src = decode(uri, Math.max(sz[0], sz[1]) / 4);
+                    if (src != null) Glass.save(this, WallpaperGen.cover(src, sz[0] / 4, sz[1] / 4));
                 } else {
                     Bitmap src = decode(uri, Math.max(sz[0], sz[1]) / 2);
                     if (src == null) throw new Exception("decode");
                     Bitmap b = WallpaperGen.dotify(src, sz[0], sz[1], mode == 2);
                     wm.setBitmap(b, null, true, which);
+                    Glass.save(this, b);
                 }
                 done();
             } catch (Exception e) {
@@ -281,6 +280,7 @@ public class WallpaperActivity extends Activity {
             card.setClipToOutline(true);
             TextView label = new TextView(WallpaperActivity.this);
             label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            label.setTypeface(th.titleFace);
             label.setPadding(Math.round(12 * dp), 0, Math.round(12 * dp), Math.round(12 * dp));
             FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM);

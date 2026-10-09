@@ -86,5 +86,51 @@ final class SystemBars {
         return r;
     }
 
+    /** Altezza di una risorsa di sistema (barra di stato / navigazione), per il piano di riserva. */
+    static int systemDimen(android.content.Context c, String name) {
+        int id = c.getResources().getIdentifier(name, "dimen", "android");
+        return id > 0 ? c.getResources().getDimensionPixelSize(id) : 0;
+    }
+
+    /**
+     * Sfumatura dietro barra di stato e barra di navigazione, come nel launcher Pixel:
+     * le icone di sistema restano leggibili su qualsiasi sfondo.
+     */
+    static class Scrim extends android.view.View {
+        private final android.graphics.Paint p = new android.graphics.Paint();
+        private int top, bottom, color;
+
+        Scrim(android.content.Context c) {
+            super(c);
+        }
+
+        void set(int top, int bottom, int color) {
+            if (this.top == top && this.bottom == bottom && this.color == color) return;
+            this.top = top;
+            this.bottom = bottom;
+            this.color = color;
+            invalidate();
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas c) {
+            if (color == 0) return;
+            int clear = color & 0x00FFFFFF;
+            if (top > 0) {
+                float h = top * 2.4f;
+                p.setShader(new android.graphics.LinearGradient(0, 0, 0, h, color, clear,
+                        android.graphics.Shader.TileMode.CLAMP));
+                c.drawRect(0, 0, getWidth(), h, p);
+            }
+            if (bottom > 0) {
+                float h = bottom * 2.2f;
+                float y = getHeight() - h;
+                p.setShader(new android.graphics.LinearGradient(0, y, 0, getHeight(), clear, color,
+                        android.graphics.Shader.TileMode.CLAMP));
+                c.drawRect(0, y, getWidth(), getHeight(), p);
+            }
+        }
+    }
+
     private SystemBars() {}
 }

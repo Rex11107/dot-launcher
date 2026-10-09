@@ -1,8 +1,11 @@
 package it.rex.dotlauncher;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
+import android.graphics.Path;
+import android.graphics.Rect;
 import android.graphics.RectF;
 import android.view.View;
 
@@ -18,6 +21,10 @@ class NothingTile extends View {
     private final boolean h24;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF rf = new RectF();
+    private final Paint bp = new Paint(Paint.FILTER_BITMAP_FLAG);
+    private final Path clip = new Path();
+    private final int[] loc = new int[2];
+    private final Rect src = new Rect();
 
     NothingTile(Context c, Item item, Theme th, boolean h24) {
         super(c);
@@ -72,8 +79,9 @@ class NothingTile extends View {
 
     private void drawShape(Canvas cv, float W, float H) {
         p.setStyle(Paint.Style.FILL);
-        p.setColor(bgColor());
         float m = Math.min(W, H);
+        if (th.glass && item.tone == 0) drawGlass(cv, W, H, m);
+        p.setColor(bgColor());
         if (isCircle()) {
             cv.drawCircle(W / 2f, H / 2f, m / 2f, p);
         } else {
@@ -94,6 +102,30 @@ class NothingTile extends View {
             }
             p.setStyle(Paint.Style.FILL);
         }
+    }
+
+    /** Vetro smerigliato: la parte di sfondo sfocato che sta dietro la tessera. */
+    private void drawGlass(Canvas cv, float W, float H, float m) {
+        Bitmap g = th.glassBmp;
+        View root = getRootView();
+        if (g == null || root == null || root.getWidth() == 0) return;
+        getLocationOnScreen(loc);
+        float sx = g.getWidth() / (float) root.getWidth();
+        float sy = g.getHeight() / (float) root.getHeight();
+        src.set(Math.round(loc[0] * sx), Math.round(loc[1] * sy),
+                Math.round((loc[0] + W) * sx), Math.round((loc[1] + H) * sy));
+        clip.reset();
+        if (isCircle()) {
+            clip.addCircle(W / 2f, H / 2f, m / 2f, Path.Direction.CW);
+        } else {
+            float r = (item.w == 1 || item.h == 1) ? m / 2f : m * 0.16f;
+            clip.addRoundRect(0, 0, W, H, r, r, Path.Direction.CW);
+        }
+        cv.save();
+        cv.clipPath(clip);
+        rf.set(0, 0, W, H);
+        cv.drawBitmap(g, src, rf, bp);
+        cv.restore();
     }
 
     private String time(String pattern24, String pattern12) {
@@ -122,6 +154,7 @@ class NothingTile extends View {
         // tacche a puntini
         p.setColor(Theme.alpha(fg(), 0.35f));
         for (int i = 0; i < 12; i++) {
+            if (i == 6) continue; // al suo posto c'è il punto rosso
             double a = Math.PI * 2 * i / 12;
             float rr = R * (i % 3 == 0 ? 0.035f : 0.022f);
             cv.drawCircle(cx + (float) Math.sin(a) * R * 0.8f, cy - (float) Math.cos(a) * R * 0.8f, rr, p);
@@ -143,7 +176,7 @@ class NothingTile extends View {
         cv.drawLine(cx, cy, cx + (float) Math.sin(ah) * R * 0.42f, cy - (float) Math.cos(ah) * R * 0.42f, p);
         p.setStyle(Paint.Style.FILL);
         p.setColor(acc());
-        cv.drawCircle(cx, cy + R * 0.72f, R * 0.055f, p);
+        cv.drawCircle(cx, cy + R * 0.8f, R * 0.055f, p);
         p.setColor(fg());
         cv.drawCircle(cx, cy, R * 0.06f, p);
     }
@@ -301,18 +334,31 @@ class NothingTile extends View {
     private void batteryPill(Canvas cv, float W, float H) {
         float in = H * 0.12f;
         float r = (H - in * 2) / 2f;
-        float fillW = (W - in * 2) * pct() / 100f;
+        float trackW = W - in * 2;
+        int pc = pct();
         p.setStyle(Paint.Style.FILL);
+        // binario
+        p.setColor(Theme.alpha(fg(), 0.12f));
+        rf.set(in, in, W - in, H - in);
+        cv.drawRoundRect(rf, r, r, p);
+        // riempimento
+        float fillW = Math.max(r * 2, trackW * pc / 100f);
         p.setColor(acc());
-        if (fillW > r * 2) {
-            rf.set(in, in, in + fillW, H - in);
-            cv.drawRoundRect(rf, r, r, p);
-        } else if (fillW > 0) {
-            cv.drawCircle(in + r, H / 2f, r * Math.max(0.3f, fillW / (r * 2)), p);
+        rf.set(in, in, in + fillW, H - in);
+        cv.drawRoundRect(rf, r, r, p);
+        String t = pc + "%";
+        int fillText = item.tone == 2 ? th.accent : 0xFFFFFFFF;
+        float free = trackW - fillW - r * 1.2f;
+        if (pc >= 55 || free < H * 0.9f) {
+            // testo dentro il riempimento, in bianco
+            float maxW = fillW - r * (State.charging ? 2.6f : 1.4f);
+            Draw.big(cv, th, t, in + fillW - r * 0.7f, H / 2f, H * 0.3f, maxW, fillText, "", acc(), 1, p, false);
+        } else {
+            // testo nello spazio libero a destra
+            float maxW = free;
+            Draw.big(cv, th, t, W - in - r * 0.7f, H / 2f, H * 0.3f, maxW, fg(), "", acc(), 1, p, false);
         }
-        String t = pct() + "%";
-        Draw.big(cv, th, t, W - in - r * 0.8f, H / 2f, H * 0.32f, W * 0.4f, item.tone == 2 ? th.accent : fg(), "", acc(), 1, p, false);
-        if (State.charging) Draw.icon(cv, Draw.BOLT, in + r, H / 2f, H * 0.36f, p, 0xFFFFFFFF, 0xFFFFFFFF);
+        if (State.charging) Draw.icon(cv, Draw.BOLT, in + r, H / 2f, H * 0.4f, p, fillText, fillText);
     }
 
     private void batteryDots(Canvas cv, float W, float H) {

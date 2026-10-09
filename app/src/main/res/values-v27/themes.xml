@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Dot.V27" parent="Dot.Base">
+        <item name="android:navigationBarDividerColor">@android:color/transparent</item>
+    </style>
+</resources>

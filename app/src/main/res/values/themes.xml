@@ -1,11 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="icon_bg">#000000</color>
-    <style name="Dot" parent="@android:style/Theme.Material.NoActionBar">
+    <!-- Barre di sistema trasparenti già dal tema: più affidabile del solo codice su MagicOS -->
+    <style name="Dot.Base" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">@android:color/black</item>
-        <item name="android:statusBarColor">@android:color/black</item>
-        <item name="android:navigationBarColor">@android:color/black</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:colorAccent">#D71921</item>
         <item name="android:windowShowWallpaper">false</item>
     </style>
+    <style name="Dot.V27" parent="Dot.Base" />
+    <style name="Dot.V28" parent="Dot.V27" />
+    <style name="Dot.V29" parent="Dot.V28" />
+    <style name="Dot" parent="Dot.V29" />
 </resources>
