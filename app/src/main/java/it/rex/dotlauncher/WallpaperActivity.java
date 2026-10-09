@@ -56,12 +56,7 @@ public class WallpaperActivity extends Activity {
         th = Theme.build(this, prefs);
         dp = getResources().getDisplayMetrics().density;
         getWindow().setBackgroundDrawable(new ColorDrawable(th.bg));
-        getWindow().setStatusBarColor(th.bg);
-        getWindow().setNavigationBarColor(th.bg);
-        if (th.light) {
-            getWindow().getDecorView().setSystemUiVisibility(
-                    View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
-        }
+        SystemBars.edgeToEdge(getWindow(), th.light);
 
         int n = WallpaperGen.NAMES.length;
         seeds = new long[n];
@@ -118,6 +113,14 @@ public class WallpaperActivity extends Activity {
         });
         root.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
         setContentView(root);
+        final int padTop = Math.round(24 * dp);
+        root.setOnApplyWindowInsetsListener((v, in) -> {
+            int[] r = SystemBars.read(in);
+            root.setPadding(pad + r[0], padTop + r[1], pad + r[2], 0);
+            grid.setPadding(0, 0, 0, Math.round(24 * dp) + r[3]);
+            return in;
+        });
+        root.requestApplyInsets();
 
         for (int i = 0; i < n; i++) renderPreview(i);
     }

@@ -104,7 +104,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private boolean h24;
 
     private FrameLayout root;
+    private LinearLayout homeBox;
     private Pager pager;
+    private int gestureBottom;
+    private int navBottom;
     private IndicatorView indicator;
     private LinearLayout dock;
     private final List<TileGrid> grids = new ArrayList<>();
@@ -205,6 +208,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
                 if (e1 == null || TileGrid.anyDragging) return false;
+                // la striscia in basso appartiene alla gesture "home" del sistema
+                if (root != null && e1.getY() > root.getHeight() - gestureBottom - px(12)) return false;
                 float dy = e2.getY() - e1.getY();
                 float dx = e2.getX() - e1.getX();
                 if (Math.abs(dy) < Math.abs(dx) * 1.3f) return false;
@@ -273,6 +278,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             unregisterReceiver(batteryReceiver);
             receiversOn = false;
         }
+        // uscendo verso un'app il cassetto si chiude subito: al ritorno la home è pulita
+        if (drawerOpen) hideDrawerNow();
     }
 
     @Override
@@ -292,8 +299,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (drawerOpen) closeDrawer();
-        else if (pager != null && pager.getCurrent() != 0) pager.snapTo(0);
+        // Solo se eravamo già sulla home (Home premuto di nuovo): chiudi il cassetto o torna alla prima pagina.
+        // Se invece si sta tornando da un'app, la home resta com'era, senza animazioni.
+        boolean alreadyHome = hasWindowFocus();
+        if (drawerOpen) {
+            if (alreadyHome) closeDrawer();
+            else hideDrawerNow();
+        } else if (alreadyHome && pager != null && pager.getCurrent() != 0) {
+            pager.snapTo(0);
+        }
     }
 
     @Override
@@ -316,9 +330,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void buildUi() {
         root = new FrameLayout(this);
 
-        LinearLayout home = new LinearLayout(this);
+        homeBox = new LinearLayout(this);
+        LinearLayout home = homeBox;
         home.setOrientation(LinearLayout.VERTICAL);
-        home.setPadding(0, px(8), 0, px(6));
+        home.setPadding(0, px(32), 0, px(6));
 
         pager = new Pager(this);
         pager.setListener(p -> indicator.setCurrent(p));
@@ -345,19 +360,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (th.wall) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
             getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
-            getWindow().setStatusBarColor(Color.TRANSPARENT);
-            getWindow().setNavigationBarColor(Color.TRANSPARENT);
             root.setBackgroundColor(th.scrim);
         } else {
             getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
             getWindow().setBackgroundDrawable(new ColorDrawable(th.bg));
-            getWindow().setStatusBarColor(th.bg);
-            getWindow().setNavigationBarColor(th.bg);
             root.setBackgroundColor(th.bg);
         }
-        int flags = 0;
-        if (th.light) flags = View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR | View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR;
-        getWindow().getDecorView().setSystemUiVisibility(flags);
+        // Barre trasparenti: sotto si vede il colore del tema o lo sfondo
+        SystemBars.edgeToEdge(getWindow(), th.darkIcons);
+        root.setOnApplyWindowInsetsListener((v, in) -> {
+            int[] r = SystemBars.read(in);
+            homeBox.setPadding(r[0], r[1] + px(8), r[2], r[3] + px(6));
+            drawer.setPadding(px(16) + r[0], r[1] + px(20), px(16) + r[2], r[7]);
+            grid.setPadding(0, 0, 0, px(24) + (r[7] > 0 ? 0 : r[3]));
+            gestureBottom = r[6];
+            navBottom = r[3];
+            pager.setEdgeGuard(r[4], r[5]);
+            return in;
+        });
+        root.requestApplyInsets();
     }
 
     private void buildDrawer() {
@@ -452,6 +473,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         search.clearFocus();
         drawer.animate().alpha(0f).translationY(px(60)).setDuration(150)
                 .withEndAction(() -> drawer.setVisibility(View.GONE)).start();
+    }
+
+    private void hideDrawerNow() {
+        drawerOpen = false;
+        drawer.animate().cancel();
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
+        search.clearFocus();
+        drawer.setVisibility(View.GONE);
+        drawer.setAlpha(1f);
+        drawer.setTranslationY(0);
     }
 
     private void expandNotifications() {
@@ -1144,7 +1176,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 opts = ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
             }
             launcherApps.startMainActivity(a.component, a.user, r, opts);
-            if (drawerOpen) ui.postDelayed(this::closeDrawer, 300);
         } catch (Exception e) {
             toast("Impossibile aprire " + a.label);
         }

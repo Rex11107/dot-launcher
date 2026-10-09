@@ -21,6 +21,8 @@ class Pager extends ViewGroup {
     private boolean dragging;
     private int current;
     private Listener listener;
+    private int edgeL, edgeR;
+    private boolean edgeTouch;
 
     Pager(Context c) {
         super(c);
@@ -28,6 +30,12 @@ class Pager extends ViewGroup {
         ViewConfiguration vc = ViewConfiguration.get(c);
         slop = vc.getScaledTouchSlop();
         minFling = vc.getScaledMinimumFlingVelocity() * 4;
+    }
+
+    /** Larghezza delle zone laterali riservate alla gesture "indietro" del sistema. */
+    void setEdgeGuard(int left, int right) {
+        edgeL = left;
+        edgeR = right;
     }
 
     void setListener(Listener l) {
@@ -64,10 +72,12 @@ class Pager extends ViewGroup {
             case MotionEvent.ACTION_DOWN:
                 downX = lastX = ev.getX();
                 downY = ev.getY();
+                edgeTouch = downX < edgeL || downX > getWidth() - edgeR;
                 dragging = !scroller.isFinished();
                 if (dragging) scroller.abortAnimation();
                 break;
             case MotionEvent.ACTION_MOVE:
+                if (edgeTouch) break;
                 float dx = ev.getX() - downX, dy = ev.getY() - downY;
                 if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy) * 1.2f) {
                     dragging = true;

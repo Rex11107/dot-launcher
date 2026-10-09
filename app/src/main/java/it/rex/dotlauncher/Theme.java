@@ -15,6 +15,7 @@ final class Theme {
     final boolean light;
     final boolean nuovo;
     final boolean wall;
+    final boolean darkIcons;     // icone scure nelle barre di sistema
     final boolean dots;          // numeri e titoli a puntini (Classico)
     final boolean upperLabels;   // etichette maiuscole (Classico)
     final int bg, tile, tileAlt, onTile, onTileAlt, sub, accent, stroke, drawerBg, scrim;
@@ -59,6 +60,21 @@ final class Theme {
             numFace = Typeface.create("sans-serif-thin", Typeface.NORMAL);
             labelFace = Typeface.create("sans-serif-medium", Typeface.NORMAL);
             bodyFace = Typeface.create("sans-serif", Typeface.NORMAL);
+        }
+        darkIcons = wall ? wallpaperIsLight(c) : light;
+    }
+
+    /** Sfondo di sistema chiaro? Serve a scegliere icone scure o chiare nelle barre. */
+    private static boolean wallpaperIsLight(Context c) {
+        try {
+            WallpaperColors wc = WallpaperManager.getInstance(c).getWallpaperColors(WallpaperManager.FLAG_SYSTEM);
+            if (wc == null) return false;
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                return (wc.getColorHints() & WallpaperColors.HINT_SUPPORTS_DARK_TEXT) != 0;
+            }
+            return Color.luminance(wc.getPrimaryColor().toArgb()) > 0.6f;
+        } catch (Exception e) {
+            return false;
         }
     }
 
