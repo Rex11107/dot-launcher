@@ -1,50 +1,55 @@
 package it.rex.dotlauncher;
 
 import android.content.Context;
+import android.graphics.Canvas;
+import android.graphics.DashPathEffect;
+import android.graphics.Paint;
+import android.graphics.RectF;
 import android.view.MotionEvent;
 import android.view.View;
-import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 
 /**
  * Una pagina della home: griglia di 4 colonne a celle quadrate.
- * Pressione prolungata su un elemento: se si trascina lo si sposta, se si rilascia si apre il menu.
+ * Il trascinamento è gestito da HomeActivity; qui si disegna solo l'anteprima della posizione.
  */
 class TileGrid extends ViewGroup {
     interface Host {
         boolean canPlace(Item it, int page, int col, int row, int w, int h);
-        void onItemMoved(Item it);
-        void onItemMenu(Item it);
         void onEmptyLongPress(int page, int col, int row);
-        /** Elemento lasciato sopra un altro (es. app su app = cartella). true se gestito. */
-        boolean onDropOnto(Item dragged, int page, int col, int row);
     }
 
     static boolean anyDragging;
     static final int COLS = 4;
+
+    static final int PREVIEW_NONE = 0;
+    static final int PREVIEW_OK = 1;     // posto libero
+    static final int PREVIEW_MERGE = 2;  // sopra un'app o una cartella: cartella
+    static final int PREVIEW_BAD = 3;    // non c'è spazio
 
     final int page;
     private final Host host;
     private final float padH, padTop, gap;
     private float cell;
     private int rows = 6;
-    private final int slop;
-
-    private View dragView;
-    private boolean dragging, moved;
-    private float lastRawX, lastRawY, startRawX, startRawY;
     private float downX, downY;
+
+    private int pMode = PREVIEW_NONE, pCol, pRow, pW, pH;
+    private int accent = 0xFFD71921, neutral = 0x66FFFFFF;
+    private final Paint pp = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final RectF pr = new RectF();
+    private final float dp;
 
     TileGrid(Context c, int page, Host host) {
         super(c);
         this.page = page;
         this.host = host;
-        float dp = c.getResources().getDisplayMetrics().density;
+        dp = c.getResources().getDisplayMetrics().density;
         padH = 16 * dp;
         padTop = 10 * dp;
         gap = 12 * dp;
-        slop = ViewConfiguration.get(c).getScaledTouchSlop();
         setClipChildren(false);
+        setWillNotDraw(false);
         setClickable(true);
         setLongClickable(true);
         setOnLongClickListener(v -> {
@@ -53,6 +58,11 @@ class TileGrid extends ViewGroup {
             host.onEmptyLongPress(page, Math.max(0, Math.min(COLS - 1, col)), Math.max(0, Math.min(rows - 1, row)));
             return true;
         });
+    }
+
+    void setColors(int accent, int neutral) {
+        this.accent = accent;
+        this.neutral = neutral;
     }
 
     int getRows() {
@@ -65,6 +75,42 @@ class TileGrid extends ViewGroup {
 
     float getGap() {
         return gap;
+    }
+
+    float getPadH() {
+        return padH;
+    }
+
+    float getPadTop() {
+        return padTop;
+    }
+
+    /** Cella il cui angolo in alto a sinistra è più vicino al punto (coordinate locali). */
+    int[] nearestCell(float x, float y) {
+        int c = Math.round((x - padH) / (cell + gap));
+        int r = Math.round((y - padTop) / (cell + gap));
+        return new int[]{c, r};
+    }
+
+    /** Cella che contiene il punto (coordinate locali). */
+    int[] cellUnder(float x, float y) {
+        int c = (int) Math.floor((x - padH + gap / 2f) / (cell + gap));
+        int r = (int) Math.floor((y - padTop + gap / 2f) / (cell + gap));
+        return new int[]{c, r};
+    }
+
+    void setPreview(int mode, int col, int row, int w, int h) {
+        if (mode == pMode && col == pCol && row == pRow && w == pW && h == pH) return;
+        pMode = mode;
+        pCol = col;
+        pRow = row;
+        pW = w;
+        pH = h;
+        invalidate();
+    }
+
+    void clearPreview() {
+        setPreview(PREVIEW_NONE, 0, 0, 0, 0);
     }
 
     @Override
@@ -100,106 +146,43 @@ class TileGrid extends ViewGroup {
         }
     }
 
-    /** Da chiamare dal long-click di un elemento. */
-    void startDrag(View v) {
-        dragView = v;
-        dragging = true;
-        anyDragging = true;
-        moved = false;
-        startRawX = lastRawX;
-        startRawY = lastRawY;
-        v.animate().scaleX(1.06f).scaleY(1.06f).alpha(0.9f).setDuration(120).start();
-        v.bringToFront();
-        if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
-        performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS);
+    /** Anteprima disegnata sotto gli elementi: cella di arrivo durante il trascinamento. */
+    @Override
+    protected void onDraw(Canvas cv) {
+        if (pMode == PREVIEW_NONE || cell <= 0) return;
+        float x = padH + pCol * (cell + gap), y = padTop + pRow * (cell + gap);
+        float w = pW * cell + (pW - 1) * gap, h = pH * cell + (pH - 1) * gap;
+        pr.set(x, y, x + w, y + h);
+        float m = Math.min(w, h);
+        float rad = (pW == 1 && pH == 1) || pW == 1 || pH == 1 ? m / 2f : m * 0.16f;
+        int col = pMode == PREVIEW_BAD ? neutral : accent;
+        pp.setStyle(Paint.Style.FILL);
+        pp.setPathEffect(null);
+        pp.setColor(Theme.alpha(col, pMode == PREVIEW_MERGE ? 0.35f : 0.18f));
+        cv.drawRoundRect(pr, rad, rad, pp);
+        pp.setStyle(Paint.Style.STROKE);
+        pp.setStrokeWidth(2 * dp);
+        pp.setColor(col);
+        pp.setPathEffect(pMode == PREVIEW_BAD ? new DashPathEffect(new float[]{6 * dp, 6 * dp}, 0) : null);
+        pr.inset(dp, dp);
+        cv.drawRoundRect(pr, rad, rad, pp);
     }
 
     @Override
     public boolean onInterceptTouchEvent(MotionEvent ev) {
-        lastRawX = ev.getRawX();
-        lastRawY = ev.getRawY();
         if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
             downX = ev.getX();
             downY = ev.getY();
-        }
-        if (dragging) {
-            handleDrag(ev);
-            return true;
         }
         return false;
     }
 
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
-        lastRawX = ev.getRawX();
-        lastRawY = ev.getRawY();
         if (ev.getActionMasked() == MotionEvent.ACTION_DOWN) {
             downX = ev.getX();
             downY = ev.getY();
         }
-        if (dragging) {
-            handleDrag(ev);
-            return true;
-        }
         return super.onTouchEvent(ev);
-    }
-
-    private void handleDrag(MotionEvent ev) {
-        float dx = ev.getRawX() - startRawX;
-        float dy = ev.getRawY() - startRawY;
-        switch (ev.getActionMasked()) {
-            case MotionEvent.ACTION_MOVE:
-                if (Math.hypot(dx, dy) > slop) moved = true;
-                if (moved) {
-                    dragView.setTranslationX(dx);
-                    dragView.setTranslationY(dy);
-                }
-                break;
-            case MotionEvent.ACTION_UP:
-                finishDrag(dx, dy, true);
-                break;
-            case MotionEvent.ACTION_CANCEL:
-                finishDrag(0, 0, false);
-                break;
-        }
-    }
-
-    private void finishDrag(float dx, float dy, boolean commit) {
-        View v = dragView;
-        Item it = v == null ? null : (Item) v.getTag();
-        dragging = false;
-        anyDragging = false;
-        dragView = null;
-        if (v == null || it == null) return;
-        v.animate().scaleX(1f).scaleY(1f).alpha(1f).setDuration(120).start();
-        if (commit && !moved) {
-            v.setTranslationX(0);
-            v.setTranslationY(0);
-            host.onItemMenu(it);
-            return;
-        }
-        if (commit) {
-            int col = Math.round((v.getLeft() + dx - padH) / (cell + gap));
-            int row = Math.round((v.getTop() + dy - padTop) / (cell + gap));
-            col = Math.max(0, Math.min(COLS - it.w, col));
-            row = Math.max(0, Math.min(rows - it.h, row));
-            if (host.canPlace(it, page, col, row, it.w, it.h)) {
-                it.col = col;
-                it.row = row;
-                host.onItemMoved(it);
-            } else {
-                // cella sotto il centro dell'elemento trascinato
-                int cc = (int) Math.floor((v.getLeft() + dx + v.getWidth() / 2f - padH) / (cell + gap));
-                int cr = (int) Math.floor((v.getTop() + dy + v.getHeight() / 2f - padTop) / (cell + gap));
-                if (host.onDropOnto(it, page, cc, cr)) {
-                    v.setTranslationX(0);
-                    v.setTranslationY(0);
-                    return;
-                }
-            }
-        }
-        v.setTranslationX(0);
-        v.setTranslationY(0);
-        requestLayout();
     }
 }

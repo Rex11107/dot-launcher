@@ -58,6 +58,18 @@
         </activity>
 
         <activity
+            android:name=".AddItemActivity"
+            android:autoRemoveFromRecents="true"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.content.pm.action.CONFIRM_PIN_SHORTCUT" />
+            </intent-filter>
+        </activity>
+
+        <activity
             android:name=".WallpaperActivity"
             android:exported="false"
             android:label="Sfondi"

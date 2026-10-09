@@ -24,6 +24,7 @@ final class Widgets {
             case "search": return "Barra di ricerca";
             case "app": return "App";
             case "folder": return "Cartella";
+            case "shortcut": return "Scorciatoia";
             default: return "Widget";
         }
     }
@@ -45,6 +46,7 @@ final class Widgets {
             case "search": return new int[][]{{4, 1}};
             case "app": return new int[][]{{1, 1}, {2, 2}};
             case "folder": return new int[][]{{1, 1}, {2, 2}};
+            case "shortcut": return new int[][]{{1, 1}};
             default: return new int[][]{{1, 1}, {2, 1}, {2, 2}, {4, 1}, {4, 2}, {4, 3}, {4, 4}};
         }
     }

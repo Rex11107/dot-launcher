@@ -30,6 +30,12 @@ final class Sheet {
 
     /** Elenco di scelte. selected >= 0 mostra il pallino rosso sulla scelta attuale. */
     static Dialog list(Activity a, Theme th, String title, String[] items, int selected, OnPick cb) {
+        return list(a, th, title, items, null, selected, cb, null);
+    }
+
+    /** Elenco con icone facoltative (null = nessuna) e pressione prolungata facoltativa. */
+    static Dialog list(Activity a, Theme th, String title, String[] items, android.graphics.Bitmap[] icons,
+                       int selected, OnPick cb, OnPick longCb) {
         float dp = a.getResources().getDisplayMetrics().density;
         Dialog d = base(a);
         LinearLayout box = panel(a, th, title);
@@ -42,6 +48,13 @@ final class Sheet {
             row.setGravity(Gravity.CENTER_VERTICAL);
             row.setPadding(px(dp, 14), px(dp, 13), px(dp, 14), px(dp, 13));
             row.setBackground(pressed(th, dp));
+            if (icons != null && i < icons.length && icons[i] != null) {
+                android.widget.ImageView iv = new android.widget.ImageView(a);
+                iv.setImageBitmap(icons[i]);
+                LinearLayout.LayoutParams il = new LinearLayout.LayoutParams(px(dp, 26), px(dp, 26));
+                il.rightMargin = px(dp, 14);
+                row.addView(iv, il);
+            }
             TextView tv = new TextView(a);
             tv.setText(items[i]);
             tv.setTypeface(Fonts.regular);
@@ -61,6 +74,13 @@ final class Sheet {
                 d.dismiss();
                 cb.pick(which);
             });
+            if (longCb != null) {
+                row.setOnLongClickListener(v -> {
+                    d.dismiss();
+                    longCb.pick(which);
+                    return true;
+                });
+            }
             rows.addView(row, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.WRAP_CONTENT));
         }

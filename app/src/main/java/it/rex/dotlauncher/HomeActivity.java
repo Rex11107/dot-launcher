@@ -17,6 +17,8 @@ import android.content.IntentFilter;
 import android.content.SharedPreferences;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.LauncherApps;
+import android.content.pm.PackageInfo;
+import android.content.pm.ShortcutInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
@@ -39,6 +41,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.UserHandle;
+import android.os.UserManager;
 import android.provider.AlarmClock;
 import android.provider.CalendarContract;
 import android.provider.MediaStore;
@@ -50,6 +53,7 @@ import android.text.TextWatcher;
 import android.text.format.DateFormat;
 import android.util.TypedValue;
 import android.view.GestureDetector;
+import android.view.HapticFeedbackConstants;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
@@ -269,6 +273,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         updateAlarm();
         refreshTiles(null);
         maybeRefreshWeather();
+        consumePendingShortcuts();
+        checkUpdate(false);
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        consumePendingShortcuts();
     }
 
     @Override
@@ -283,6 +295,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             unregisterReceiver(batteryReceiver);
             receiversOn = false;
         }
+        if (dragSrc >= 0) finishDrag(false);
+        exitResize();
         // uscendo verso un'app il cassetto si chiude subito: al ritorno la home è pulita
         if (drawerOpen) hideDrawerNow();
     }
@@ -317,12 +331,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     @Override
     public void onBackPressed() {
-        if (drawerOpen) closeDrawer();
+        if (resizer != null) exitResize();
+        else if (drawerOpen) closeDrawer();
     }
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        if (gestures != null) gestures.onTouchEvent(ev);
+        lastRawX = ev.getRawX();
+        lastRawY = ev.getRawY();
+        if (dragSrc >= 0) {
+            onDragEvent(ev);
+            return true;
+        }
+        if (gestures != null && resizer == null) gestures.onTouchEvent(ev);
         return super.dispatchTouchEvent(ev);
     }
 
@@ -366,6 +387,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         buildDrawer();
         root.addView(drawer, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
+        buildDropBar();
     }
 
     private void applyWindow() {
@@ -393,6 +415,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             drawer.setPadding(px(16) + r[0], r[1] + px(20), px(16) + r[2], r[7]);
             grid.setPadding(0, 0, 0, px(24) + (r[7] > 0 ? 0 : r[3]));
             gestureBottom = r[6];
+            dropBar.setPadding(0, r[1] + px(8), 0, px(8));
             navBottom = r[3];
             pager.setEdgeGuard(r[4], r[5]);
             return in;
@@ -471,7 +494,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         grid.setAdapter(adapter);
         grid.setOnItemClickListener((p, v, pos, id) -> launch(adapter.getItem(pos), v));
         grid.setOnItemLongClickListener((p, v, pos, id) -> {
-            showAppMenu(adapter.getItem(pos), null);
+            AppEntry a = adapter.getItem(pos);
+            View icon = v instanceof ViewGroup && ((ViewGroup) v).getChildCount() > 0 ? ((ViewGroup) v).getChildAt(0) : v;
+            beginDrag(SRC_DRAWER, null, a.key, icon);
             return true;
         });
         drawer.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
@@ -609,6 +634,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         grids.clear();
         for (int p = 0; p < pages; p++) {
             TileGrid g = new TileGrid(this, p, this);
+            g.setColors(th.accent, Theme.alpha(th.onTile, 0.45f));
             grids.add(g);
             pager.addView(g);
         }
@@ -666,6 +692,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 AppEntry a = appsByKey.get(it.data);
                 if (a != null) launch(a, x);
             });
+        } else if ("shortcut".equals(it.type)) {
+            v = new AppTile(this, it, this, th, prefs.getBoolean("labels", false));
+            v.setOnClickListener(x -> launchShortcut(it.data, x));
         } else if ("folder".equals(it.type)) {
             FolderTile ft = new FolderTile(this, it, this, th);
             ft.setOnClickListener(x -> {
@@ -696,7 +725,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         v.setTag(it);
         it.view = v;
         v.setOnLongClickListener(x -> {
-            if (it.page < grids.size()) grids.get(it.page).startDrag(x);
+            startHomeDrag(it, x);
             return true;
         });
         return v;
@@ -799,7 +828,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
     }
 
-    @Override
     public boolean onDropOnto(Item dragged, int page, int col, int row) {
         if (!dragged.isApp()) return false;
         Item target = null;
@@ -896,19 +924,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
     }
 
-    @Override
     public void onItemMoved(Item it) {
         saveLayout();
     }
 
-    @Override
     public void onItemMenu(Item it) {
         List<String> labels = new ArrayList<>();
         List<Runnable> acts = new ArrayList<>();
         int[][] sizes = Widgets.sizes(it.type);
         if (sizes.length > 1) {
-            labels.add("Dimensione");
-            acts.add(() -> chooseSize(it));
+            labels.add("Ridimensiona");
+            acts.add(() -> startResize(it));
         }
         if (!it.isSys() && !it.isApp()) {
             labels.add("Colore");
@@ -937,9 +963,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         labels.add("Rimuovi");
         acts.add(() -> removeItem(it));
-        String title = it.isApp() ? labelFor(it.data) : it.isSys() ? "Widget"
+        String title = it.isApp() || "shortcut".equals(it.type) ? labelFor(it.data) : it.isSys() ? "Widget"
                 : "folder".equals(it.type) ? FolderTile.name(it) : Widgets.name(it.type);
-        Sheet.list(this, th, title, labels.toArray(new String[0]), -1, w -> acts.get(w).run());
+        showMenuWithShortcuts(title, it.isApp() ? appsByKey.get(it.data) : null, labels, acts);
     }
 
     @Override
@@ -1031,6 +1057,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void removeItem(Item it) {
         items.remove(it);
+        if ("shortcut".equals(it.type)) {
+            String[] sp = scParts(it.data);
+            try {
+                repinShortcuts(sp[0], Long.parseLong(sp[2]), null);
+            } catch (NumberFormatException ignored) {
+            }
+        }
         if (it.isSys()) {
             try {
                 host.deleteAppWidgetId(Integer.parseInt(it.data));
@@ -1366,10 +1399,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     @Override
     public Bitmap iconFor(String key, int size) {
-        if (size <= 0) return null;
+        if (size <= 0 || key == null) return null;
         String ck = key + "@" + size;
         Bitmap b = iconCache.get(ck);
         if (b != null) return b;
+        if (key.startsWith("sc:")) {
+            b = shortcutIcon(key, size);
+            if (b != null) iconCache.put(ck, b);
+            return b;
+        }
         AppEntry a = appsByKey.get(key);
         if (a == null || a.icon == null) return null;
         try {
@@ -1383,6 +1421,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     @Override
     public String labelFor(String key) {
+        if (key != null && key.startsWith("sc:")) return scParts(key)[3];
         AppEntry a = appsByKey.get(key);
         return a == null ? "" : a.label;
     }
@@ -1470,14 +1509,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             lp.rightMargin = px(9);
             iv.setOnClickListener(v -> launch(a, v));
             iv.setOnLongClickListener(v -> {
-                showAppMenu(a, true);
+                beginDrag(SRC_DOCK, null, a.key, v);
                 return true;
             });
             dock.addView(iv, lp);
         }
         if (dock.getChildCount() == 0) {
             TextView t = new TextView(this);
-            t.setText("Tieni premuta un'app nel cassetto per aggiungerla qui");
+            t.setText("Trascina qui un'app dal cassetto");
             t.setTextColor(th.sub);
             t.setTypeface(th.bodyFace);
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
@@ -1527,7 +1566,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         labels.add("Disinstalla");
         acts.add(() -> safeStart(new Intent(Intent.ACTION_DELETE,
                 Uri.fromParts("package", a.component.getPackageName(), null))));
-        Sheet.list(this, th, a.label, labels.toArray(new String[0]), -1, w -> acts.get(w).run());
+        showMenuWithShortcuts(a.label, a, labels, acts);
     }
 
     private class AppAdapter extends BaseAdapter {
@@ -1588,6 +1627,836 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
     }
 
+    // =====================================================================
+    // Trascinamento: dal cassetto, dalla home e dal dock verso home, dock, cartelle e barra in alto
+    // =====================================================================
+
+    private static final int SRC_HOME = 0, SRC_DOCK = 1, SRC_DRAWER = 2;
+    private static final int T_NONE = 0, T_BAR = 1, T_DOCK = 2, T_CELL = 3, T_MERGE = 4, T_BAD = 5;
+
+    private int dragSrc = -1;
+    private Item dragItem;
+    private String dragKey;
+    private View dragSourceView;
+    private ImageView dragShadow;
+    private int shadowW, shadowH, dragW = 1, dragH = 1;
+    private float touchOffX, touchOffY, lastRawX, lastRawY, dragStartX, dragStartY;
+    private boolean dragMoved;
+    private LinearLayout dropBar;
+    private TextView dropLeft, dropRight;
+    private int tKind = T_NONE, tCol, tRow, tZone, tDockIndex;
+    private Item tTarget;
+    private int edgeDir;
+    private final Runnable edgeRun = this::edgeTick;
+
+    private TextView dropPill() {
+        TextView t = new TextView(this);
+        t.setGravity(Gravity.CENTER);
+        t.setTypeface(th.labelFace);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+        t.setAllCaps(th.upperLabels);
+        return t;
+    }
+
+    private void styleDropPill(TextView t, boolean hot) {
+        GradientDrawable g = new GradientDrawable();
+        g.setCornerRadius(px(24));
+        g.setColor(hot ? th.accent : th.sheetBg);
+        if (!hot && th.light) g.setStroke(Math.max(1, px(1)), 0x22000000);
+        t.setBackground(g);
+        t.setTextColor(hot ? 0xFFFFFFFF : th.onTile);
+    }
+
+    private void buildDropBar() {
+        dropBar = new LinearLayout(this);
+        dropBar.setOrientation(LinearLayout.HORIZONTAL);
+        dropBar.setGravity(Gravity.CENTER);
+        dropBar.setVisibility(View.GONE);
+        dropLeft = dropPill();
+        dropRight = dropPill();
+        LinearLayout.LayoutParams l = new LinearLayout.LayoutParams(0, px(48), 1f);
+        l.leftMargin = px(16);
+        l.rightMargin = px(6);
+        LinearLayout.LayoutParams r = new LinearLayout.LayoutParams(0, px(48), 1f);
+        r.leftMargin = px(6);
+        r.rightMargin = px(16);
+        dropBar.addView(dropLeft, l);
+        dropBar.addView(dropRight, r);
+        dropBar.setPadding(0, px(40), 0, px(8));
+        root.addView(dropBar, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP));
+    }
+
+    private int iconCellPx() {
+        float c = grids.isEmpty() ? 0 : grids.get(0).getCell();
+        return c > 0 ? Math.round(c * 0.86f) : px(62);
+    }
+
+    private void startHomeDrag(Item it, View v) {
+        beginDrag(SRC_HOME, it, it.isApp() ? it.data : null, v);
+    }
+
+    private void beginDrag(int src, Item it, String key, View v) {
+        if (dragSrc >= 0 || v == null || resizer != null) return;
+        dragSrc = src;
+        dragItem = it;
+        dragKey = key;
+        dragSourceView = v;
+        dragMoved = false;
+        dragStartX = lastRawX;
+        dragStartY = lastRawY;
+        dragW = it != null ? it.w : 1;
+        dragH = it != null ? it.h : 1;
+        tKind = T_NONE;
+
+        Bitmap snap;
+        if (src == SRC_HOME && v.getWidth() > 0) {
+            int[] loc = new int[2];
+            v.getLocationOnScreen(loc);
+            snap = Bitmap.createBitmap(v.getWidth(), Math.max(1, v.getHeight()), Bitmap.Config.ARGB_8888);
+            v.draw(new Canvas(snap));
+            shadowW = v.getWidth();
+            shadowH = v.getHeight();
+            touchOffX = lastRawX - loc[0];
+            touchOffY = lastRawY - loc[1];
+        } else {
+            int s = iconCellPx();
+            snap = key == null ? null : iconFor(key, s);
+            shadowW = shadowH = s;
+            touchOffX = s / 2f;
+            touchOffY = s / 2f;
+        }
+        dragShadow = new ImageView(this);
+        if (snap != null) dragShadow.setImageBitmap(snap);
+        dragShadow.setElevation(px(10));
+        dragShadow.setVisibility(src == SRC_DRAWER ? View.INVISIBLE : View.VISIBLE);
+        root.addView(dragShadow, new FrameLayout.LayoutParams(shadowW, shadowH));
+        positionShadow();
+        dragShadow.animate().scaleX(1.06f).scaleY(1.06f).setDuration(120).start();
+        if (src != SRC_DRAWER) v.setAlpha(0.25f);
+
+        TileGrid.anyDragging = true;
+        v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+        // il tocco in corso non deve più arrivare alle altre viste (cassetto, pagine, widget)
+        long now = android.os.SystemClock.uptimeMillis();
+        MotionEvent cancel = MotionEvent.obtain(now, now, MotionEvent.ACTION_CANCEL, 0, 0, 0);
+        super.dispatchTouchEvent(cancel);
+        if (gestures != null) gestures.onTouchEvent(cancel);
+        cancel.recycle();
+    }
+
+    private void positionShadow() {
+        if (dragShadow == null) return;
+        int[] rl = new int[2];
+        root.getLocationOnScreen(rl);
+        dragShadow.setTranslationX(lastRawX - touchOffX - rl[0]);
+        dragShadow.setTranslationY(lastRawY - touchOffY - rl[1]);
+    }
+
+    private void onDragEvent(MotionEvent ev) {
+        switch (ev.getActionMasked()) {
+            case MotionEvent.ACTION_MOVE:
+                if (!dragMoved && Math.hypot(lastRawX - dragStartX, lastRawY - dragStartY) > px(10)) {
+                    dragMoved = true;
+                    if (dragSrc == SRC_DRAWER) hideDrawerNow();
+                    if (dragSourceView != null && dragSrc != SRC_DRAWER) dragSourceView.setVisibility(View.INVISIBLE);
+                    dragShadow.setVisibility(View.VISIBLE);
+                    showDropBar();
+                }
+                if (dragMoved) {
+                    positionShadow();
+                    updateTarget();
+                }
+                break;
+            case MotionEvent.ACTION_UP:
+                finishDrag(true);
+                break;
+            case MotionEvent.ACTION_CANCEL:
+                finishDrag(false);
+                break;
+        }
+    }
+
+    private void showDropBar() {
+        boolean app = dragKey != null && !dragKey.startsWith("sc:") && appsByKey.containsKey(dragKey);
+        dropLeft.setText(dragSrc == SRC_DRAWER ? "Info app" : dragSrc == SRC_DOCK ? "Togli dal dock" : "Rimuovi");
+        dropRight.setText("Disinstalla");
+        dropRight.setVisibility(app ? View.VISIBLE : View.GONE);
+        if (dragSrc == SRC_DRAWER && !app) dropLeft.setVisibility(View.GONE);
+        else dropLeft.setVisibility(View.VISIBLE);
+        styleDropPill(dropLeft, false);
+        styleDropPill(dropRight, false);
+        dropBar.setAlpha(0f);
+        dropBar.setVisibility(View.VISIBLE);
+        dropBar.animate().alpha(1f).setDuration(150).start();
+    }
+
+    private void clearTargets() {
+        for (TileGrid g : grids) g.clearPreview();
+        dock.setBackground(null);
+        if (dropBar.getVisibility() == View.VISIBLE) {
+            styleDropPill(dropLeft, false);
+            styleDropPill(dropRight, false);
+        }
+    }
+
+    private boolean dockAccepts() {
+        return dragKey != null && !dragKey.startsWith("sc:") && (dragItem == null || dragItem.isApp());
+    }
+
+    private Item itemAt(int page, int c, int r) {
+        for (Item o : items) {
+            if (o.page != page) continue;
+            if (c >= o.col && c < o.col + o.w && r >= o.row && r < o.row + o.h) return o;
+        }
+        return null;
+    }
+
+    private void updateTarget() {
+        clearTargets();
+        tKind = T_NONE;
+        tTarget = null;
+
+        // 1) barra in alto (Rimuovi / Disinstalla / Info app)
+        int[] bl = new int[2];
+        dropBar.getLocationOnScreen(bl);
+        if (lastRawY < bl[1] + dropBar.getHeight()) {
+            boolean right = dropRight.getVisibility() == View.VISIBLE
+                    && (dropLeft.getVisibility() != View.VISIBLE || lastRawX > root.getWidth() / 2f);
+            tKind = T_BAR;
+            tZone = right ? 2 : 1;
+            styleDropPill(right ? dropRight : dropLeft, true);
+            setEdge(0);
+            return;
+        }
+
+        // 2) dock
+        int[] dl = new int[2];
+        dock.getLocationOnScreen(dl);
+        if (lastRawY >= dl[1] - px(6) && dockAccepts()) {
+            tKind = T_DOCK;
+            int idx = 0;
+            for (int i = 0; i < dock.getChildCount(); i++) {
+                View c = dock.getChildAt(i);
+                if (!(c instanceof ImageView) || c == dragSourceView) continue;
+                int[] cl = new int[2];
+                c.getLocationOnScreen(cl);
+                if (cl[0] + c.getWidth() / 2f < lastRawX) idx++;
+            }
+            tDockIndex = idx;
+            List<String> dk = dockKeys();
+            boolean full = dk.size() >= MAX_DOCK && !dk.contains(dragKey);
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(px(38));
+            g.setColor(Theme.alpha(full ? th.sub : th.accent, 0.18f));
+            g.setStroke(px(2), full ? th.sub : th.accent);
+            dock.setBackground(g);
+            setEdge(0);
+            return;
+        }
+
+        // 3) griglia della pagina corrente
+        int page = pager.getCurrent();
+        if (page >= grids.size()) return;
+        TileGrid g = grids.get(page);
+        int[] gl = new int[2];
+        g.getLocationOnScreen(gl);
+        float sx = lastRawX - touchOffX - gl[0], sy = lastRawY - touchOffY - gl[1];
+        float cx = sx + shadowW / 2f, cy = sy + shadowH / 2f;
+        int rows = g.getRows();
+
+        if (dragKey != null && !dragKey.startsWith("sc:") && (dragItem == null || dragItem.isApp())) {
+            int[] cu = g.cellUnder(cx, cy);
+            Item o = itemAt(page, cu[0], cu[1]);
+            if (o != null && o != dragItem && (o.isApp() || "folder".equals(o.type))) {
+                tKind = T_MERGE;
+                tTarget = o;
+                g.setPreview(TileGrid.PREVIEW_MERGE, o.col, o.row, o.w, o.h);
+                setEdge(edgeDirAt());
+                return;
+            }
+        }
+        int col, row;
+        if (dragW == 1 && dragH == 1) {
+            int[] cu = g.cellUnder(cx, cy);
+            col = cu[0];
+            row = cu[1];
+        } else {
+            int[] nc = g.nearestCell(sx, sy);
+            col = nc[0];
+            row = nc[1];
+        }
+        col = Math.max(0, Math.min(TileGrid.COLS - dragW, col));
+        row = Math.max(0, Math.min(rows - dragH, row));
+        boolean ok = row >= 0 && canPlace(dragItem, page, col, row, dragW, dragH);
+        tKind = ok ? T_CELL : T_BAD;
+        tCol = col;
+        tRow = row;
+        g.setPreview(ok ? TileGrid.PREVIEW_OK : TileGrid.PREVIEW_BAD, col, row, dragW, dragH);
+        setEdge(edgeDirAt());
+    }
+
+    private int edgeDirAt() {
+        int edge = px(28);
+        return lastRawX < edge ? -1 : lastRawX > root.getWidth() - edge ? 1 : 0;
+    }
+
+    private void setEdge(int dir) {
+        if (dir == edgeDir) return;
+        ui.removeCallbacks(edgeRun);
+        edgeDir = dir;
+        if (dir != 0) ui.postDelayed(edgeRun, 600);
+    }
+
+    /** Dito fermo al bordo: si passa alla pagina accanto (e se serve se ne crea una nuova). */
+    private void edgeTick() {
+        if (dragSrc < 0 || edgeDir == 0) return;
+        int target = pager.getCurrent() + edgeDir;
+        if (target < 0) return;
+        if (target >= pages) {
+            boolean lastHasItems = false;
+            for (Item o : items) if (o.page == pages - 1 && o != dragItem) lastHasItems = true;
+            if (!lastHasItems) return;
+            addEmptyPage();
+        }
+        for (TileGrid g : grids) g.clearPreview();
+        pager.snapTo(target);
+        root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        ui.postDelayed(edgeRun, 900);
+    }
+
+    private void addEmptyPage() {
+        pages++;
+        TileGrid g = new TileGrid(this, pages - 1, this);
+        g.setColors(th.accent, Theme.alpha(th.onTile, 0.45f));
+        grids.add(g);
+        pager.addView(g);
+        indicator.invalidate();
+    }
+
+    private void finishDrag(boolean commit) {
+        ui.removeCallbacks(edgeRun);
+        edgeDir = 0;
+        TileGrid.anyDragging = false;
+        clearTargets();
+        dropBar.setVisibility(View.GONE);
+        if (dragShadow != null) root.removeView(dragShadow);
+        dragShadow = null;
+        if (dragSourceView != null) {
+            dragSourceView.setVisibility(View.VISIBLE);
+            dragSourceView.setAlpha(1f);
+        }
+        int src = dragSrc;
+        Item it = dragItem;
+        String key = dragKey;
+        boolean moved = dragMoved;
+        int kind = tKind;
+        dragSrc = -1;
+        dragItem = null;
+        dragKey = null;
+        dragSourceView = null;
+        if (!commit) return;
+        if (!moved) {
+            showMenuFor(src, it, key);
+            return;
+        }
+        performDrop(src, it, key, kind);
+    }
+
+    private void showMenuFor(int src, Item it, String key) {
+        if (src == SRC_HOME && it != null) {
+            onItemMenu(it);
+            return;
+        }
+        AppEntry a = key == null ? null : appsByKey.get(key);
+        if (a != null) showAppMenu(a, src == SRC_DOCK ? Boolean.TRUE : null);
+    }
+
+    private void performDrop(int src, Item it, String key, int kind) {
+        AppEntry a = key == null ? null : appsByKey.get(key);
+        int page = pager.getCurrent();
+        switch (kind) {
+            case T_BAR:
+                if (tZone == 2 && a != null) {
+                    uninstall(a);
+                } else if (tZone == 1) {
+                    if (src == SRC_HOME && it != null) removeItem(it);
+                    else if (src == SRC_DOCK) removeFromDock(key);
+                    else if (a != null) appInfo(a);
+                }
+                return;
+            case T_DOCK: {
+                List<String> dk = dockKeys();
+                int idx = tDockIndex;
+                int old = dk.indexOf(key);
+                if (old < 0 && dk.size() >= MAX_DOCK) {
+                    toast("Il dock contiene al massimo " + MAX_DOCK + " app");
+                    return;
+                }
+                if (old >= 0) {
+                    dk.remove(old);
+                    if (old < idx) idx--;
+                }
+                dk.add(Math.max(0, Math.min(dk.size(), idx)), key);
+                prefs.edit().putBoolean("dockInit", true).apply();
+                saveDock(dk);
+                if (src == SRC_HOME && it != null) {
+                    items.remove(it);
+                    saveLayout();
+                    buildPages();
+                }
+                buildDock();
+                return;
+            }
+            case T_MERGE: {
+                Item target = tTarget;
+                if (target == null) return;
+                if ("folder".equals(target.type)) {
+                    List<String> apps = FolderTile.apps(target);
+                    if (!apps.contains(key)) apps.add(key);
+                    FolderTile.set(target, FolderTile.name(target), apps);
+                } else {
+                    int fs = target.w >= 2 && target.h >= 2 ? 2 : 1;
+                    Item f = new Item("folder", target.col, target.row, fs, fs, 0, target.page);
+                    List<String> apps = new ArrayList<>();
+                    apps.add(target.data);
+                    if (!apps.contains(key)) apps.add(key);
+                    FolderTile.set(f, "Cartella", apps);
+                    items.remove(target);
+                    items.add(f);
+                    toast("Cartella creata");
+                }
+                if (src == SRC_HOME && it != null) items.remove(it);
+                if (src == SRC_DOCK) removeFromDock(key);
+                saveLayout();
+                buildPages();
+                return;
+            }
+            case T_CELL:
+                if (src == SRC_HOME && it != null) {
+                    it.page = page;
+                    it.col = tCol;
+                    it.row = tRow;
+                } else if (key != null) {
+                    Item n = new Item("app", tCol, tRow, 1, 1, 0, page);
+                    n.data = key;
+                    items.add(n);
+                    if (src == SRC_DOCK) removeFromDock(key);
+                }
+                saveLayout();
+                buildPages();
+                return;
+            default:
+                // posizione non valida: l'elemento torna dov'era
+                if (src == SRC_HOME) buildPages();
+        }
+    }
+
+    private void removeFromDock(String key) {
+        List<String> dk = dockKeys();
+        dk.remove(key);
+        prefs.edit().putBoolean("dockInit", true).apply();
+        saveDock(dk);
+        buildDock();
+    }
+
+    private void uninstall(AppEntry a) {
+        safeStart(new Intent(Intent.ACTION_DELETE, Uri.fromParts("package", a.component.getPackageName(), null)));
+    }
+
+    // =====================================================================
+    // Ridimensionamento con la maniglia
+    // =====================================================================
+
+    private ResizeOverlay resizer;
+
+    private void startResize(Item it) {
+        if (it.view == null || it.page >= grids.size()) return;
+        exitResize();
+        resizer = new ResizeOverlay(this, it);
+        root.addView(resizer, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        toast("Trascina il pallino per ridimensionare · tocca fuori per finire");
+    }
+
+    private void exitResize() {
+        if (resizer == null) return;
+        root.removeView(resizer);
+        resizer = null;
+    }
+
+    private class ResizeOverlay extends View {
+        private final Item it;
+        private final int[][] allowed;
+        private int nw, nh;
+        private boolean active, valid = true;
+        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.RectF r = new android.graphics.RectF();
+        private final int[] gl = new int[2], ol = new int[2];
+
+        ResizeOverlay(Context c, Item it) {
+            super(c);
+            this.it = it;
+            this.allowed = it.isSys() ? null : Widgets.sizes(it.type);
+            nw = it.w;
+            nh = it.h;
+        }
+
+        private TileGrid grid() {
+            return grids.get(Math.min(it.page, grids.size() - 1));
+        }
+
+        /** Rettangolo dell'elemento con la dimensione provvisoria, in coordinate di questa vista. */
+        private void rect() {
+            TileGrid g = grid();
+            g.getLocationOnScreen(gl);
+            getLocationOnScreen(ol);
+            float cell = g.getCell(), gap = g.getGap();
+            float x = gl[0] - ol[0] + g.getPadH() + it.col * (cell + gap);
+            float y = gl[1] - ol[1] + g.getPadTop() + it.row * (cell + gap);
+            r.set(x, y, x + nw * cell + (nw - 1) * gap, y + nh * cell + (nh - 1) * gap);
+        }
+
+        @Override
+        protected void onDraw(Canvas c) {
+            rect();
+            float m = Math.min(r.width(), r.height());
+            float rad = (nw == 1 || nh == 1) ? m / 2f : m * 0.16f;
+            int col = valid ? th.accent : th.sub;
+            p.setStyle(Paint.Style.FILL);
+            p.setColor(Theme.alpha(col, 0.12f));
+            c.drawRoundRect(r, rad, rad, p);
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(px(2));
+            p.setColor(col);
+            c.drawRoundRect(r, rad, rad, p);
+            p.setStyle(Paint.Style.FILL);
+            c.drawCircle(r.right, r.bottom, px(14), p);
+            p.setColor(0xFFFFFFFF);
+            c.drawCircle(r.right, r.bottom, px(5), p);
+        }
+
+        @Override
+        public boolean onTouchEvent(MotionEvent ev) {
+            switch (ev.getActionMasked()) {
+                case MotionEvent.ACTION_DOWN:
+                    rect();
+                    if (Math.hypot(ev.getX() - r.right, ev.getY() - r.bottom) < px(44)) {
+                        active = true;
+                        performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                    } else {
+                        exitResize();
+                    }
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    if (!active) return true;
+                    TileGrid g = grid();
+                    float cell = g.getCell(), gap = g.getGap();
+                    rect();
+                    int w = Math.round((ev.getX() - r.left + gap) / (cell + gap));
+                    int h = Math.round((ev.getY() - r.top + gap) / (cell + gap));
+                    w = Math.max(1, Math.min(TileGrid.COLS - it.col, w));
+                    h = Math.max(1, Math.min(g.getRows() - it.row, h));
+                    if (allowed != null) {
+                        int best = -1, bestD = Integer.MAX_VALUE;
+                        for (int i = 0; i < allowed.length; i++) {
+                            int[] s = allowed[i];
+                            if (it.col + s[0] > TileGrid.COLS || it.row + s[1] > g.getRows()) continue;
+                            int d = Math.abs(s[0] - w) + Math.abs(s[1] - h);
+                            if (d < bestD) {
+                                bestD = d;
+                                best = i;
+                            }
+                        }
+                        if (best >= 0) {
+                            w = allowed[best][0];
+                            h = allowed[best][1];
+                        }
+                    }
+                    if (w != nw || h != nh) performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                    nw = w;
+                    nh = h;
+                    valid = canPlace(it, it.page, it.col, it.row, nw, nh);
+                    invalidate();
+                    return true;
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    if (!active) return true;
+                    active = false;
+                    if (valid && (nw != it.w || nh != it.h)) {
+                        it.w = nw;
+                        it.h = nh;
+                        saveLayout();
+                        buildPages();
+                        postDelayed(this::invalidate, 80);
+                    } else {
+                        nw = it.w;
+                        nh = it.h;
+                        valid = true;
+                        invalidate();
+                    }
+                    return true;
+            }
+            return true;
+        }
+    }
+
+    // =====================================================================
+    // Scorciatoie delle app: "Aggiungi alla schermata Home" e azioni rapide
+    // =====================================================================
+
+    private final Map<String, ShortcutInfo> scCache = new HashMap<>();
+
+    private UserManager userManager() {
+        return (UserManager) getSystemService(Context.USER_SERVICE);
+    }
+
+    private static String[] scParts(String key) {
+        String[] p = key.substring(3).split("\\|", 4);
+        return p.length == 4 ? p : new String[]{"", "", "0", ""};
+    }
+
+    private ShortcutInfo scInfo(String key) {
+        if (scCache.containsKey(key)) return scCache.get(key);
+        ShortcutInfo r = null;
+        try {
+            String[] p = scParts(key);
+            UserHandle u = userManager().getUserForSerialNumber(Long.parseLong(p[2]));
+            LauncherApps.ShortcutQuery q = new LauncherApps.ShortcutQuery()
+                    .setPackage(p[0])
+                    .setShortcutIds(Collections.singletonList(p[1]))
+                    .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_PINNED
+                            | LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC
+                            | LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST);
+            List<ShortcutInfo> l = launcherApps.getShortcuts(q, u);
+            if (l != null && !l.isEmpty()) r = l.get(0);
+        } catch (Exception ignored) {
+        }
+        scCache.put(key, r);
+        return r;
+    }
+
+    private Bitmap shortcutIcon(String key, int size) {
+        ShortcutInfo si = scInfo(key);
+        Drawable d = null;
+        try {
+            if (si != null) d = launcherApps.getShortcutIconDrawable(si, getResources().getDisplayMetrics().densityDpi);
+        } catch (Exception ignored) {
+        }
+        if (d == null) {
+            String pkg = scParts(key)[0];
+            for (AppEntry a : allApps) {
+                if (a.component.getPackageName().equals(pkg)) {
+                    d = a.icon;
+                    break;
+                }
+            }
+        }
+        if (d == null) return null;
+        return IconFactory.make(d, size, prefs.getString("icons", IconFactory.AUTO), false, IconFactory.MODE_AUTO, th);
+    }
+
+    private void launchShortcut(String key, View v) {
+        try {
+            String[] p = scParts(key);
+            UserHandle u = userManager().getUserForSerialNumber(Long.parseLong(p[2]));
+            Rect r = null;
+            Bundle opts = null;
+            if (v != null && v.getWidth() > 0) {
+                r = new Rect();
+                v.getGlobalVisibleRect(r);
+                opts = ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+            }
+            launcherApps.startShortcut(p[0], p[1], r, opts, u);
+        } catch (Exception e) {
+            toast("Scorciatoia non disponibile");
+        }
+    }
+
+    /** Riaggiorna l'elenco delle scorciatoie fissate di un'app (dopo un'aggiunta o una rimozione). */
+    private void repinShortcuts(String pkg, long serial, String extraId) {
+        List<String> ids = new ArrayList<>();
+        for (Item o : items) {
+            if (!"shortcut".equals(o.type)) continue;
+            String[] p = scParts(o.data);
+            if (p[0].equals(pkg) && p[2].equals(String.valueOf(serial)) && !ids.contains(p[1])) ids.add(p[1]);
+        }
+        if (extraId != null && !ids.contains(extraId)) ids.add(extraId);
+        try {
+            launcherApps.pinShortcuts(pkg, ids, userManager().getUserForSerialNumber(serial));
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Scorciatoie arrivate da "Aggiungi alla schermata Home" mentre la home non era aperta. */
+    private void consumePendingShortcuts() {
+        Set<String> pend = prefs.getStringSet("pendingSc", null);
+        if (pend == null || pend.isEmpty()) return;
+        List<String> keys = new ArrayList<>(pend);
+        prefs.edit().remove("pendingSc").apply();
+        boolean added = false;
+        for (String k : keys) {
+            boolean exists = false;
+            for (Item o : items) if (k.equals(o.data)) exists = true;
+            if (exists) continue;
+            scCache.remove(k);
+            Item it = new Item("shortcut", 0, 0, 1, 1, 0, pager.getCurrent());
+            it.data = k;
+            int[] spot = findSpot(it, pager.getCurrent(), 0, 0, true);
+            it.page = spot[0];
+            it.col = spot[1];
+            it.row = spot[2];
+            items.add(it);
+            added = true;
+        }
+        if (added) {
+            saveLayout();
+            buildPages();
+        }
+    }
+
+    /** Azioni rapide dell'app (le stesse che mostrano gli altri launcher tenendo premuta l'icona). */
+    private List<ShortcutInfo> appShortcuts(AppEntry a) {
+        List<ShortcutInfo> out = new ArrayList<>();
+        try {
+            if (!launcherApps.hasShortcutHostPermission()) return out;
+            LauncherApps.ShortcutQuery q = new LauncherApps.ShortcutQuery()
+                    .setPackage(a.component.getPackageName())
+                    .setActivity(a.component)
+                    .setQueryFlags(LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC
+                            | LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST);
+            List<ShortcutInfo> l = launcherApps.getShortcuts(q, a.user);
+            if (l == null) return out;
+            List<ShortcutInfo> sorted = new ArrayList<>(l);
+            Collections.sort(sorted, (x, y) -> {
+                if (x.isDeclaredInManifest() != y.isDeclaredInManifest()) return x.isDeclaredInManifest() ? -1 : 1;
+                return Integer.compare(x.getRank(), y.getRank());
+            });
+            for (ShortcutInfo si : sorted) {
+                if (out.size() >= 4) break;
+                if (si.isEnabled()) out.add(si);
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private String shortcutLabel(ShortcutInfo si) {
+        CharSequence l = si.getShortLabel() != null ? si.getShortLabel() : si.getLongLabel();
+        return l == null ? "" : l.toString();
+    }
+
+    private Bitmap shortcutRowIcon(ShortcutInfo si) {
+        try {
+            Drawable d = launcherApps.getShortcutIconDrawable(si, getResources().getDisplayMetrics().densityDpi);
+            return d == null ? null : IconFactory.original(d, px(26));
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private void pinShortcutToHome(ShortcutInfo si) {
+        long serial = userManager().getSerialNumberForUser(si.getUserHandle());
+        String key = AddItemActivity.key(si.getPackage(), si.getId(), serial, shortcutLabel(si));
+        for (Item o : items) {
+            if (key.equals(o.data)) {
+                toast("È già sulla home");
+                return;
+            }
+        }
+        repinShortcuts(si.getPackage(), serial, si.getId());
+        scCache.remove(key);
+        Item it = new Item("shortcut", 0, 0, 1, 1, 0, pager.getCurrent());
+        it.data = key;
+        closeDrawer();
+        addItem(it, pager.getCurrent(), 0, 0);
+        toast("Scorciatoia aggiunta alla home");
+    }
+
+    /** Mostra il menu di un'app con le azioni rapide in cima. */
+    private void showMenuWithShortcuts(String title, AppEntry a, List<String> labels, List<Runnable> acts) {
+        List<ShortcutInfo> scs = a == null ? new ArrayList<>() : appShortcuts(a);
+        int n = scs.size();
+        String[] all = new String[n + labels.size()];
+        Bitmap[] icons = new Bitmap[all.length];
+        for (int i = 0; i < n; i++) {
+            all[i] = shortcutLabel(scs.get(i));
+            icons[i] = shortcutRowIcon(scs.get(i));
+        }
+        for (int i = 0; i < labels.size(); i++) all[n + i] = labels.get(i);
+        Sheet.list(this, th, title, all, icons, -1, w -> {
+            if (w < n) {
+                ShortcutInfo si = scs.get(w);
+                try {
+                    launcherApps.startShortcut(si.getPackage(), si.getId(), null, null, si.getUserHandle());
+                } catch (Exception e) {
+                    toast("Azione non disponibile");
+                }
+            } else {
+                acts.get(w - n).run();
+            }
+        }, w -> {
+            if (w < n) pinShortcutToHome(scs.get(w));
+        });
+        if (n > 0 && !prefs.getBoolean("scHint", false)) {
+            prefs.edit().putBoolean("scHint", true).apply();
+            toast("Tieni premuta un'azione per metterla sulla home");
+        }
+    }
+
+    // =====================================================================
+    // Aggiornamenti: controllo dell'ultima versione su GitHub
+    // =====================================================================
+
+    static final String UPDATE_URL = "https://github.com/Rex11107/dot-launcher/releases/latest/download/DotLauncher.apk";
+
+    @SuppressWarnings("deprecation")
+    private long versionCode() {
+        try {
+            PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private String versionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "?";
+        }
+    }
+
+    private void checkUpdate(boolean manual) {
+        long now = System.currentTimeMillis();
+        if (!manual && now - prefs.getLong("updCheck", 0) < 6 * 60 * 60 * 1000L) return;
+        prefs.edit().putLong("updCheck", now).apply();
+        if (manual) toast("Controllo gli aggiornamenti…");
+        netExec.execute(() -> {
+            try {
+                JSONObject j = new JSONObject(http("https://api.github.com/repos/Rex11107/dot-launcher/releases/latest"));
+                String tag = j.optString("tag_name", "");
+                long n = Long.parseLong(tag.substring(tag.lastIndexOf('.') + 1));
+                if (n > versionCode()) {
+                    if (!manual && tag.equals(prefs.getString("updSeen", ""))) return;
+                    prefs.edit().putString("updSeen", tag).apply();
+                    ui.post(() -> {
+                        if (isFinishing() || isDestroyed()) return;
+                        Sheet.confirm(this, th, "Aggiornamento",
+                                "È pronta la versione " + tag.replace("v", "") + " (hai la " + versionName()
+                                        + "). Si installa sopra quella attuale: home e impostazioni restano.",
+                                "Scarica", () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse(UPDATE_URL))));
+                    });
+                } else if (manual) {
+                    ui.post(() -> toast("Hai già l'ultima versione (" + versionName() + ")"));
+                }
+            } catch (Exception e) {
+                if (manual) ui.post(() -> toast("Impossibile controllare gli aggiornamenti"));
+            }
+        });
+    }
+
     // ---------- impostazioni ----------
 
     private void showSettings() {
@@ -1609,7 +2478,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 "Pacchetto di icone: " + packLabel(),
                 "App nascoste…",
                 "Esporta configurazione",
-                "Importa configurazione"
+                "Importa configurazione",
+                "Versione " + versionName() + " · cerca aggiornamenti"
         };
         Sheet.list(this, th, "Impostazioni", items, -1, w -> {
             switch (w) {
@@ -1636,6 +2506,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 case 8: manageHidden(); break;
                 case 9: exportBackup(); break;
                 case 10: importBackup(); break;
+                case 11: checkUpdate(true); break;
             }
         });
     }
