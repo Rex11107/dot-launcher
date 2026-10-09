@@ -917,8 +917,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (it.isApp()) {
             AppEntry a = appsByKey.get(it.data);
             if (a != null) {
-                labels.add(isRed(a.key) ? "Icona normale" : "Icona rossa");
-                acts.add(() -> toggleRed(a.key));
+                labels.add("Stile icona");
+                acts.add(() -> chooseIconMode(a));
                 labels.add("Info app");
                 acts.add(() -> appInfo(a));
             }
@@ -1281,11 +1281,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             final int size = px(54);
             final String style = prefs.getString("icons", IconFactory.AUTO);
             final Set<String> reds = new HashSet<>(prefs.getStringSet("redApps", new HashSet<>()));
+            final Set<String> origs = new HashSet<>(prefs.getStringSet("origApps", new HashSet<>()));
+            final Set<String> glyphs = new HashSet<>(prefs.getStringSet("glyphApps", new HashSet<>()));
             final IconPacks pack = IconPacks.load(this, prefs.getString("iconPack", ""));
             for (AppEntry a : list) {
                 if (a.icon == null) continue;
                 try {
-                    pre.put(a.key + "@" + size, makeIcon(a, size, style, reds.contains(a.key), pack));
+                    int mode = origs.contains(a.key) ? IconFactory.MODE_ORIGINAL
+                            : glyphs.contains(a.key) ? IconFactory.MODE_GLYPH : IconFactory.MODE_AUTO;
+                    pre.put(a.key + "@" + size, makeIcon(a, size, style, reds.contains(a.key), mode, pack));
                 } catch (Exception ignored) {
                 }
             }
@@ -1304,12 +1308,40 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
     }
 
-    private Bitmap makeIcon(AppEntry a, int size, String style, boolean red, IconPacks pack) {
-        if (pack != null && !red) {
+    private Bitmap makeIcon(AppEntry a, int size, String style, boolean red, int mode, IconPacks pack) {
+        if (pack != null && !red && mode == IconFactory.MODE_AUTO) {
             Drawable pd = pack.iconFor(a.component);
             if (pd != null) return IconFactory.fromPack(pd, size);
         }
-        return IconFactory.make(a.icon, size, style, red, th);
+        return IconFactory.make(a.icon, size, style, red, mode, th);
+    }
+
+    private int iconMode(String key) {
+        if (prefs.getStringSet("origApps", new HashSet<>()).contains(key)) return IconFactory.MODE_ORIGINAL;
+        if (prefs.getStringSet("glyphApps", new HashSet<>()).contains(key)) return IconFactory.MODE_GLYPH;
+        return IconFactory.MODE_AUTO;
+    }
+
+    /** Scelta per singola app: automatica, sempre originale, sempre Nothing, rossa. */
+    private void chooseIconMode(AppEntry a) {
+        String[] labels = {"Automatica", "Originale (non modificata)", "Nothing (forza il simbolo)", "Nothing rossa"};
+        int cur = isRed(a.key) ? 3 : iconMode(a.key);
+        Sheet.list(this, th, "Stile icona", labels, cur, w -> {
+            Set<String> o = new HashSet<>(prefs.getStringSet("origApps", new HashSet<>()));
+            Set<String> g = new HashSet<>(prefs.getStringSet("glyphApps", new HashSet<>()));
+            Set<String> r = new HashSet<>(prefs.getStringSet("redApps", new HashSet<>()));
+            o.remove(a.key);
+            g.remove(a.key);
+            r.remove(a.key);
+            if (w == 1) o.add(a.key);
+            else if (w == 2) g.add(a.key);
+            else if (w == 3) r.add(a.key);
+            prefs.edit().putStringSet("origApps", o).putStringSet("glyphApps", g).putStringSet("redApps", r).apply();
+            iconCache.clear();
+            adapter.notifyDataSetChanged();
+            buildDock();
+            refreshAppViews();
+        });
     }
 
     private void refreshAppViews() {
@@ -1341,7 +1373,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         AppEntry a = appsByKey.get(key);
         if (a == null || a.icon == null) return null;
         try {
-            b = makeIcon(a, size, prefs.getString("icons", IconFactory.AUTO), isRed(key), iconPack);
+            b = makeIcon(a, size, prefs.getString("icons", IconFactory.AUTO), isRed(key), iconMode(key), iconPack);
         } catch (Exception e) {
             return null;
         }
@@ -1477,8 +1509,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             saveDock(dk);
             buildDock();
         });
-        labels.add(isRed(a.key) ? "Icona normale" : "Icona rossa");
-        acts.add(() -> toggleRed(a.key));
+        labels.add("Stile icona");
+        acts.add(() -> chooseIconMode(a));
         if (fromDock == null) {
             labels.add("Aggiungi a una cartella");
             acts.add(() -> addToFolder(a));
