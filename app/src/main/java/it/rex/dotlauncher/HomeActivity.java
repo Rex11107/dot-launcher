@@ -1762,6 +1762,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     if (dragSourceView != null && dragSrc != SRC_DRAWER) dragSourceView.setVisibility(View.INVISIBLE);
                     dragShadow.setVisibility(View.VISIBLE);
                     showDropBar();
+                    // la home si rimpicciolisce verso il basso per fare spazio alla barra in alto
+                    pager.setPivotX(pager.getWidth() / 2f);
+                    pager.setPivotY(pager.getHeight());
+                    pager.animate().scaleX(0.88f).scaleY(0.88f).setDuration(180).start();
                 }
                 if (dragMoved) {
                     positionShadow();
@@ -1861,8 +1865,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         TileGrid g = grids.get(page);
         int[] gl = new int[2];
         g.getLocationOnScreen(gl);
-        float sx = lastRawX - touchOffX - gl[0], sy = lastRawY - touchOffY - gl[1];
-        float cx = sx + shadowW / 2f, cy = sy + shadowH / 2f;
+        // coordinate locali della griglia (che durante il trascinamento è rimpicciolita)
+        float sc = pager.getScaleX() > 0 ? pager.getScaleX() : 1f;
+        float sx = (lastRawX - touchOffX - gl[0]) / sc, sy = (lastRawY - touchOffY - gl[1]) / sc;
+        float cx = (lastRawX - touchOffX + shadowW / 2f - gl[0]) / sc;
+        float cy = (lastRawY - touchOffY + shadowH / 2f - gl[1]) / sc;
         int rows = g.getRows();
 
         if (dragKey != null && !dragKey.startsWith("sc:") && (dragItem == null || dragItem.isApp())) {
@@ -1940,6 +1947,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         TileGrid.anyDragging = false;
         clearTargets();
         dropBar.setVisibility(View.GONE);
+        pager.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
         if (dragShadow != null) root.removeView(dragShadow);
         dragShadow = null;
         if (dragSourceView != null) {
