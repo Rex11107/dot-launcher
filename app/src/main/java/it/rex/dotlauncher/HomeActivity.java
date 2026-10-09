@@ -946,7 +946,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     pages--;
                     saveLayout();
                     buildPages();
-                }));
+                });
     }
 
     private void pickNothingWidget(int page, int col, int row) {
