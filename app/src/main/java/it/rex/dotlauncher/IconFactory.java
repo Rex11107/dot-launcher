@@ -3,78 +3,106 @@ package it.rex.dotlauncher;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
-import android.graphics.ColorMatrix;
-import android.graphics.ColorMatrixColorFilter;
 import android.graphics.Paint;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffColorFilter;
 import android.graphics.drawable.AdaptiveIconDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 
-/** Crea le icone: monocromatiche (stile Nothing), in bianco e nero o a colori. */
+/**
+ * Icone in stile Nothing: glifo monocromatico su cerchio.
+ * Usa l'icona tematica dell'app quando esiste, altrimenti ricava un glifo dall'icona originale.
+ */
 final class IconFactory {
-    static final String MONO = "mono";
-    static final String GRAY = "gray";
-    static final String COLOR = "color";
+    static final String AUTO = "auto";        // cerchio come le tessere, glifo a contrasto
+    static final String INVERSE = "inverse";  // colori invertiti
+    static final String COLOR = "color";      // icone originali
 
-    static Bitmap make(Drawable d, String style, int size) {
+    static Bitmap make(Drawable d, int size, String style, boolean red, Theme th) {
         Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
-        Canvas c = new Canvas(out);
         if (d == null) return out;
+        Canvas c = new Canvas(out);
 
-        if (MONO.equals(style)) {
-            Paint bg = new Paint(Paint.ANTI_ALIAS_FLAG);
-            bg.setColor(0xFF1C1C1C);
-            c.drawCircle(size / 2f, size / 2f, size / 2f, bg);
-
-            Drawable mono = null;
-            if (Build.VERSION.SDK_INT >= 33 && d instanceof AdaptiveIconDrawable) {
-                mono = ((AdaptiveIconDrawable) d).getMonochrome();
-            }
-            if (mono != null) {
-                // Icona tematica ufficiale dell'app: il livello monocromatico è grande 1,5x
-                Drawable m = mono.mutate();
-                m.setTint(Color.WHITE);
-                int extra = size / 4;
-                m.setBounds(-extra, -extra, size + extra, size + extra);
-                m.draw(c);
-            } else {
-                // Nessuna icona tematica: icona originale in grigi, rimpicciolita nel cerchio
-                Bitmap src = render(d, size);
-                Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-                p.setColorFilter(grayFilter(1.15f));
-                int inset = Math.round(size * 0.18f);
-                c.drawBitmap(src, null,
-                        new android.graphics.Rect(inset, inset, size - inset, size - inset), p);
-            }
+        if (COLOR.equals(style) && !red) {
+            d.setBounds(0, 0, size, size);
+            d.draw(c);
             return out;
         }
 
-        Bitmap src = render(d, size);
+        int bg, fg;
+        if (red) {
+            bg = th.accent;
+            fg = 0xFFFFFFFF;
+        } else if (INVERSE.equals(style)) {
+            bg = th.tileAlt;
+            fg = th.onTileAlt;
+        } else {
+            bg = th.tile;
+            fg = th.onTile;
+            if (th.nuovo) fg = Theme.blend(fg, th.accent, 0.3f);
+        }
+
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-        if (GRAY.equals(style)) p.setColorFilter(grayFilter(1.1f));
-        c.drawBitmap(src, 0, 0, p);
+        p.setColor(bg);
+        c.drawCircle(size / 2f, size / 2f, size / 2f, p);
+        if (th.stroke != 0 && !red && !INVERSE.equals(style)) {
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(Math.max(1f, size / 60f));
+            p.setColor(th.stroke);
+            c.drawCircle(size / 2f, size / 2f, size / 2f - p.getStrokeWidth(), p);
+            p.setStyle(Paint.Style.FILL);
+        }
+
+        Bitmap mask = glyph(d, size);
+        p.setColorFilter(new PorterDuffColorFilter(fg, PorterDuff.Mode.SRC_IN));
+        c.drawBitmap(mask, 0, 0, p);
         return out;
     }
 
-    private static Bitmap render(Drawable d, int size) {
+    /** Restituisce una bitmap in cui conta solo l'alfa: la forma del glifo. */
+    private static Bitmap glyph(Drawable d, int size) {
         Bitmap b = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         Canvas c = new Canvas(b);
-        d.setBounds(0, 0, size, size);
+        int extra = size / 4;
+        if (d instanceof AdaptiveIconDrawable) {
+            AdaptiveIconDrawable a = (AdaptiveIconDrawable) d;
+            if (Build.VERSION.SDK_INT >= 33 && a.getMonochrome() != null) {
+                Drawable m = a.getMonochrome().mutate();
+                m.setBounds(-extra, -extra, size + extra, size + extra);
+                m.draw(c);
+                return b;
+            }
+            Drawable f = a.getForeground();
+            if (f != null) {
+                f.setBounds(-extra, -extra, size + extra, size + extra);
+                f.draw(c);
+                toMask(b, false);
+                return b;
+            }
+        }
+        int in = Math.round(size * 0.2f);
+        d.setBounds(in, in, size - in, size - in);
         d.draw(c);
+        toMask(b, true);
         return b;
     }
 
-    private static ColorMatrixColorFilter grayFilter(float contrast) {
-        ColorMatrix m = new ColorMatrix();
-        m.setSaturation(0f);
-        float t = (1f - contrast) * 128f;
-        ColorMatrix k = new ColorMatrix(new float[]{
-                contrast, 0, 0, 0, t,
-                0, contrast, 0, 0, t,
-                0, 0, contrast, 0, t,
-                0, 0, 0, 1, 0});
-        m.postConcat(k);
-        return new ColorMatrixColorFilter(m);
+    /** Converte i colori in trasparenza: le parti scure restano piene, quelle chiare si attenuano. */
+    private static void toMask(Bitmap b, boolean legacy) {
+        int w = b.getWidth(), h = b.getHeight();
+        int[] px = new int[w * h];
+        b.getPixels(px, 0, w, 0, 0, w, h);
+        for (int i = 0; i < px.length; i++) {
+            int a = px[i] >>> 24;
+            if (a == 0) continue;
+            float lum = (0.299f * Color.red(px[i]) + 0.587f * Color.green(px[i]) + 0.114f * Color.blue(px[i])) / 255f;
+            float m = legacy ? (1f - lum) * 1.5f : 1f - 0.55f * lum;
+            if (m < 0f) m = 0f;
+            if (m > 1f) m = 1f;
+            px[i] = ((int) (a * m)) << 24;
+        }
+        b.setPixels(px, 0, w, 0, 0, w, h);
     }
 
     private IconFactory() {}

@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+    <uses-permission android:name="android.permission.SET_WALLPAPER" />
 
     <queries>
         <intent>
@@ -40,5 +41,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".WallpaperActivity"
+            android:exported="false"
+            android:label="Sfondi"
+            android:screenOrientation="nosensor" />
     </application>
 </manifest>
