@@ -349,7 +349,7 @@ class NothingTile extends View {
         String t = pc + "%";
         int fillText = item.tone == 2 ? th.accent : 0xFFFFFFFF;
         float free = trackW - fillW - r * 1.2f;
-        if (pc >= 55 || free < H * 0.9f) {
+        if (pc >= 55 || free < H * 0.55f) {
             // testo dentro il riempimento, in bianco
             float maxW = fillW - r * (State.charging ? 2.6f : 1.4f);
             Draw.big(cv, th, t, in + fillW - r * 0.7f, H / 2f, H * 0.3f, maxW, fillText, "", acc(), 1, p, false);

@@ -57,17 +57,23 @@ final class IconFactory {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         p.setColor(bg);
         c.drawCircle(size / 2f, size / 2f, size / 2f, p);
-        if (th.stroke != 0 && !red && !INVERSE.equals(style)) {
+        int ring = th.iconStroke;
+        if (ring != 0 && !red && !INVERSE.equals(style)) {
             p.setStyle(Paint.Style.STROKE);
-            p.setStrokeWidth(Math.max(1f, size / 70f));
-            p.setColor(th.stroke);
+            p.setStrokeWidth(Math.max(1f, size / 60f));
+            p.setColor(ring);
             c.drawCircle(size / 2f, size / 2f, size / 2f - p.getStrokeWidth() / 2f, p);
             p.setStyle(Paint.Style.FILL);
         }
+        p.setColor(0xFFFFFFFF); // il simbolo va disegnato pieno, non con la trasparenza del bordo
 
         Bitmap mask = glyph(d, size * 2); // lavoro a risoluzione doppia per bordi puliti
         Rect box = bounds(mask);
-        if (box == null) return out;
+        if (box == null || isBlob(mask, box)) {
+            // nessun simbolo riconoscibile (es. immagine di un gioco): icona originale a colori nel cerchio
+            drawOriginal(c, d, size, p);
+            return out;
+        }
         float target = size * GLYPH;
         float scale = target / Math.max(box.width(), box.height());
         float w = box.width() * scale, h = box.height() * scale;
@@ -75,6 +81,34 @@ final class IconFactory {
         p.setColorFilter(new PorterDuffColorFilter(fg, PorterDuff.Mode.SRC_IN));
         c.drawBitmap(mask, box, dst, p);
         return out;
+    }
+
+    /** La sagoma riempie quasi tutto il suo rettangolo: non è un simbolo ma una macchia piena. */
+    private static boolean isBlob(Bitmap mask, Rect box) {
+        int w = mask.getWidth();
+        int[] px = new int[box.width() * box.height()];
+        mask.getPixels(px, 0, box.width(), box.left, box.top, box.width(), box.height());
+        int full = 0;
+        for (int c : px) if ((c >>> 24) > 128) full++;
+        float fill = full / (float) px.length;
+        float aspect = box.width() / (float) box.height();
+        return fill > 0.80f && aspect > 0.7f && aspect < 1.4f;
+    }
+
+    /** Icona originale, ritagliata a cerchio e un po' rimpicciolita dentro il cerchio di sfondo. */
+    private static void drawOriginal(Canvas c, Drawable d, int size, Paint p) {
+        Bitmap src = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas sc = new Canvas(src);
+        d.setBounds(0, 0, size, size);
+        d.draw(sc);
+        float in = size * 0.14f;
+        android.graphics.Path clip = new android.graphics.Path();
+        clip.addCircle(size / 2f, size / 2f, size / 2f - in, android.graphics.Path.Direction.CW);
+        c.save();
+        c.clipPath(clip);
+        p.setColorFilter(null);
+        c.drawBitmap(src, null, new RectF(in, in, size - in, size - in), p);
+        c.restore();
     }
 
     /** Bitmap in cui conta solo l'alfa: la forma del simbolo. */

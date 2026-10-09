@@ -21,7 +21,7 @@ final class Theme {
     final boolean dots;          // numeri e titoli a puntini (Classico)
     final boolean upperLabels;   // etichette maiuscole (Classico)
     final int bg, tile, tileAlt, onTile, onTileAlt, sub, accent, stroke, drawerBg, scrim;
-    final int iconBg, iconFg, iconBgAlt, iconFgAlt, sheetBg;
+    final int iconBg, iconFg, iconBgAlt, iconFgAlt, iconStroke, sheetBg;
     final Typeface numFace, labelFace, bodyFace, titleFace;
 
     private Theme(Context c, SharedPreferences p) {
@@ -76,6 +76,8 @@ final class Theme {
             labelFace = Fonts.medium;
             titleFace = Fonts.medium;
         }
+        // bordo leggero dei cerchi: indispensabile nei temi chiari (cerchio bianco su fondo chiaro)
+        iconStroke = light ? 0x2E000000 : (nuovo ? 0x26FFFFFF : 0);
         iconBgAlt = 0xFF000000 | tileAlt;
         iconFgAlt = onTileAlt;
         bodyFace = Fonts.regular;
