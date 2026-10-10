@@ -34,14 +34,19 @@ class WidgetHost extends AppWidgetHost {
             slop = ViewConfiguration.get(c).getScaledTouchSlop();
         }
 
+        /**
+         * Il conteggio della pressione prolungata sta qui e non in onInterceptTouchEvent: se nessun figlio
+         * del widget prende il tocco, quel metodo non riceve più MOVE/UP e il timer partirebbe a dito alzato.
+         */
         @Override
-        public boolean onInterceptTouchEvent(MotionEvent ev) {
+        public boolean dispatchTouchEvent(MotionEvent ev) {
             switch (ev.getActionMasked()) {
                 case MotionEvent.ACTION_DOWN:
                     fired = false;
                     isPressedDown = true;
                     downX = ev.getX();
                     downY = ev.getY();
+                    removeCallbacks(check);
                     postDelayed(check, ViewConfiguration.getLongPressTimeout());
                     break;
                 case MotionEvent.ACTION_MOVE:
@@ -50,12 +55,18 @@ class WidgetHost extends AppWidgetHost {
                         removeCallbacks(check);
                     }
                     break;
+                case MotionEvent.ACTION_POINTER_DOWN:
                 case MotionEvent.ACTION_UP:
                 case MotionEvent.ACTION_CANCEL:
                     isPressedDown = false;
                     removeCallbacks(check);
                     break;
             }
+            return super.dispatchTouchEvent(ev);
+        }
+
+        @Override
+        public boolean onInterceptTouchEvent(MotionEvent ev) {
             return fired;
         }
 
@@ -72,6 +83,13 @@ class WidgetHost extends AppWidgetHost {
         @Override
         public void cancelLongPress() {
             super.cancelLongPress();
+            isPressedDown = false;
+            removeCallbacks(check);
+        }
+
+        @Override
+        protected void onDetachedFromWindow() {
+            super.onDetachedFromWindow();
             isPressedDown = false;
             removeCallbacks(check);
         }

@@ -21,6 +21,8 @@ class AppTile extends View {
     private final boolean labels;
     private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final RectF rf = new RectF();
+    private String cacheLabel, cacheShort = "";
+    private float cacheW;
 
     AppTile(Context c, Item item, Source src, Theme th, boolean labels) {
         super(c);
@@ -53,7 +55,14 @@ class AppTile extends View {
             p.setTextSize(m * 0.13f);
             p.setColor(th.wall ? 0xFFFFFFFF : th.onTile);
             if (th.wall) p.setShadowLayer(m * 0.03f, 0, 0, 0x99000000);
-            String s = TextUtils.ellipsize(l, new android.text.TextPaint(p), W * 0.95f, TextUtils.TruncateAt.END).toString();
+            // il nome accorciato si calcola una volta sola per nome e larghezza
+            if (!l.equals(cacheLabel) || W != cacheW) {
+                cacheLabel = l;
+                cacheW = W;
+                cacheShort = TextUtils.ellipsize(l, new android.text.TextPaint(p), W * 0.95f,
+                        TextUtils.TruncateAt.END).toString();
+            }
+            String s = cacheShort;
             p.setTextAlign(Paint.Align.CENTER);
             cv.drawText(s, cx, H * 0.93f, p);
             p.setTextAlign(Paint.Align.LEFT);

@@ -159,6 +159,14 @@ class AppSections extends LinearLayout {
     void rebuild() {
         if (model == null) return;
         int keep = current;
+        // si ricorda quanto ogni pagina era scorsa (dal fondo) per non farla saltare
+        final int[] fromBottom = new int[scrolls.size()];
+        for (int i = 0; i < scrolls.size(); i++) {
+            ScrollView sv = scrolls.get(i);
+            View ch = sv.getChildAt(0);
+            fromBottom[i] = ch == null ? 0 : Math.max(0, ch.getHeight() - sv.getHeight() - sv.getScrollY());
+        }
+        final boolean visible = isShown() && getWidth() > 0;
         pager.removeAllViews();
         cells.clear();
         scrolls.clear();
@@ -186,7 +194,19 @@ class AppSections extends LinearLayout {
         pager.post(() -> {
             pager.setPageNow(current);
             updateTabs();
+            for (int i = 0; i < Math.min(fromBottom.length, scrolls.size()); i++) {
+                final ScrollView sv = scrolls.get(i);
+                final int off = fromBottom[i];
+                if (off > 0) sv.post(() -> {
+                    View ch = sv.getChildAt(0);
+                    if (ch != null) sv.scrollTo(0, Math.max(0, ch.getHeight() - sv.getHeight() - off));
+                });
+            }
         });
+        if (visible) {
+            pager.setAlpha(0.55f);
+            pager.animate().alpha(1f).setDuration(160).start();
+        }
     }
 
     private void addPage(String title, List<Sections.Entry> entries, Sections.Section sec, Runnable menu) {
@@ -391,7 +411,17 @@ class AppSections extends LinearLayout {
             String[] pat = i < sectionCount() ? SectionIcons.get(model.list.get(i).icon) : SectionIcons.GRID;
             Tab t = new Tab(getContext(), pat);
             final int page = i;
-            t.setOnClickListener(v -> pager.snapTo(page));
+            t.setOnClickListener(v -> {
+                if (Math.abs(page - current) > 1) {
+                    // salto lungo: dissolvenza invece di far scorrere tutte le pagine in mezzo
+                    pager.animate().cancel();
+                    pager.setAlpha(0f);
+                    current = page;
+                    pager.setPageNow(page);
+                    updateTabs();
+                    pager.animate().alpha(1f).setDuration(160).start();
+                } else pager.snapTo(page);
+            });
             t.setContentDescription(i < sectionCount() ? model.list.get(i).name : "Tutte le app");
             bar.addView(t, new LayoutParams(w, px(60)));
         }

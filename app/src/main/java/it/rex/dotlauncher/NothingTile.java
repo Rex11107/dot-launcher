@@ -65,6 +65,9 @@ class NothingTile extends View {
         return out;
     }
 
+    private boolean chargeAnim;
+    private final Rect visRect = new Rect();
+
     private boolean isBattery() {
         return item.type.startsWith("battery");
     }
@@ -92,17 +95,17 @@ class NothingTile extends View {
     }
 
     private int fg() {
-        return item.tone == 1 ? th.onTileAlt : item.tone == 2 ? 0xFFFFFFFF : th.onTile;
+        return item.tone == 1 ? th.onTileAlt : item.tone == 2 ? th.onAccent : th.onTile;
     }
 
     private int sub() {
-        if (item.tone == 2) return 0xCCFFFFFF;
+        if (item.tone == 2) return Theme.alpha(th.onAccent, 0.8f);
         if (item.tone == 1) return Theme.alpha(th.onTileAlt, 0.6f);
         return th.sub;
     }
 
     private int acc() {
-        return item.tone == 2 ? 0xFFFFFFFF : th.accent;
+        return item.tone == 2 ? th.onAccent : th.accent;
     }
 
     private boolean isCircle() {
@@ -114,6 +117,7 @@ class NothingTile extends View {
         float W = getWidth(), H = getHeight();
         if (W <= 0 || H <= 0) return;
         animating = false;
+        chargeAnim = false;
         drawShape(cv, W, H);
         switch (item.type) {
             case "clock_dots": clockDots(cv, W, H); break;
@@ -149,7 +153,8 @@ class NothingTile extends View {
             case "torch": torch(cv, W, H); break;
         }
         if (animating) postInvalidateOnAnimation();
-        else if (Draw.anim && State.charging && isBattery() && getWindowVisibility() == VISIBLE && isShown())
+        // l'animazione di ricarica continua solo se si vede davvero (pagina corrente, home non coperta)
+        else if (chargeAnim && getWindowVisibility() == VISIBLE && isShown() && getGlobalVisibleRect(visRect))
             postInvalidateDelayed(50);
     }
 
@@ -340,7 +345,7 @@ class NothingTile extends View {
             if (dd == today) {
                 p.setColor(acc());
                 cv.drawCircle(x, y, Math.min(cw, ch) * 0.44f, p);
-                p.setColor(item.tone == 2 ? th.accent : 0xFFFFFFFF);
+                p.setColor(item.tone == 2 ? th.accent : th.onAccent);
             } else {
                 p.setColor(dd < today ? sub() : fg());
             }
@@ -418,12 +423,13 @@ class NothingTile extends View {
         rf.set(cx - R, cy - R, cx + R, cy + R);
         cv.drawArc(rf, -90, 360f * pct() / 100f, false, p);
         p.setStyle(Paint.Style.FILL);
-        if (State.charging && Draw.anim) {
+        if (State.charging && Draw.anim && pct() < 100) {
+            chargeAnim = true;
             // una scia di punti che gira sull'anello
             float ph = phase(1600);
             for (int k = 0; k < 4; k++) {
                 double a = Math.PI * 2 * (ph - k * 0.035f) - Math.PI / 2;
-                p.setColor(Theme.alpha(item.tone == 2 ? th.accent : 0xFFFFFFFF, 0.9f - k * 0.22f));
+                p.setColor(Theme.alpha(item.tone == 2 ? th.accent : th.light ? th.onTile : 0xFFFFFFFF, 0.9f - k * 0.22f));
                 cv.drawCircle(cx + (float) Math.cos(a) * R, cy + (float) Math.sin(a) * R, sw * (0.3f - k * 0.05f), p);
             }
         }
@@ -451,10 +457,11 @@ class NothingTile extends View {
         rf.set(in, in, in + fillW, H - in);
         cv.drawRoundRect(rf, r, r, p);
         String t = pc + "%";
-        int fillText = item.tone == 2 ? th.accent : 0xFFFFFFFF;
+        int fillText = item.tone == 2 ? th.accent : th.onAccent;
         float free = trackW - fillW - r * 1.2f;
         boolean inside = pc >= 55 || free < H * 0.55f;
         if (State.charging && Draw.anim && pc < 100) {
+            chargeAnim = true;
             // puntini che scorrono nella parte vuota, verso destra
             float startX = in + fillW + r * 0.6f;
             float textW = Math.min(free, Draw.cols(DotTextView.normalize(t)) * H * 0.3f / 7f * 1.15f);
@@ -499,7 +506,8 @@ class NothingTile extends View {
                 boolean on = idx <= filled;
                 float rad = pitch * 0.42f;
                 int color = on ? (idx == filled ? acc() : fg()) : Theme.alpha(fg(), 0.15f);
-                if (State.charging && Draw.anim && idx > filled && idx <= filled + 3) {
+                if (State.charging && Draw.anim && pct() < 100 && idx > filled && idx <= filled + 3) {
+                    chargeAnim = true;
                     // i prossimi punti si accendono a turno
                     float ph = phase(1500) * 3f - (idx - filled - 1);
                     float a = ph > 0 && ph < 1 ? (float) Math.sin(Math.PI * ph) : 0f;
@@ -978,7 +986,7 @@ class NothingTile extends View {
         Draw.label(cv, th, title.isEmpty() ? "Contatore" : title, W - pad, H * 0.44f, H * 0.13f, sub(), 1, p, W * 0.4f);
         p.setColor(acc());
         cv.drawCircle(W - pad - H * 0.08f, H * 0.66f, H * 0.08f, p);
-        p.setColor(item.tone == 2 ? th.accent : 0xFFFFFFFF);
+        p.setColor(item.tone == 2 ? th.accent : th.onAccent);
         p.setStrokeWidth(H * 0.025f);
         float px = W - pad - H * 0.08f, py = H * 0.66f, l = H * 0.04f;
         cv.drawLine(px - l, py, px + l, py, p);
@@ -1082,7 +1090,7 @@ class NothingTile extends View {
             }
             String num = String.valueOf(d.get(Calendar.DAY_OF_MONTH));
             Draw.big(cv, th, num, x, H * 0.64f, H * 0.2f, cw * 0.7f,
-                    today ? (item.tone == 2 ? th.accent : 0xFFFFFFFF) : (i < dow ? sub() : fg()), "", acc(), 0, p, true);
+                    today ? (item.tone == 2 ? th.accent : th.onAccent) : (i < dow ? sub() : fg()), "", acc(), 0, p, true);
             d.add(Calendar.DAY_OF_MONTH, 1);
         }
     }

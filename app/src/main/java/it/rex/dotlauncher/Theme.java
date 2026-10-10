@@ -23,6 +23,8 @@ final class Theme {
     final boolean upperLabels;   // etichette maiuscole (Classico)
     final int bg, tile, tileAlt, onTile, onTileAlt, sub, accent, stroke, drawerBg, scrim;
     final int iconBg, iconFg, iconBgAlt, iconFgAlt, iconStroke, sheetBg;
+    /** Colore leggibile sopra l'accento (bianco, o quasi nero se l'accento è molto chiaro). */
+    final int onAccent;
     final Typeface numFace, labelFace, bodyFace, titleFace;
 
     private Theme(Context c, SharedPreferences p) {
@@ -79,7 +81,7 @@ final class Theme {
                 stroke = 0x1A000000; drawerBg = 0xF5F2F2F2; scrim = 0x14FFFFFF; sheetBg = 0xFFF7F7F7;
                 iconBg = 0xF7FFFFFF;
             }
-            accent = wall ? wallpaperAccent(c) : RED;
+            accent = wall ? readable(wallpaperAccent(c), light) : RED;
             iconFg = blend(onTile, accent, 0.15f);
             numFace = Fonts.thin;
             labelFace = Fonts.medium;
@@ -92,6 +94,16 @@ final class Theme {
         bodyFace = Fonts.regular;
         // le icone della barra di stato seguono il tema; una sfumatura dietro le barre garantisce il contrasto
         darkIcons = light;
+        onAccent = Color.luminance(accent) > 0.45f ? 0xFF111111 : 0xFFFFFFFF;
+    }
+
+    /** Nel tema chiaro un accento troppo luminoso (giallo, azzurro) non si legge: lo si scurisce. */
+    private static int readable(int col, boolean light) {
+        if (!light) return col;
+        float[] hsv = new float[3];
+        Color.colorToHSV(col, hsv);
+        hsv[2] = Math.min(hsv[2], 0.72f);
+        return Color.HSVToColor(hsv);
     }
 
     /** Raggio degli angoli delle tessere rettangolari: uniforme, circa 30dp. */

@@ -209,6 +209,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     protected void onCreate(Bundle saved) {
         super.onCreate(saved);
         dp = getResources().getDisplayMetrics().density;
+        Configuration cfg = getResources().getConfiguration();
+        cfgDpi = cfg.densityDpi;
+        cfgFont = cfg.fontScale;
+        cfgWidth = cfg.screenWidthDp;
         prefs = getSharedPreferences("dot", MODE_PRIVATE);
         migrateFromV1();
         TileGrid.COLS = prefs.getInt("cols", 4) == 5 ? 5 : 4;
@@ -243,6 +247,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
+            public boolean onDown(MotionEvent e) {
+                // la lista del cassetto era già in cima quando il dito è sceso?
+                drawerTopOnDown = drawerOpen && !(searchMode ? grid.canScrollVertically(-1) : secView.canScrollUp());
+                return true;
+            }
+
+            @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
                 if (e1 == null || TileGrid.anyDragging) return false;
                 // la striscia in basso appartiene alla gesture "home" del sistema
@@ -252,10 +263,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 if (Math.abs(dy) < Math.abs(dx) * 1.3f) return false;
                 float min = 70 * dp;
                 if (!drawerOpen) {
-                    if (dy < -min) openDrawer(false);
-                    else if (dy > min) expandNotifications();
-                } else if (dy > min && !(searchMode ? grid.canScrollVertically(-1) : secView.canScrollUp())) {
+                    // un widget con una lista che scorre si tiene il suo gesto
+                    if (scrollableWidgetAt(e1.getRawX(), e1.getRawY(), dy)) return false;
+                    if (dy < -min) {
+                        openDrawer(false);
+                        flingTook = true;
+                    } else if (dy > min) {
+                        expandNotifications();
+                        flingTook = true;
+                    }
+                } else if (dy > min && drawerTopOnDown
+                        && !(searchMode ? grid.canScrollVertically(-1) : secView.canScrollUp())) {
                     closeDrawer();
+                    flingTook = true;
                 }
                 return false;
             }
@@ -363,15 +383,23 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onConfigurationChanged(Configuration c) {
         super.onConfigurationChanged(c);
-        if ("auto".equals(prefs.getString("mode", "dark"))) recreate();
+        // dimensioni dello schermo, densità o grandezza del testo cambiate: tutte le misure vanno ricalcolate
+        boolean sizes = c.densityDpi != cfgDpi || c.fontScale != cfgFont || c.screenWidthDp != cfgWidth;
+        if (sizes || "auto".equals(prefs.getString("mode", "dark"))) recreate();
     }
+
+    private int cfgDpi, cfgWidth;
+    private float cfgFont;
 
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         // Solo se eravamo già sulla home (Home premuto di nuovo): chiudi il cassetto o torna alla prima pagina.
         // Se invece si sta tornando da un'app, la home resta com'era, senza animazioni.
-        boolean alreadyHome = hasWindowFocus();
+        // con un pannello (menù) aperto la finestra non ha il focus, ma siamo comunque sulla home
+        boolean alreadyHome = hasWindowFocus() | Sheet.dismissOpen();
+        if (dragSrc >= 0) finishDrag(false);
+        exitResize();
         if (settingsOpen) closeSettings();
         if (panelOpen) {
             if (alreadyHome) closePanel();
@@ -397,14 +425,70 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        lastRawX = ev.getRawX();
-        lastRawY = ev.getRawY();
+        int action = ev.getActionMasked();
+        if (action == MotionEvent.ACTION_DOWN) {
+            fingerDown = true;
+            flingTook = false;
+            // il riconoscitore dei gesti segue solo i tocchi iniziati senza pannelli aperti sopra la home
+            gestureArmed = resizer == null && !panelOpen && !settingsOpen;
+        } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+            fingerDown = false;
+        }
         if (dragSrc >= 0) {
+            // con due dita si segue solo la prima
+            if (action == MotionEvent.ACTION_POINTER_DOWN || action == MotionEvent.ACTION_POINTER_UP) return true;
+            lastRawX = ev.getRawX();
+            lastRawY = ev.getRawY();
             onDragEvent(ev);
             return true;
         }
-        if (gestures != null && resizer == null && !panelOpen && !settingsOpen) gestures.onTouchEvent(ev);
+        lastRawX = ev.getRawX();
+        lastRawY = ev.getRawY();
+        if (gestureArmed && (resizer != null || panelOpen || settingsOpen)) {
+            // si è aperto qualcosa a metà gesto: il riconoscitore riparte da zero
+            MotionEvent c = MotionEvent.obtain(ev);
+            c.setAction(MotionEvent.ACTION_CANCEL);
+            if (gestures != null) gestures.onTouchEvent(c);
+            c.recycle();
+            gestureArmed = false;
+        }
+        if (gestures != null && gestureArmed) gestures.onTouchEvent(ev);
+        if (flingTook && action == MotionEvent.ACTION_UP) {
+            // il gesto ha già aperto il cassetto o le notifiche: la tessera sotto il dito non deve anche aprirsi
+            MotionEvent c = MotionEvent.obtain(ev);
+            c.setAction(MotionEvent.ACTION_CANCEL);
+            boolean r = super.dispatchTouchEvent(c);
+            c.recycle();
+            return r;
+        }
         return super.dispatchTouchEvent(ev);
+    }
+
+    private boolean fingerDown, flingTook, gestureArmed, drawerTopOnDown;
+
+    /** C'è un widget di sistema sotto il dito che può ancora scorrere in quella direzione? */
+    private boolean scrollableWidgetAt(float rx, float ry, float dy) {
+        int page = pager.getCurrent();
+        if (page >= grids.size()) return false;
+        TileGrid g = grids.get(page);
+        for (int i = 0; i < g.getChildCount(); i++) {
+            View v = g.getChildAt(i);
+            if (!(v instanceof AppWidgetHostView)) continue;
+            int[] l = new int[2];
+            v.getLocationOnScreen(l);
+            if (rx < l[0] || rx > l[0] + v.getWidth() || ry < l[1] || ry > l[1] + v.getHeight()) continue;
+            return canScrollDeep(v, dy > 0 ? -1 : 1);
+        }
+        return false;
+    }
+
+    private static boolean canScrollDeep(View v, int dir) {
+        if (v.canScrollVertically(dir)) return true;
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) if (canScrollDeep(g.getChildAt(i), dir)) return true;
+        }
+        return false;
     }
 
     // ---------- interfaccia ----------
@@ -427,6 +511,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         pager = new Pager(this);
         pager.setListener(p -> {
             indicator.setCurrent(p);
+            ui.postDelayed(() -> refreshTiles("battery"), 450);
             // il vetro smerigliato dipende dalla posizione sullo schermo: si ridisegna a pagina ferma
             if (th.glass) ui.postDelayed(() -> refreshTiles(null), 450);
         });
@@ -605,6 +690,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (sections != null && sections.sync(allApps)) sections.save();
         drawerDirty = true;
         if (drawerOpen) rebuildDrawer();
+        else ui.post(() -> {
+            // pronto prima dell'apertura: niente scatti al primo fotogramma
+            if (drawerDirty && !drawerOpen) rebuildDrawer();
+        });
     }
 
     private void rebuildDrawer() {
@@ -625,6 +714,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         secView.setVisibility(View.GONE);
         searchRow.setVisibility(View.VISIBLE);
         grid.setVisibility(View.VISIBLE);
+        searchRow.setAlpha(0f);
+        grid.setAlpha(0f);
+        searchRow.animate().alpha(1f).setDuration(140).start();
+        grid.animate().alpha(1f).setDuration(180).start();
         search.setText("");
         adapter.setQuery("");
         grid.setSelection(0);
@@ -640,9 +733,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
         search.clearFocus();
+        boolean was = searchRow.getVisibility() == View.VISIBLE;
         searchRow.setVisibility(View.GONE);
         grid.setVisibility(View.GONE);
         secView.setVisibility(View.VISIBLE);
+        if (was && drawerOpen) {
+            secView.setAlpha(0f);
+            secView.animate().alpha(1f).setDuration(160).start();
+        } else secView.setAlpha(1f);
     }
 
     @Override
@@ -909,9 +1007,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void openPanel() {
         if (panel == null || panelOpen || drawerOpen) return;
         panelOpen = true;
-        panel.setVisibility(View.VISIBLE);
-        panel.setTranslationX(-Math.max(1, root.getWidth()));
-        panel.animate().translationX(0).setDuration(220).start();
+        panel.animate().cancel();
+        if (panel.getVisibility() != View.VISIBLE) {
+            panel.setTranslationX(-Math.max(1, root.getWidth()));
+            panel.setVisibility(View.VISIBLE);
+        }
+        panel.animate().translationX(0).setDuration(260).setInterpolator(EASE_OUT).start();
+        recedeHome(0.97f, root.getWidth() * 0.18f);
         panel.onShown();
     }
 
@@ -920,10 +1022,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         panelOpen = false;
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(panel.getWindowToken(), 0);
-        panel.animate().translationX(-Math.max(1, root.getWidth())).setDuration(180)
+        panel.animate().cancel();
+        panel.animate().translationX(-Math.max(1, root.getWidth())).setDuration(200).setInterpolator(EASE_IN)
                 .withEndAction(() -> {
                     if (!panelOpen) panel.setVisibility(View.GONE);
                 }).start();
+        if (!drawerOpen && !settingsOpen) restoreHome(true);
     }
 
     private void hidePanelNow() {
@@ -934,6 +1038,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (imm != null) imm.hideSoftInputFromWindow(panel.getWindowToken(), 0);
         panel.setVisibility(View.GONE);
         panel.setTranslationX(0);
+        if (!drawerOpen && !settingsOpen) restoreHome(false);
     }
 
     private void openDrawer(boolean keyboard) {
@@ -942,11 +1047,47 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (drawerDirty) rebuildDrawer();
         if (keyboard) enterSearch();
         else exitSearch();
-        drawer.setAlpha(0f);
-        drawer.setTranslationY(px(60));
-        drawer.setVisibility(View.VISIBLE);
-        drawer.animate().alpha(1f).translationY(0).setDuration(180).start();
+        drawer.animate().cancel();
+        if (drawer.getVisibility() != View.VISIBLE) {
+            drawer.setAlpha(0f);
+            drawer.setTranslationY(px(60));
+            drawer.setVisibility(View.VISIBLE);
+        }
+        drawer.animate().alpha(1f).translationY(0).setDuration(220).setInterpolator(EASE_OUT).start();
+        recedeHome(0.94f, 0);
         playWave();
+    }
+
+    // ---------- la home arretra dietro cassetto, pagina a sinistra e impostazioni ----------
+
+    static final android.view.animation.Interpolator EASE_OUT =
+            new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f);
+    static final android.view.animation.Interpolator EASE_IN =
+            new android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f);
+
+    private void recedeHome(float scale, float dx) {
+        homeBox.animate().cancel();
+        homeBox.setVisibility(View.VISIBLE);
+        homeBox.animate().alpha(0.4f).scaleX(scale).scaleY(scale).translationX(dx).setDuration(240)
+                .setInterpolator(EASE_OUT).withEndAction(() -> {
+                    // coperta del tutto: smette di disegnare (anche le animazioni dei widget)
+                    if (drawerOpen || panelOpen || settingsOpen) homeBox.setVisibility(View.INVISIBLE);
+                }).start();
+    }
+
+    private void restoreHome(boolean animated) {
+        homeBox.animate().cancel();
+        homeBox.setVisibility(View.VISIBLE);
+        if (animated) {
+            homeBox.animate().alpha(1f).scaleX(1f).scaleY(1f).translationX(0).setDuration(200)
+                    .setInterpolator(EASE_OUT).start();
+        } else {
+            homeBox.setAlpha(1f);
+            homeBox.setScaleX(1f);
+            homeBox.setScaleY(1f);
+            homeBox.setTranslationX(0);
+        }
+        refreshTiles(null);
     }
 
     private void closeDrawer() {
@@ -955,11 +1096,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
         search.clearFocus();
-        drawer.animate().alpha(0f).translationY(px(60)).setDuration(150)
+        drawer.animate().cancel();
+        drawer.animate().alpha(0f).translationY(px(60)).setDuration(170).setInterpolator(EASE_IN)
                 .withEndAction(() -> {
+                    if (drawerOpen) return;
                     drawer.setVisibility(View.GONE);
-                    if (!drawerOpen) exitSearch();
+                    exitSearch();
                 }).start();
+        if (!panelOpen && !settingsOpen) restoreHome(true);
     }
 
     private void hideDrawerNow() {
@@ -972,6 +1116,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         drawer.setAlpha(1f);
         drawer.setTranslationY(0);
         exitSearch();
+        if (!panelOpen && !settingsOpen) restoreHome(false);
     }
 
     private void expandNotifications() {
@@ -2437,7 +2582,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             saveDock(keys);
             prefs.edit().putBoolean("dockInit", true).apply();
         }
-        int size = px(54);
+        // su schermi stretti (o con "dimensione display" grande) le icone si rimpiccioliscono per starci tutte
+        int avail = getResources().getDisplayMetrics().widthPixels - px(16);
+        int size = Math.max(px(36), Math.min(px(54), avail / Math.max(1, keys.size()) - px(18)));
         for (String k : keys) {
             AppEntry a = appsByKey.get(k);
             if (a == null) continue;
@@ -2616,7 +2763,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         g.setColor(hot ? th.accent : th.sheetBg);
         if (!hot && th.light) g.setStroke(Math.max(1, px(1)), 0x22000000);
         t.setBackground(g);
-        t.setTextColor(hot ? 0xFFFFFFFF : th.onTile);
+        t.setTextColor(hot ? th.onAccent : th.onTile);
     }
 
     private void buildDropBar() {
@@ -2645,7 +2792,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private DotWave wave;
 
     private void playWave() {
-        if (wave == null) return;
+        if (wave == null || settingsOpen || panelOpen || resizer != null) return;
         wave.bringToFront();
         int c = th.light ? 0xFF000000 : 0xFFFFFFFF;
         wave.post(() -> wave.play(c, 0.5f, 1f));
@@ -2661,7 +2808,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void beginDrag(int src, Item it, String key, View v) {
-        if (dragSrc >= 0 || v == null || resizer != null) return;
+        if (dragSrc >= 0 || v == null || resizer != null || !fingerDown) return;
         dragSrc = src;
         dragItem = it;
         dragKey = key;
@@ -2775,6 +2922,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         else dropLeft.setVisibility(View.VISIBLE);
         styleDropPill(dropLeft, false);
         styleDropPill(dropRight, false);
+        dropBar.animate().cancel();
         dropBar.setAlpha(0f);
         dropBar.setVisibility(View.VISIBLE);
         dropBar.animate().alpha(1f).setDuration(150).start();
@@ -3012,8 +3160,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             int t = secView.current() + edgeDir;
             if (t >= 0 && t < secView.realPages()) {
                 secView.mark(null, 0);
+                tKind = T_NONE;
                 secView.snapTo(t);
                 root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                ui.postDelayed(retarget, 450);
             }
             ui.postDelayed(edgeRun, 900);
             return;
@@ -3027,10 +3177,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             addEmptyPage();
         }
         for (TileGrid g : grids) g.clearPreview();
+        tKind = T_NONE;
         pager.snapTo(target);
         root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        ui.postDelayed(retarget, 450);
         ui.postDelayed(edgeRun, 900);
     }
+
+    /** Dopo il cambio di pagina automatico la destinazione va ricalcolata sulla pagina nuova. */
+    private final Runnable retarget = () -> {
+        if (dragSrc >= 0 && dragMoved) updateTarget();
+    };
 
     private void addEmptyPage() {
         pages++;
@@ -3043,10 +3200,16 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void finishDrag(boolean commit) {
         ui.removeCallbacks(edgeRun);
+        ui.removeCallbacks(retarget);
         edgeDir = 0;
         TileGrid.anyDragging = false;
         clearTargets();
-        dropBar.setVisibility(View.GONE);
+        if (dropBar.getVisibility() == View.VISIBLE) {
+            dropBar.animate().cancel();
+            dropBar.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+                if (dragSrc < 0) dropBar.setVisibility(View.GONE);
+            }).start();
+        }
         pager.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
         if (dragShadow != null) root.removeView(dragShadow);
         dragShadow = null;
@@ -3220,23 +3383,58 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 return;
             }
             case T_CELL:
+                // posizione non più valida (es. dopo il cambio di pagina): l'elemento resta dov'era
+                if (!canPlace(it, page, tCol, tRow, dragW, dragH)) return;
                 if (src == SRC_HOME && it != null) {
+                    int oldPage = it.page;
                     it.page = page;
                     it.col = tCol;
                     it.row = tRow;
+                    saveLayout();
+                    if (moveView(it, oldPage)) return;
                 } else if (key != null) {
                     Item n = new Item("app", tCol, tRow, 1, 1, 0, page);
                     n.data = key;
                     items.add(n);
                     if (src == SRC_DOCK) removeFromDock(key);
+                    saveLayout();
+                    View v = page < grids.size() ? createView(n) : null;
+                    if (v != null) {
+                        grids.get(page).addView(v);
+                        popIn(v);
+                        return;
+                    }
                 }
                 saveLayout();
                 buildPages();
                 return;
             default:
-                // posizione non valida: l'elemento torna dov'era
-                if (src == SRC_HOME) buildPages();
+                // posizione non valida: finishDrag ha già rimesso l'elemento al suo posto
+                break;
         }
+    }
+
+    /** Sposta la vista già esistente nella nuova cella (o pagina) senza ricostruire la home. */
+    private boolean moveView(Item it, int oldPage) {
+        if (it.view == null || oldPage >= grids.size() || it.page >= grids.size()) return false;
+        if (oldPage != it.page) {
+            ViewGroup parent = (ViewGroup) it.view.getParent();
+            if (parent != null) parent.removeView(it.view);
+            grids.get(it.page).addView(it.view);
+        } else {
+            grids.get(it.page).requestLayout();
+        }
+        popIn(it.view);
+        if (it.isSys()) ui.postDelayed(this::updateSysWidgetSizes, 60);
+        if (th.glass) ui.postDelayed(() -> refreshTiles(null), 120);
+        return true;
+    }
+
+    /** Piccolo "assestamento" dell'elemento appena lasciato. */
+    private void popIn(View v) {
+        v.setScaleX(0.9f);
+        v.setScaleY(0.9f);
+        v.animate().scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(new android.view.animation.OvershootInterpolator(2f)).start();
     }
 
     private void removeFromDock(String key) {
@@ -3374,7 +3572,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         it.w = nw;
                         it.h = nh;
                         saveLayout();
-                        buildPages();
+                        // stessa vista, nuova misura: niente ricostruzione (i widget di sistema non lampeggiano)
+                        if (it.view != null && it.page < grids.size()) {
+                            grids.get(it.page).requestLayout();
+                            if (it.isSys()) ui.postDelayed(HomeActivity.this::updateSysWidgetSizes, 60);
+                            it.view.invalidate();
+                        } else buildPages();
                         postDelayed(this::invalidate, 80);
                     } else {
                         nw = it.w;
@@ -3664,19 +3867,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (settingsOpen) return;
         settingsOpen = true;
         settings.bringToFront();
-        settings.setVisibility(View.VISIBLE);
-        settings.setAlpha(0f);
-        settings.setTranslationY(px(40));
-        settings.animate().alpha(1f).translationY(0).setDuration(200).start();
+        settings.animate().cancel();
+        if (settings.getVisibility() != View.VISIBLE) {
+            settings.setAlpha(0f);
+            settings.setTranslationY(px(40));
+            settings.setVisibility(View.VISIBLE);
+        }
+        settings.animate().alpha(1f).translationY(0).setDuration(240).setInterpolator(EASE_OUT).start();
+        recedeHome(0.95f, 0);
     }
 
     private void closeSettings() {
         if (settings == null || !settingsOpen) return;
         settingsOpen = false;
-        settings.animate().alpha(0f).translationY(px(40)).setDuration(160)
+        settings.animate().cancel();
+        settings.animate().alpha(0f).translationY(px(40)).setDuration(180).setInterpolator(EASE_IN)
                 .withEndAction(() -> {
                     if (!settingsOpen) settings.setVisibility(View.GONE);
                 }).start();
+        if (!drawerOpen && !panelOpen) restoreHome(true);
     }
 
     /** Ricostruisce le voci (dopo una modifica che non riavvia la home). */

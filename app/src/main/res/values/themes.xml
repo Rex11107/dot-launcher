@@ -9,6 +9,7 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:colorAccent">#D71921</item>
         <item name="android:windowShowWallpaper">false</item>
+        <item name="android:windowDisablePreview">true</item>
     </style>
     <style name="Dot.V27" parent="Dot.Base" />
     <style name="Dot.V28" parent="Dot.V27" />

@@ -124,9 +124,9 @@ class FolderTile extends View {
             float cx = x0 + (i % 2) * cell + cell / 2f;
             float cy = y0 + (i / 2) * cell + cell / 2f;
             if (!circle && i == 3 && a.size() > 4) {
-                int fg = item.tone == 1 ? th.onTileAlt : item.tone == 2 ? 0xFFFFFFFF : th.onTile;
+                int fg = item.tone == 1 ? th.onTileAlt : item.tone == 2 ? th.onAccent : th.onTile;
                 Draw.big(cv, th, "+" + (a.size() - 3), cx, cy, icon * 0.32f, icon, fg, "+",
-                        item.tone == 2 ? 0xFFFFFFFF : th.accent, 0, p, true);
+                        item.tone == 2 ? th.onAccent : th.accent, 0, p, true);
                 continue;
             }
             Bitmap b = src.iconFor(a.get(i), Math.round(icon));

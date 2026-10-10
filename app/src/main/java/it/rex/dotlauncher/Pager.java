@@ -159,6 +159,7 @@ class Pager extends ViewGroup {
     }
 
     void setPageNow(int page) {
+        if (!scroller.isFinished()) scroller.abortAnimation();
         current = Math.max(0, page);
         scrollTo(current * getWidth(), 0);
     }

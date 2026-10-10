@@ -249,10 +249,26 @@ final class Sheet {
         return Math.round(v * dp);
     }
 
+    private static java.lang.ref.WeakReference<Dialog> last;
+
     private static Dialog base(Activity a) {
         Dialog d = new Dialog(a);
         d.requestWindowFeature(Window.FEATURE_NO_TITLE);
+        last = new java.lang.ref.WeakReference<>(d);
         return d;
+    }
+
+    /** Chiude il pannello aperto (se c'è). Restituisce true se ce n'era uno. */
+    static boolean dismissOpen() {
+        Dialog d = last == null ? null : last.get();
+        if (d != null && d.isShowing()) {
+            try {
+                d.dismiss();
+            } catch (Exception ignored) {
+            }
+            return true;
+        }
+        return false;
     }
 
     private static LinearLayout panel(Activity a, Theme th, String title) {
@@ -270,6 +286,7 @@ final class Sheet {
             if (th.dots && DotFont.supports(title)) {
                 DotTextView dt = new DotTextView(a);
                 dt.setPitch(2.6f * dp);
+                dt.setFitWidth(true, 2.6f * dp); // titoli lunghi: puntini più piccoli invece di tagliarli
                 dt.setColor(th.onTile);
                 dt.setAccent(".", th.accent);
                 dt.setText(title + ".");
@@ -283,8 +300,10 @@ final class Sheet {
                 t = tv;
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+                    t instanceof DotTextView ? ViewGroup.LayoutParams.MATCH_PARENT : ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
             lp.leftMargin = px(dp, 14);
+            lp.rightMargin = px(dp, 14);
             lp.bottomMargin = px(dp, 12);
             box.addView(t, lp);
         }
@@ -310,7 +329,7 @@ final class Sheet {
         b.setText(text);
         b.setTypeface(Fonts.medium);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-        b.setTextColor(primary ? 0xFFFFFFFF : th.onTile);
+        b.setTextColor(primary ? th.onAccent : th.onTile);
         b.setPadding(px(dp, 20), px(dp, 11), px(dp, 20), px(dp, 11));
         GradientDrawable g = new GradientDrawable();
         g.setCornerRadius(px(dp, 24));
@@ -350,7 +369,9 @@ final class Sheet {
         if (w != null) {
             w.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
             int sw = d.getContext().getResources().getDisplayMetrics().widthPixels;
-            w.setLayout(sw - px(dp, 24), ViewGroup.LayoutParams.WRAP_CONTENT);
+            // su tablet e schermi larghi il pannello non si allarga oltre 560dp
+            w.setLayout(Math.min(sw - px(dp, 24), px(dp, 560)), ViewGroup.LayoutParams.WRAP_CONTENT);
+            w.setWindowAnimations(android.R.style.Animation_InputMethod); // sale dal basso
             w.setGravity(Gravity.BOTTOM);
             WindowManager.LayoutParams lp = w.getAttributes();
             lp.y = px(dp, 20);

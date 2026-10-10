@@ -65,6 +65,7 @@ class SettingsScreen extends FrameLayout {
         if (th.dots) {
             DotTextView dt = new DotTextView(a);
             dt.setPitch(3.4f * dp);
+            dt.setFitWidth(true, 3.4f * dp);
             dt.setColor(th.onTile);
             dt.setAccent(".", th.accent);
             dt.setText("IMPOSTAZIONI.");
@@ -77,8 +78,7 @@ class SettingsScreen extends FrameLayout {
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
             title = tv;
         }
-        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         tl.leftMargin = px(6);
         bar.addView(title, tl);
         outer.addView(bar);
@@ -247,7 +247,7 @@ class SettingsScreen extends FrameLayout {
             cv.drawRoundRect(r, H / 2f, H / 2f, p);
             float rad = H * 0.32f;
             float x = H / 2f + (W - H) * pos;
-            p.setColor(on ? 0xFFFFFFFF : th.sub);
+            p.setColor(on ? th.onAccent : th.sub);
             cv.drawCircle(x, H / 2f, rad, p);
         }
     }

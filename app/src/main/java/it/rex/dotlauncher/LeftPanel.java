@@ -379,7 +379,7 @@ class LeftPanel extends FrameLayout {
         sbg.setShape(GradientDrawable.OVAL);
         sbg.setColor(th.accent);
         send.setBackground(sbg);
-        send.setImageBitmap(SectionIcons.bitmap(SEND, px(44), 0xFFFFFFFF, 0xFFFFFFFF, 0));
+        send.setImageBitmap(SectionIcons.bitmap(SEND, px(44), th.onAccent, th.onAccent, 0));
         row.addView(send, sl);
         LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1066,16 +1066,18 @@ class LeftPanel extends FrameLayout {
     public boolean onInterceptTouchEvent(MotionEvent ev) {
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
-                downX = ev.getX();
-                downY = ev.getY();
+                // coordinate dello schermo: quelle locali si spostano insieme al pannello
+                downX = ev.getRawX();
+                downY = ev.getRawY();
                 swiping = false;
-                noSwipe = inside(newsScroll, ev.getRawX(), ev.getRawY());
+                noSwipe = inside(newsScroll, downX, downY) || editTextAt(this, downX, downY);
                 break;
             case MotionEvent.ACTION_MOVE:
-                if (noSwipe) break;
-                float dx = ev.getX() - downX, dy = ev.getY() - downY;
+                if (noSwipe || ev.getPointerCount() > 1) break;
+                float dx = ev.getRawX() - downX, dy = ev.getRawY() - downY;
                 if (dx < -slop * 2 && Math.abs(dx) > Math.abs(dy) * 1.5f) {
                     swiping = true;
+                    animate().cancel();
                     return true;
                 }
                 break;
@@ -1090,10 +1092,20 @@ class LeftPanel extends FrameLayout {
         return rx >= l[0] && rx < l[0] + v.getWidth() && ry >= l[1] && ry < l[1] + v.getHeight();
     }
 
+    /** Il dito è su un campo di testo? Lì lo scorrimento orizzontale serve a muovere il cursore. */
+    private static boolean editTextAt(View v, float rx, float ry) {
+        if (v instanceof EditText) return inside(v, rx, ry);
+        if (v instanceof ViewGroup) {
+            ViewGroup g = (ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) if (editTextAt(g.getChildAt(i), rx, ry)) return true;
+        }
+        return false;
+    }
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
         if (!swiping) return super.onTouchEvent(ev);
-        float dx = Math.min(0, ev.getX() - downX);
+        float dx = Math.min(0, ev.getRawX() - downX);
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_MOVE:
                 setTranslationX(dx);
