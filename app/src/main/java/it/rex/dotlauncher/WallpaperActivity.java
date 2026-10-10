@@ -210,7 +210,7 @@ public class WallpaperActivity extends Activity {
         super.onActivityResult(req, res, data);
         if (req != REQ_IMAGE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
-        String[] modes = {"Originale", "A puntini (colori)", "A puntini (bianco e nero)"};
+        String[] modes = {"Originale", "A puntini (colori)", "A puntini (bianco e nero)", "A strisce (vetro rigato)"};
         Sheet.list(this, th, "Come vuoi la foto?", modes, -1, mode ->
                 askTarget(which -> applyPhoto(uri, mode, which)));
     }
@@ -231,7 +231,8 @@ public class WallpaperActivity extends Activity {
                 } else {
                     Bitmap src = decode(uri, Math.max(sz[0], sz[1]) / 2);
                     if (src == null) throw new Exception("decode");
-                    Bitmap b = WallpaperGen.dotify(src, sz[0], sz[1], mode == 2);
+                    Bitmap b = mode == 3 ? WallpaperGen.ribbed(src, sz[0], sz[1], System.nanoTime())
+                            : WallpaperGen.dotify(src, sz[0], sz[1], mode == 2);
                     wm.setBitmap(b, null, true, which);
                     Glass.save(this, b);
                 }
