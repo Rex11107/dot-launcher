@@ -8,7 +8,7 @@ import android.graphics.Typeface;
  * Così il launcher non eredita il font di sistema scelto nel tema del telefono.
  */
 final class Fonts {
-    static Typeface thin, light, regular, medium, mono;
+    static Typeface thin, light, regular, medium, mono, dot;
 
     static void init(Context c) {
         if (regular != null) return;
@@ -21,6 +21,15 @@ final class Fonts {
         } catch (Exception e) {
             mono = Typeface.MONOSPACE;
         }
+        // Doto: font a puntini su griglia 6x10 (OFL), punti rotondi
+        try {
+            dot = new Typeface.Builder(c.getAssets(), "fonts/Doto.ttf")
+                    .setFontVariationSettings("'wght' 700, 'ROND' 100")
+                    .build();
+        } catch (Exception e) {
+            dot = null;
+        }
+        if (dot == null) dot = mono;
     }
 
     private static Typeface geist(Context c, int weight) {

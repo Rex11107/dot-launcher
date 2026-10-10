@@ -7,6 +7,7 @@ import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.RectF;
+import android.os.SystemClock;
 import android.view.View;
 
 import java.text.SimpleDateFormat;
@@ -25,6 +26,57 @@ class NothingTile extends View {
     private final Path clip = new Path();
     private final int[] loc = new int[2];
     private final Rect src = new Rect();
+
+    // ---------- animazioni ----------
+    private static final long DIGIT_MS = 520, HAND_MS = 420;
+    private final String[] aCur = new String[3], aPrev = new String[3];
+    private final long[] aTime = new long[3];
+    private boolean animating;
+    private int lastMin = -1;
+    private float fromMin;
+    private long handTime;
+
+    /** Progresso per carattere: le cifre appena cambiate si "accendono" punto per punto. */
+    private float[] prog(int slot, String text) {
+        String t = DotTextView.normalize(text);
+        long now = SystemClock.uptimeMillis();
+        if (!t.equals(aCur[slot])) {
+            if (aCur[slot] != null && Draw.anim) {
+                aPrev[slot] = aCur[slot];
+                aTime[slot] = now;
+            }
+            aCur[slot] = t;
+        }
+        if (aPrev[slot] == null) return null;
+        float k = (now - aTime[slot]) / (float) DIGIT_MS;
+        if (k >= 1f) {
+            aPrev[slot] = null;
+            return null;
+        }
+        animating = true;
+        String pv = aPrev[slot];
+        float[] out = new float[t.length()];
+        for (int i = 0; i < t.length(); i++) {
+            boolean changed = pv.length() != t.length() || pv.charAt(i) != t.charAt(i);
+            out[i] = changed ? k : 1f;
+        }
+        return out;
+    }
+
+    private boolean isBattery() {
+        return item.type.startsWith("battery");
+    }
+
+    /** Fase 0..1 del ciclo di ricarica. */
+    private float phase(long period) {
+        return (SystemClock.uptimeMillis() % period) / (float) period;
+    }
+
+    @Override
+    protected void onWindowVisibilityChanged(int v) {
+        super.onWindowVisibilityChanged(v);
+        if (v == VISIBLE) invalidate();
+    }
 
     NothingTile(Context c, Item item, Theme th, boolean h24) {
         super(c);
@@ -59,6 +111,7 @@ class NothingTile extends View {
     protected void onDraw(Canvas cv) {
         float W = getWidth(), H = getHeight();
         if (W <= 0 || H <= 0) return;
+        animating = false;
         drawShape(cv, W, H);
         switch (item.type) {
             case "clock_dots": clockDots(cv, W, H); break;
@@ -75,6 +128,9 @@ class NothingTile extends View {
             case "alarm": alarm(cv, W, H); break;
             case "search": search(cv, W, H); break;
         }
+        if (animating) postInvalidateOnAnimation();
+        else if (Draw.anim && State.charging && isBattery() && getWindowVisibility() == VISIBLE && isShown())
+            postInvalidateDelayed(50);
     }
 
     private void drawShape(Canvas cv, float W, float H) {
@@ -85,7 +141,7 @@ class NothingTile extends View {
         if (isCircle()) {
             cv.drawCircle(W / 2f, H / 2f, m / 2f, p);
         } else {
-            float r = (item.w == 1 || item.h == 1) ? m / 2f : m * 0.16f;
+            float r = (item.w == 1 || item.h == 1) ? m / 2f : Theme.radius(m, getResources().getDisplayMetrics().density);
             rf.set(0, 0, W, H);
             cv.drawRoundRect(rf, r, r, p);
         }
@@ -96,7 +152,7 @@ class NothingTile extends View {
             if (isCircle()) {
                 cv.drawCircle(W / 2f, H / 2f, m / 2f - 1, p);
             } else {
-                float r = (item.w == 1 || item.h == 1) ? m / 2f : m * 0.16f;
+                float r = (item.w == 1 || item.h == 1) ? m / 2f : Theme.radius(m, getResources().getDisplayMetrics().density);
                 rf.set(1, 1, W - 1, H - 1);
                 cv.drawRoundRect(rf, r, r, p);
             }
@@ -118,7 +174,7 @@ class NothingTile extends View {
         if (isCircle()) {
             clip.addCircle(W / 2f, H / 2f, m / 2f, Path.Direction.CW);
         } else {
-            float r = (item.w == 1 || item.h == 1) ? m / 2f : m * 0.16f;
+            float r = (item.w == 1 || item.h == 1) ? m / 2f : Theme.radius(m, getResources().getDisplayMetrics().density);
             clip.addRoundRect(0, 0, W, H, r, r, Path.Direction.CW);
         }
         cv.save();
@@ -140,7 +196,7 @@ class NothingTile extends View {
         float h = Math.min(H - pad * 2, H * 0.62f);
         if (item.h >= 2) h = H * 0.42f;
         Draw.big(cv, th, t, W / 2f, item.h >= 2 ? H * 0.42f : H / 2f, h, W - pad * 2,
-                fg(), ":", acc(), 0, p, true);
+                fg(), ":", acc(), 0, p, true, prog(0, t));
         if (item.h >= 2) {
             String d = new SimpleDateFormat("EEEE d MMMM", Locale.ITALIAN).format(new Date());
             Draw.label(cv, th, d, W / 2f, H * 0.82f, H * 0.075f, sub(), 0, p, W - pad * 2);
@@ -160,7 +216,24 @@ class NothingTile extends View {
             cv.drawCircle(cx + (float) Math.sin(a) * R * 0.8f, cy - (float) Math.cos(a) * R * 0.8f, rr, p);
         }
         Calendar c = Calendar.getInstance();
-        float min = c.get(Calendar.MINUTE);
+        int curMin = c.get(Calendar.MINUTE);
+        float min = curMin;
+        if (lastMin >= 0 && curMin != lastMin && Draw.anim) {
+            int delta = (curMin - lastMin + 60) % 60;
+            if (delta <= 2) {
+                fromMin = lastMin;
+                handTime = SystemClock.uptimeMillis();
+            }
+        }
+        lastMin = curMin;
+        if (handTime > 0) {
+            float k = (SystemClock.uptimeMillis() - handTime) / (float) HAND_MS;
+            if (k < 1f) {
+                float delta = (curMin - fromMin + 60) % 60;
+                min = fromMin + delta * Draw.easeOutBack(k);
+                animating = true;
+            } else handTime = 0;
+        }
         float hr = c.get(Calendar.HOUR) + min / 60f;
         p.setStyle(Paint.Style.STROKE);
         p.setStrokeCap(Paint.Cap.ROUND);
@@ -184,12 +257,14 @@ class NothingTile extends View {
     private void clockPill(Canvas cv, float W, float H) {
         if (H > W) {
             float h = W * 0.38f;
-            Draw.big(cv, th, time("HH", "hh"), W / 2f, H * 0.33f, h, W * 0.7f, fg(), "", acc(), 0, p, false);
-            Draw.big(cv, th, time("mm", "mm"), W / 2f, H * 0.67f, h, W * 0.7f, fg(), "", acc(), 0, p, false);
+            String hh = time("HH", "hh"), mm = time("mm", "mm");
+            Draw.big(cv, th, hh, W / 2f, H * 0.33f, h, W * 0.7f, fg(), "", acc(), 0, p, false, prog(1, hh));
+            Draw.big(cv, th, mm, W / 2f, H * 0.67f, h, W * 0.7f, fg(), "", acc(), 0, p, false, prog(2, mm));
             p.setColor(acc());
             cv.drawCircle(W / 2f, H / 2f, W * 0.035f, p);
         } else {
-            Draw.big(cv, th, time("HH:mm", "h:mm"), W / 2f, H / 2f, H * 0.4f, W * 0.72f, fg(), ":", acc(), 0, p, false);
+            String t = time("HH:mm", "h:mm");
+            Draw.big(cv, th, t, W / 2f, H / 2f, H * 0.4f, W * 0.72f, fg(), ":", acc(), 0, p, false, prog(0, t));
         }
     }
 
@@ -323,6 +398,15 @@ class NothingTile extends View {
         rf.set(cx - R, cy - R, cx + R, cy + R);
         cv.drawArc(rf, -90, 360f * pct() / 100f, false, p);
         p.setStyle(Paint.Style.FILL);
+        if (State.charging && Draw.anim) {
+            // una scia di punti che gira sull'anello
+            float ph = phase(1600);
+            for (int k = 0; k < 4; k++) {
+                double a = Math.PI * 2 * (ph - k * 0.035f) - Math.PI / 2;
+                p.setColor(Theme.alpha(item.tone == 2 ? th.accent : 0xFFFFFFFF, 0.9f - k * 0.22f));
+                cv.drawCircle(cx + (float) Math.cos(a) * R, cy + (float) Math.sin(a) * R, sw * (0.3f - k * 0.05f), p);
+            }
+        }
         if (State.charging) {
             Draw.icon(cv, Draw.BOLT, cx, cy - R * 0.25f, R * 0.45f, p, fg(), acc());
             Draw.big(cv, th, pct() + "%", cx, cy + R * 0.32f, R * 0.28f, R * 1.3f, fg(), "", acc(), 0, p, false);
@@ -349,7 +433,25 @@ class NothingTile extends View {
         String t = pc + "%";
         int fillText = item.tone == 2 ? th.accent : 0xFFFFFFFF;
         float free = trackW - fillW - r * 1.2f;
-        if (pc >= 55 || free < H * 0.55f) {
+        boolean inside = pc >= 55 || free < H * 0.55f;
+        if (State.charging && Draw.anim && pc < 100) {
+            // puntini che scorrono nella parte vuota, verso destra
+            float startX = in + fillW + r * 0.6f;
+            float textW = Math.min(free, Draw.cols(DotTextView.normalize(t)) * H * 0.3f / 7f * 1.15f);
+            float endX = inside ? W - in - r * 0.6f : W - in - r * 0.7f - textW - r * 0.5f;
+            float step = r * 0.7f;
+            int n = (int) ((endX - startX) / step);
+            float ph = phase(1400);
+            for (int k = 0; k <= n; k++) {
+                float pos = k / (float) Math.max(1, n);
+                float d = ph - pos;
+                if (d < 0) d += 1f;
+                float a = Math.max(0f, 1f - d * 3.2f);
+                p.setColor(Theme.alpha(acc(), 0.12f + 0.7f * a));
+                cv.drawCircle(startX + k * step, H / 2f, r * 0.14f, p);
+            }
+        }
+        if (inside) {
             // testo dentro il riempimento, in bianco
             float maxW = fillW - r * (State.charging ? 2.6f : 1.4f);
             Draw.big(cv, th, t, in + fillW - r * 0.7f, H / 2f, H * 0.3f, maxW, fillText, "", acc(), 1, p, false);
@@ -375,8 +477,17 @@ class NothingTile extends View {
             for (int col = 0; col < n; col++) {
                 idx++;
                 boolean on = idx <= filled;
-                p.setColor(on ? (idx == filled ? acc() : fg()) : Theme.alpha(fg(), 0.15f));
-                cv.drawCircle(x0 + col * pitch + pitch / 2f, gTop + row * pitch + pitch / 2f, pitch * 0.42f, p);
+                float rad = pitch * 0.42f;
+                int color = on ? (idx == filled ? acc() : fg()) : Theme.alpha(fg(), 0.15f);
+                if (State.charging && Draw.anim && idx > filled && idx <= filled + 3) {
+                    // i prossimi punti si accendono a turno
+                    float ph = phase(1500) * 3f - (idx - filled - 1);
+                    float a = ph > 0 && ph < 1 ? (float) Math.sin(Math.PI * ph) : 0f;
+                    color = Theme.alpha(acc(), 0.15f + 0.75f * a);
+                    rad *= 0.8f + 0.2f * a;
+                }
+                p.setColor(color);
+                cv.drawCircle(x0 + col * pitch + pitch / 2f, gTop + row * pitch + pitch / 2f, rad, p);
             }
         }
     }

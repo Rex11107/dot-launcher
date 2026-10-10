@@ -154,7 +154,7 @@ class TileGrid extends ViewGroup {
         float w = pW * cell + (pW - 1) * gap, h = pH * cell + (pH - 1) * gap;
         pr.set(x, y, x + w, y + h);
         float m = Math.min(w, h);
-        float rad = (pW == 1 && pH == 1) || pW == 1 || pH == 1 ? m / 2f : m * 0.16f;
+        float rad = (pW == 1 && pH == 1) || pW == 1 || pH == 1 ? m / 2f : Theme.radius(m, dp);
         int col = pMode == PREVIEW_BAD ? neutral : accent;
         pp.setStyle(Paint.Style.FILL);
         pp.setPathEffect(null);

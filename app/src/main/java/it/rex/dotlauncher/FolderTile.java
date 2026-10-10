@@ -100,7 +100,7 @@ class FolderTile extends View {
         if (circle) cv.drawCircle(W / 2f, H / 2f, m / 2f, p);
         else {
             rf.set(0, 0, W, H);
-            cv.drawRoundRect(rf, m * 0.16f, m * 0.16f, p);
+            cv.drawRoundRect(rf, Theme.radius(m, getResources().getDisplayMetrics().density), Theme.radius(m, getResources().getDisplayMetrics().density), p);
         }
         if (th.stroke != 0 && item.tone == 0) {
             p.setStyle(Paint.Style.STROKE);
@@ -109,7 +109,7 @@ class FolderTile extends View {
             if (circle) cv.drawCircle(W / 2f, H / 2f, m / 2f - 1, p);
             else {
                 rf.set(1, 1, W - 1, H - 1);
-                cv.drawRoundRect(rf, m * 0.16f, m * 0.16f, p);
+                cv.drawRoundRect(rf, Theme.radius(m, getResources().getDisplayMetrics().density), Theme.radius(m, getResources().getDisplayMetrics().density), p);
             }
             p.setStyle(Paint.Style.FILL);
         }

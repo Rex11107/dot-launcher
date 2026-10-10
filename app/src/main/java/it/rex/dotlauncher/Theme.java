@@ -13,6 +13,7 @@ final class Theme {
     static final int RED = 0xFFD71921;
 
     final boolean light;
+    final boolean grey;          // tema scuro grigio (Classic Nothing) invece di nero pieno
     final boolean nuovo;
     final boolean wall;
     final boolean glass;         // vetro smerigliato vero (sfondo sfocato dentro le tessere)
@@ -30,6 +31,7 @@ final class Theme {
         boolean sysNight = (c.getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
         light = "light".equals(mode) || ("auto".equals(mode) && !sysNight);
+        grey = !light && "grey".equals(mode);
         nuovo = "nuovo".equals(p.getString("style", "classic"));
         wall = p.getBoolean("wall", false);
         glassBmp = nuovo && wall ? Glass.get(c) : null;
@@ -38,26 +40,33 @@ final class Theme {
         upperLabels = !nuovo;
 
         if (!nuovo) {
-            if (!light) {
-                bg = 0xFF000000; tile = 0xFF1C1C1E; tileAlt = 0xFFF2F2F2;
+            if (grey) {
+                // scuro grigio: fondo tono ~7, tessere tono ~14
+                bg = 0xFF121214; tile = 0xFF242427; tileAlt = 0xFFEFEFEF;
+                onTile = 0xFFFFFFFF; onTileAlt = 0xFF111111; sub = 0xFF9A9A9E;
+                drawerBg = 0xFA121214; scrim = 0x33000000; sheetBg = 0xFF1E1E21;
+            } else if (!light) {
+                // extra scuro: nero pieno, tessere tono 10
+                bg = 0xFF000000; tile = 0xFF1C1B1F; tileAlt = 0xFFF2F2F2;
                 onTile = 0xFFFFFFFF; onTileAlt = 0xFF111111; sub = 0xFF8E8E8E;
                 drawerBg = 0xFA000000; scrim = 0x33000000; sheetBg = 0xFF161618;
             } else {
-                bg = 0xFFE6E6E6; tile = 0xFFFFFFFF; tileAlt = 0xFF111111;
-                onTile = 0xFF111111; onTileAlt = 0xFFFFFFFF; sub = 0xFF6B6B6B;
-                drawerBg = 0xFAE6E6E6; scrim = 0x14FFFFFF; sheetBg = 0xFFFFFFFF;
+                // chiaro: fondo tono ~88, tessere tono ~96
+                bg = 0xFFE2E2E4; tile = 0xFFF6F6F7; tileAlt = 0xFF111111;
+                onTile = 0xFF111111; onTileAlt = 0xFFFFFFFF; sub = 0xFF6B6B6E;
+                drawerBg = 0xFAE2E2E4; scrim = 0x14FFFFFF; sheetBg = 0xFFF6F6F7;
             }
             stroke = 0;
             accent = RED;
             iconBg = tile;
             iconFg = onTile;
             numFace = Fonts.light;
-            labelFace = Fonts.mono;
+            labelFace = Fonts.dot;   // etichette a puntini (Doto), sempre maiuscole
             titleFace = Fonts.medium;
         } else {
             if (!light) {
-                bg = 0xFF0B0B0C;
-                tile = glass ? 0x80202023 : 0xD9232326;
+                bg = grey ? 0xFF141416 : 0xFF0B0B0C;
+                tile = glass ? 0x80202023 : (grey ? 0xD92C2C30 : 0xD9232326);
                 tileAlt = 0xE6F2F2F2;
                 onTile = 0xFFFFFFFF; onTileAlt = 0xFF111111; sub = 0xFFA8A8A8;
                 stroke = 0x26FFFFFF; drawerBg = 0xF5101012; scrim = 0x26000000; sheetBg = 0xFF1A1A1C;
@@ -85,6 +94,11 @@ final class Theme {
         darkIcons = light;
     }
 
+    /** Raggio degli angoli delle tessere rettangolari: uniforme, circa 30dp. */
+    static float radius(float minSide, float dp) {
+        return Math.min(minSide * 0.5f, 30f * dp);
+    }
+
     static Theme build(Context c, SharedPreferences p) {
         return new Theme(c, p);
     }
@@ -94,7 +108,8 @@ final class Theme {
         return p.getString("style", "classic") + "|" + p.getString("mode", "dark") + "|"
                 + p.getString("icons", "auto") + "|" + p.getBoolean("wall", false) + "|"
                 + p.getBoolean("labels", false) + "|" + p.getInt("wallVer", 0) + "|"
-                + p.getString("iconPack", "");
+                + p.getString("iconPack", "") + "|" + p.getBoolean("ghost", true) + "|"
+                + p.getBoolean("anim", true);
     }
 
     /** Colore principale dello sfondo di sistema, reso abbastanza vivo da fare da accento. */

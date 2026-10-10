@@ -192,6 +192,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dp = getResources().getDisplayMetrics().density;
         prefs = getSharedPreferences("dot", MODE_PRIVATE);
         migrateFromV1();
+        Draw.ghost = prefs.getBoolean("ghost", true);
+        Draw.anim = prefs.getBoolean("anim", true);
         th = Theme.build(this, prefs);
         themeSig = Theme.signature(prefs);
         h24 = prefs.getBoolean("h24", DateFormat.is24HourFormat(this));
@@ -275,6 +277,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         maybeRefreshWeather();
         consumePendingShortcuts();
         checkUpdate(false);
+    }
+
+    @Override
+    protected void onRestart() {
+        super.onRestart();
+        playWave();
     }
 
     @Override
@@ -511,6 +519,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         drawer.setVisibility(View.VISIBLE);
         drawer.animate().alpha(1f).translationY(0).setDuration(180).start();
         grid.setSelection(0);
+        playWave();
         if (keyboard) {
             ui.postDelayed(() -> {
                 search.requestFocus();
@@ -970,7 +979,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     @Override
     public void onEmptyLongPress(int page, int col, int row) {
-        String[] opts = {"Widget Nothing", "Widget di sistema", "Aggiungi app", "Sfondi", "Impostazioni",
+        String[] opts = {"Widget Dot", "Widget di sistema", "Aggiungi app", "Sfondi", "Impostazioni",
                 "Aggiungi pagina", "Rimuovi questa pagina", "Launcher predefinito"};
         Sheet.list(this, th, "Home", opts, -1, w -> {
             switch (w) {
@@ -1103,7 +1112,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void pickNothingWidget(int page, int col, int row) {
         String[] names = new String[Widgets.TYPES.length];
         for (int i = 0; i < names.length; i++) names[i] = Widgets.name(Widgets.TYPES[i]);
-        Sheet.list(this, th, "Widget Nothing", names, -1, w -> {
+        Sheet.list(this, th, "Widget Dot", names, -1, w -> {
             String type = Widgets.TYPES[w];
             int[] s = Widgets.sizes(type)[0];
             int tone = "alarm".equals(type) ? 2 : 0;
@@ -1357,7 +1366,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     /** Scelta per singola app: automatica, sempre originale, sempre Nothing, rossa. */
     private void chooseIconMode(AppEntry a) {
-        String[] labels = {"Automatica", "Originale (non modificata)", "Nothing (forza il simbolo)", "Nothing rossa"};
+        String[] labels = {"Automatica", "Originale (non modificata)", "Simbolo (forzato)", "Simbolo rosso"};
         int cur = isRed(a.key) ? 3 : iconMode(a.key);
         Sheet.list(this, th, "Stile icona", labels, cur, w -> {
             Set<String> o = new HashSet<>(prefs.getStringSet("origApps", new HashSet<>()));
@@ -1685,6 +1694,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dropBar.setPadding(0, px(40), 0, px(8));
         root.addView(dropBar, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP));
+        wave = new DotWave(this);
+        root.addView(wave, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+    }
+
+    private DotWave wave;
+
+    private void playWave() {
+        if (wave == null) return;
+        wave.bringToFront();
+        int c = th.light ? 0xFF000000 : 0xFFFFFFFF;
+        wave.post(() -> wave.play(c, 0.5f, 1f));
     }
 
     private int iconCellPx() {
@@ -2129,7 +2150,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         protected void onDraw(Canvas c) {
             rect();
             float m = Math.min(r.width(), r.height());
-            float rad = (nw == 1 || nh == 1) ? m / 2f : m * 0.16f;
+            float rad = (nw == 1 || nh == 1) ? m / 2f : Theme.radius(m, dp);
             int col = valid ? th.accent : th.sub;
             p.setStyle(Paint.Style.FILL);
             p.setColor(Theme.alpha(col, 0.12f));
@@ -2474,9 +2495,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         boolean wall = prefs.getBoolean("wall", false);
         boolean labels = prefs.getBoolean("labels", false);
         String city = prefs.getString("city", "");
+        boolean ghost = prefs.getBoolean("ghost", true);
+        boolean anim = prefs.getBoolean("anim", true);
         String[] items = {
                 "Stile: " + ("nuovo".equals(style) ? "Nuovo (5.0)" : "Classico"),
-                "Tema: " + ("light".equals(mode) ? "Chiaro" : "auto".equals(mode) ? "Automatico" : "Scuro"),
+                "Tema: " + ("light".equals(mode) ? "Chiaro" : "auto".equals(mode) ? "Automatico"
+                        : "grey".equals(mode) ? "Scuro (grigio)" : "Extra scuro (nero)"),
                 "Icone: " + (IconFactory.INVERSE.equals(icons) ? "invertite"
                         : IconFactory.COLOR.equals(icons) ? "a colori" : "monocromatiche"),
                 "Sfondo: " + (wall ? "sfondo di sistema" : "tinta unita"),
@@ -2484,6 +2508,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 "Orologio: " + (h24 ? "24 ore" : "12 ore"),
                 "Meteo: " + (city.isEmpty() ? "posizione automatica" : city),
                 "Pacchetto di icone: " + packLabel(),
+                "Punti spenti sui display: " + (ghost ? "sì" : "no"),
+                "Animazioni a punti: " + (anim ? "sì" : "no"),
                 "App nascoste…",
                 "Esporta configurazione",
                 "Importa configurazione",
@@ -2493,8 +2519,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             switch (w) {
                 case 0: choose("Stile", new String[]{"Classico", "Nuovo (5.0)"},
                         new String[]{"classic", "nuovo"}, "style", style); break;
-                case 1: choose("Tema", new String[]{"Scuro", "Chiaro", "Automatico"},
-                        new String[]{"dark", "light", "auto"}, "mode", mode); break;
+                case 1: choose("Tema", new String[]{"Extra scuro (nero)", "Scuro (grigio)", "Chiaro", "Automatico"},
+                        new String[]{"dark", "grey", "light", "auto"}, "mode", mode); break;
                 case 2: choose("Icone", new String[]{"Monocromatiche", "Invertite", "A colori"},
                         new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons); break;
                 case 3:
@@ -2511,10 +2537,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     break;
                 case 6: askCity(); break;
                 case 7: pickIconPack(); break;
-                case 8: manageHidden(); break;
-                case 9: exportBackup(); break;
-                case 10: importBackup(); break;
-                case 11: checkUpdate(true); break;
+                case 8:
+                    prefs.edit().putBoolean("ghost", !ghost).apply();
+                    recreate();
+                    break;
+                case 9:
+                    prefs.edit().putBoolean("anim", !anim).apply();
+                    recreate();
+                    break;
+                case 10: manageHidden(); break;
+                case 11: exportBackup(); break;
+                case 12: importBackup(); break;
+                case 13: checkUpdate(true); break;
             }
         });
     }
@@ -2590,13 +2624,28 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             toast("Nessuna app nascosta");
             return;
         }
-        String[] labels = new String[hiddenApps.size()];
-        for (int i = 0; i < labels.length; i++) labels[i] = "Mostra " + hiddenApps.get(i).label;
-        Sheet.list(this, th, "App nascoste", labels, -1, w -> {
-            Set<String> s = hidden();
-            s.remove(hiddenApps.get(w).key);
-            prefs.edit().putStringSet("hidden", s).apply();
-            adapter.refresh();
+        Sheet.grid(this, th, "App nascoste", hiddenApps.size(),
+                i -> iconFor(hiddenApps.get(i).key, px(54)), i -> hiddenApps.get(i).label,
+                i -> launch(hiddenApps.get(i), null),
+                i -> hiddenAppMenu(hiddenApps.get(i)),
+                "Tocca per aprire · tieni premuto per mostrarla o disinstallarla");
+    }
+
+    private void hiddenAppMenu(AppEntry a) {
+        String[] opts = {"Mostra nel cassetto", "Info app", "Disinstalla"};
+        Sheet.list(this, th, a.label, opts, -1, w -> {
+            switch (w) {
+                case 0:
+                    Set<String> s = hidden();
+                    s.remove(a.key);
+                    prefs.edit().putStringSet("hidden", s).apply();
+                    adapter.refresh();
+                    toast(a.label + " di nuovo nel cassetto");
+                    if (!s.isEmpty()) manageHidden();
+                    break;
+                case 1: appInfo(a); break;
+                default: uninstall(a); break;
+            }
         });
     }
 

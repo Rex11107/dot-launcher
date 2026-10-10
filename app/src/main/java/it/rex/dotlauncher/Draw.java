@@ -61,26 +61,68 @@ final class Draw {
         return Math.max(c, 1);
     }
 
+    /** Effetto display: si vedono anche i punti spenti della griglia. */
+    static boolean ghost = true;
+    /** Animazioni a punti (cifre che si accendono, ricarica, onda). */
+    static boolean anim = true;
+
     /** Testo a puntini con angolo in alto a sinistra in (x, y). */
     static void dots(Canvas cv, String text, float x, float y, float pitch, Paint p,
                      int color, String accentChars, int accent) {
+        dots(cv, text, x, y, pitch, p, color, accentChars, accent, null);
+    }
+
+    /**
+     * Come sopra; progress (facoltativo) indica per ogni carattere quanto è "acceso" (0..1):
+     * i punti delle cifre appena cambiate crescono riga per riga.
+     */
+    static void dots(Canvas cv, String text, float x, float y, float pitch, Paint p,
+                     int color, String accentChars, int accent, float[] progress) {
         String t = DotTextView.normalize(text);
         float r = pitch * 0.39f;
+        boolean showGhost = ghost && pitch >= 5f;
+        int ghostColor = Theme.alpha(color, 0.12f);
         p.setStyle(Paint.Style.FILL);
         for (int i = 0; i < t.length(); i++) {
             char ch = t.charAt(i);
             String[] g = DotFont.glyph(ch);
             int w = g[0].length();
-            p.setColor(accentChars != null && accentChars.indexOf(ch) >= 0 ? accent : color);
+            int on = accentChars != null && accentChars.indexOf(ch) >= 0 ? accent : color;
+            float k = progress != null && i < progress.length ? progress[i] : 1f;
+            int lastCol = i < t.length() - 1 ? w : w - 1; // la colonna di spazio fa parte del display
             for (int row = 0; row < DotFont.ROWS; row++) {
-                for (int col = 0; col < w; col++) {
-                    if (g[row].charAt(col) == '#') {
-                        cv.drawCircle(x + col * pitch + pitch / 2f, y + row * pitch + pitch / 2f, r, p);
+                for (int col = 0; col <= lastCol; col++) {
+                    float cx = x + col * pitch + pitch / 2f, cy = y + row * pitch + pitch / 2f;
+                    boolean lit = col < w && g[row].charAt(col) == '#';
+                    if (!lit) {
+                        if (showGhost) {
+                            p.setColor(ghostColor);
+                            cv.drawCircle(cx, cy, r * 0.82f, p);
+                        }
+                        continue;
                     }
+                    float rk = 1f;
+                    if (k < 1f) {
+                        float v = k * 1.6f - row * 0.085f;
+                        rk = v <= 0 ? 0 : v >= 1 ? 1 : easeOutBack(v);
+                        if (showGhost) {
+                            p.setColor(ghostColor);
+                            cv.drawCircle(cx, cy, r * 0.82f, p);
+                        }
+                    }
+                    if (rk <= 0) continue;
+                    p.setColor(on);
+                    cv.drawCircle(cx, cy, r * rk, p);
                 }
             }
             x += (w + 1) * pitch;
         }
+    }
+
+    static float easeOutBack(float t) {
+        float c1 = 1.70158f, c3 = c1 + 1f;
+        float u = t - 1f;
+        return 1f + c3 * u * u * u + c1 * u * u;
     }
 
     /**
@@ -89,6 +131,12 @@ final class Draw {
      */
     static float big(Canvas cv, Theme th, String text, float ax, float cy, float h, float maxW,
                      int color, String accentChars, int accent, int align, Paint p, boolean forceDots) {
+        return big(cv, th, text, ax, cy, h, maxW, color, accentChars, accent, align, p, forceDots, null);
+    }
+
+    static float big(Canvas cv, Theme th, String text, float ax, float cy, float h, float maxW,
+                     int color, String accentChars, int accent, int align, Paint p, boolean forceDots,
+                     float[] progress) {
         p.setStyle(Paint.Style.FILL);
         if (th.dots || forceDots) {
             String t = DotTextView.normalize(text);
@@ -97,7 +145,7 @@ final class Draw {
             if (cols * pitch > maxW) pitch = maxW / cols;
             float w = cols * pitch;
             float x = align < 0 ? ax : align == 0 ? ax - w / 2f : ax - w;
-            dots(cv, t, x, cy - 3.5f * pitch, pitch, p, color, accentChars, accent);
+            dots(cv, t, x, cy - 3.5f * pitch, pitch, p, color, accentChars, accent, progress);
             return w;
         }
         p.setTypeface(th.numFace);

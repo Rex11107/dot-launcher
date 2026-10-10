@@ -101,6 +101,15 @@ final class Sheet {
                        java.util.function.IntFunction<String> label,
                        java.util.function.IntConsumer click,
                        java.util.function.IntConsumer longClick) {
+        return grid(a, th, title, count, icon, label, click, longClick,
+                "Tieni premuta un'app per toglierla dalla cartella");
+    }
+
+    static Dialog grid(Activity a, Theme th, String title, int count,
+                       java.util.function.IntFunction<android.graphics.Bitmap> icon,
+                       java.util.function.IntFunction<String> label,
+                       java.util.function.IntConsumer click,
+                       java.util.function.IntConsumer longClick, String hintText) {
         float dp = a.getResources().getDisplayMetrics().density;
         Dialog d = base(a);
         LinearLayout box = panel(a, th, title);
@@ -153,7 +162,7 @@ final class Sheet {
             }
         }
         TextView hint = new TextView(a);
-        hint.setText("Tieni premuta un'app per toglierla dalla cartella");
+        hint.setText(hintText);
         hint.setTypeface(Fonts.regular);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
         hint.setTextColor(th.sub);
