@@ -16,7 +16,9 @@ import java.util.Random;
 final class WallpaperGen {
     static final String[] NAMES = {
             "Puntini", "Onde scure", "Sfere", "Rosso e nero",
-            "Mosaico", "Pieghe", "Anelli chiari", "Puntini chiari"
+            "Mosaico", "Pieghe", "Anelli chiari", "Puntini chiari",
+            "Cerchi blu", "Alba arancio", "Geometrie", "Ovali", "Fiore",
+            "Luci glyph", "Matrice", "Griglia", "Sabbia", "Tubi di vetro"
     };
     static final int RED = 0xFFD71921;
 
@@ -32,7 +34,17 @@ final class WallpaperGen {
             case 4: mosaic(c, w, h, r); break;
             case 5: folds(c, w, h, r); break;
             case 6: rings(c, w, h, r); break;
-            default: dotField(c, w, h, r, true); break;
+            case 7: dotField(c, w, h, r, true); break;
+            case 8: blueCircles(c, w, h, r); break;
+            case 9: orangeDawn(c, w, h, r); break;
+            case 10: geometry(c, w, h, r); break;
+            case 11: loops(c, w, h, r); break;
+            case 12: flower(c, w, h, r); break;
+            case 13: glyphLights(c, w, h, r); break;
+            case 14: matrix(c, w, h, r); break;
+            case 15: grid(c, w, h, r); break;
+            case 16: sand(c, w, h, r); break;
+            default: tubes(c, w, h, r); break;
         }
         return b;
     }
@@ -212,6 +224,285 @@ final class WallpaperGen {
             rad *= 0.76f;
         }
         p.clearShadowLayer();
+        grain(c, w, h, r, 0.03f);
+    }
+
+    // ---------- nuovi stili ----------
+
+    // Sfumatura dal grigio al blu profondo con cerchi concentrici simmetrici
+    private static void blueCircles(Canvas c, int w, int h, Random r) {
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, 0, h, new int[]{0xFFA7AFB8, 0xFF3B5878, 0xFF0B1A33},
+                new float[]{0f, 0.5f, 1f}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.STROKE);
+        float cx = w / 2f, cy = h * (0.36f + r.nextFloat() * 0.18f);
+        int n = 10;
+        for (int i = 0; i < n; i++) {
+            float rad = w * 0.07f + i * w * 0.085f;
+            p.setStrokeWidth(i % 3 == 0 ? w / 160f : w / 420f);
+            p.setColor(Color.argb(30 + (n - i) * 12, 255, 255, 255));
+            c.drawCircle(cx, cy, rad, p);
+        }
+        p.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < 6; i++) {
+            float rad = w * 0.07f + (2 + r.nextInt(7)) * w * 0.085f;
+            double a = r.nextDouble() * Math.PI;
+            float dx = (float) Math.cos(a) * rad, dy = (float) Math.sin(a) * rad;
+            p.setColor(0xCCFFFFFF);
+            float s = w / 90f;
+            c.drawCircle(cx + dx, cy - dy, s, p);
+            c.drawCircle(cx - dx, cy - dy, s, p); // simmetria
+        }
+        grain(c, w, h, r, 0.03f);
+    }
+
+    // Dal bianco all'arancio, con file di cerchi
+    private static void orangeDawn(Canvas c, int w, int h, Random r) {
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, 0, h, new int[]{0xFFF3F1EE, 0xFFFFC08F, 0xFFFF5A14},
+                new float[]{0f, 0.55f, 1f}, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int cols = 4;
+        float d = w / (float) cols;
+        int filled = r.nextInt(cols * 8);
+        for (int row = 0; row * d < h; row++) {
+            for (int col = 0; col < cols; col++) {
+                float x = d * col + d / 2f, y = d * row + d / 2f;
+                int idx = row * cols + col;
+                if (idx == filled) {
+                    p.setStyle(Paint.Style.FILL);
+                    p.setColor(0xFF111111);
+                } else {
+                    p.setStyle(Paint.Style.STROKE);
+                    p.setStrokeWidth(w / 500f);
+                    p.setColor(Color.argb(60 + (int) (90f * y / h), 30, 20, 10));
+                }
+                c.drawCircle(x, y, d * 0.42f, p);
+            }
+        }
+        grain(c, w, h, r, 0.04f);
+    }
+
+    // Forme squadrate grigie, simmetriche, con linee sottili
+    private static void geometry(Canvas c, int w, int h, Random r) {
+        c.drawColor(0xFF1E1F22);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStrokeWidth(Math.max(1f, w / 900f));
+        p.setColor(0x22FFFFFF);
+        for (float y = h * 0.05f; y < h; y += h / 28f) c.drawLine(0, y, w, y, p);
+        int n = 7;
+        for (int i = 0; i < n; i++) {
+            float bw = w * (0.12f + r.nextFloat() * 0.28f);
+            float bh = h * (0.05f + r.nextFloat() * 0.16f);
+            float x = w * r.nextFloat() * 0.45f;
+            float y = h * (0.08f + r.nextFloat() * 0.8f);
+            int g = 40 + r.nextInt(90);
+            p.setColor(Color.rgb(g, g, g + 4));
+            c.drawRect(x, y, x + bw, y + bh, p);
+            c.drawRect(w - x - bw, y, w - x, y + bh, p); // specchio
+        }
+        p.setColor(RED);
+        float s = w / 30f;
+        c.drawRect(w / 2f - s / 2f, h * 0.7f, w / 2f + s / 2f, h * 0.7f + s, p);
+        grain(c, w, h, r, 0.02f);
+    }
+
+    // Ovali allungati concentrici con sfumature (quattro combinazioni di colore)
+    private static void loops(Canvas c, int w, int h, Random r) {
+        int[][] ways = {{0xFFFF6B1A, 0xFFFFD6B0}, {0xFF7ED957, 0xFF173D24}, {0xFF4A7BFF, 0xFFC4D3FF},
+                {0xFFD0D0D0, 0xFF3A3A3A}};
+        int[] cw = ways[r.nextInt(ways.length)];
+        c.drawColor(0xFF0A0A0A);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        c.save();
+        c.rotate(-25f - r.nextFloat() * 20f, w / 2f, h / 2f);
+        android.graphics.RectF rf = new android.graphics.RectF();
+        for (int i = 0; i < 8; i++) {
+            float rw = w * (1.5f - i * 0.15f), rh = h * (0.3f - i * 0.03f);
+            rf.set(w / 2f - rw / 2f, h / 2f - rh / 2f, w / 2f + rw / 2f, h / 2f + rh / 2f);
+            p.setStrokeWidth(w * (0.05f - i * 0.004f));
+            p.setShader(new LinearGradient(rf.left, rf.top, rf.right, rf.bottom, cw[0], cw[1], Shader.TileMode.CLAMP));
+            p.setAlpha(255 - i * 22);
+            c.drawRoundRect(rf, rh / 2f, rh / 2f, p);
+        }
+        c.restore();
+        grain(c, w, h, r, 0.03f);
+    }
+
+    // Fiore di petali traslucidi su fondo scuro
+    private static void flower(Canvas c, int w, int h, Random r) {
+        int[] hues = {0xFF9B6BFF, 0xFFFF8A3D, 0xFF5FD38D, 0xFF4F8DFF};
+        int col = hues[r.nextInt(hues.length)];
+        c.drawColor(0xFF0B0B0C);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float cx = w / 2f, cy = h * (0.42f + r.nextFloat() * 0.12f);
+        int petals = 6 + r.nextInt(4);
+        float len = w * (0.32f + r.nextFloat() * 0.1f);
+        android.graphics.RectF rf = new android.graphics.RectF();
+        for (int i = 0; i < petals; i++) {
+            c.save();
+            c.rotate(360f * i / petals + r.nextFloat() * 6f, cx, cy);
+            rf.set(cx - len * 0.28f, cy - len * 1.05f, cx + len * 0.28f, cy);
+            p.setShader(new LinearGradient(cx, cy, cx, cy - len, (col & 0x00FFFFFF) | 0x20000000,
+                    (col & 0x00FFFFFF) | 0xB0000000, Shader.TileMode.CLAMP));
+            c.drawOval(rf, p);
+            c.restore();
+        }
+        p.setShader(new RadialGradient(cx, cy, len * 0.35f, new int[]{0xFFFFFFFF, (col & 0x00FFFFFF) | 0x80000000, 0},
+                new float[]{0f, 0.4f, 1f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, len * 0.35f, p);
+        p.setShader(null);
+        grain(c, w, h, r, 0.05f);
+    }
+
+    // Strisce luminose bianche con alone, come luci sul retro di un telefono
+    private static void glyphLights(Canvas c, int w, int h, Random r) {
+        c.drawColor(0xFF050505);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        android.graphics.RectF rf = new android.graphics.RectF();
+        float cx = w * (0.4f + r.nextFloat() * 0.2f), cy = h * (0.4f + r.nextFloat() * 0.15f);
+        float R = w * 0.3f;
+        rf.set(cx - R, cy - R, cx + R, cy + R);
+        float start = r.nextFloat() * 360f;
+        glow(c, p, w, path -> path.addArc(rf, start, 70), path -> path.addArc(rf, start + 100, 60),
+                path -> path.addArc(rf, start + 190, 120),
+                path -> {
+                    float x = w * 0.82f;
+                    path.moveTo(x, h * 0.15f);
+                    path.lineTo(x, h * 0.32f);
+                },
+                path -> {
+                    path.moveTo(w * 0.2f, h * 0.78f);
+                    path.lineTo(w * 0.5f, h * 0.78f);
+                });
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(RED);
+        c.drawCircle(w * 0.82f, h * 0.36f, w / 60f, p);
+    }
+
+    private interface PathMaker {
+        void make(Path p);
+    }
+
+    private static void glow(Canvas c, Paint p, int w, PathMaker... makers) {
+        for (PathMaker m : makers) {
+            Path path = new Path();
+            m.make(path);
+            float[] widths = {w / 14f, w / 24f, w / 45f, w / 110f};
+            int[] alphas = {14, 30, 70, 255};
+            for (int i = 0; i < widths.length; i++) {
+                p.setStrokeWidth(widths[i]);
+                p.setColor(Color.argb(alphas[i], 255, 255, 255));
+                c.drawPath(path, p);
+            }
+        }
+    }
+
+    // Cerchio di grandi punti (25x25) con un disegno simmetrico acceso
+    private static void matrix(Canvas c, int w, int h, Random r) {
+        c.drawColor(0xFF000000);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int n = 25;
+        float size = w * 0.82f, pitch = size / n;
+        float x0 = (w - size) / 2f, y0 = h * 0.42f - size / 2f;
+        boolean[][] on = new boolean[n][n];
+        for (int y = 0; y < n; y++) {
+            for (int x = 0; x <= n / 2; x++) {
+                boolean v = r.nextFloat() < 0.32f;
+                on[y][x] = v;
+                on[y][n - 1 - x] = v;
+            }
+        }
+        float rc = n / 2f;
+        for (int y = 0; y < n; y++) {
+            for (int x = 0; x < n; x++) {
+                float dx = x + 0.5f - rc, dy = y + 0.5f - rc;
+                if (dx * dx + dy * dy > rc * rc) continue;
+                boolean lit = on[y][x] && dx * dx + dy * dy < (rc - 2.5f) * (rc - 2.5f);
+                p.setColor(lit ? 0xFFF2F2F2 : 0xFF1C1C1C);
+                c.drawCircle(x0 + x * pitch + pitch / 2f, y0 + y * pitch + pitch / 2f, pitch * 0.4f, p);
+            }
+        }
+        p.setColor(RED);
+        c.drawCircle(x0 + size / 2f, y0 + size + pitch * 2.5f, pitch * 0.4f, p);
+    }
+
+    // Griglia regolare di puntini che sfuma, con un solo punto rosso
+    private static void grid(Canvas c, int w, int h, Random r) {
+        c.drawColor(0xFF000000);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float pitch = w / 18f;
+        int cols = (int) (w / pitch), rows = (int) (h / pitch);
+        int rx = r.nextInt(cols), ry = rows / 4 + r.nextInt(rows / 2);
+        float cx = w * 0.5f, cy = h * (0.25f + r.nextFloat() * 0.4f), maxD = (float) Math.hypot(w, h) * 0.75f;
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                float px = (x + 0.5f) * pitch + (w - cols * pitch) / 2f, py = (y + 0.5f) * pitch;
+                if (x == rx && y == ry) {
+                    p.setColor(RED);
+                    c.drawCircle(px, py, pitch * 0.16f, p);
+                    continue;
+                }
+                float v = 1f - Math.min(1f, (float) Math.hypot(px - cx, py - cy) / maxD);
+                p.setColor(Color.argb((int) (30 + 140 * v * v), 255, 255, 255));
+                c.drawCircle(px, py, pitch * 0.08f, p);
+            }
+        }
+    }
+
+    // Sabbia: sfumatura calda chiara con luci morbide e grana fitta
+    private static void sand(Canvas c, int w, int h, Random r) {
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, w, h, 0xFFEDE8E0, 0xFFC4BCB1, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        for (int i = 0; i < 3; i++) {
+            float cx = w * r.nextFloat(), cy = h * r.nextFloat(), rad = w * (0.5f + r.nextFloat() * 0.5f);
+            boolean light = i % 2 == 0;
+            p.setShader(new RadialGradient(cx, cy, rad, light ? 0x55FFFFFF : 0x30604A3A, 0, Shader.TileMode.CLAMP));
+            c.drawCircle(cx, cy, rad, p);
+        }
+        p.setShader(null);
+        grain(c, w, h, r, 0.12f);
+    }
+
+    // Tubi traslucidi con dettagli neri su grigio chiaro
+    private static void tubes(Canvas c, int w, int h, Random r) {
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, 0, h, 0xFFD9DCE0, 0xFF9DA4AD, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        int n = 5 + r.nextInt(3);
+        for (int i = 0; i < n; i++) {
+            Path path = new Path();
+            float x = w * r.nextFloat(), y = h * (0.05f + 0.9f * r.nextFloat());
+            path.moveTo(x, y);
+            path.cubicTo(x + w * (r.nextFloat() - 0.5f), y + h * 0.2f * (r.nextFloat() - 0.5f),
+                    x + w * (r.nextFloat() - 0.5f), y + h * 0.3f * (r.nextFloat() - 0.5f),
+                    x + w * 0.8f * (r.nextFloat() - 0.5f), y + h * 0.25f * (r.nextFloat() - 0.5f));
+            float tw = w * (0.05f + r.nextFloat() * 0.05f);
+            p.setStrokeWidth(tw);
+            p.setColor(0x40FFFFFF);
+            c.drawPath(path, p);
+            p.setStrokeWidth(tw * 0.25f);
+            p.setColor(0x70FFFFFF);
+            c.drawPath(path, p);
+            p.setStrokeWidth(tw * 0.08f);
+            p.setColor(0x60000000);
+            c.drawPath(path, p);
+        }
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(0xFF111111);
+        for (int i = 0; i < 4; i++) c.drawCircle(w * r.nextFloat(), h * r.nextFloat(), w / 70f, p);
         grain(c, w, h, r, 0.03f);
     }
 

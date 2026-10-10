@@ -38,6 +38,7 @@ class AppSections extends LinearLayout {
         void appLongPress(String key, View icon);
         void folderClick(Sections.Section s, Sections.Entry f);
         void folderLongPress(Sections.Section s, Sections.Entry f);
+        void folderDrag(Sections.Section s, Sections.Entry f, View icon);
         void sectionMenu(int index);
         void allMenu();
         void newSection();
@@ -343,8 +344,9 @@ class AppSections extends LinearLayout {
             icon = new FolderTile(getContext(), fake, host, th);
             icon.setClickable(false);
             c.setOnClickListener(v -> host.folderClick(sec, e));
+            final View fIcon = icon;
             c.setOnLongClickListener(v -> {
-                host.folderLongPress(sec, e);
+                host.folderDrag(sec, e, fIcon);
                 return true;
             });
         } else {

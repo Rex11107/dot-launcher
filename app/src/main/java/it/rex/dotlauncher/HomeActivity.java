@@ -740,6 +740,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
     }
 
+    /** Crea sulla home una cartella con le stesse app del contenitore. */
+    private void copyFolderToHome(Sections.Entry f) {
+        if (f == null || !f.isFolder()) return;
+        int page = pager.getCurrent();
+        Item it = new Item("folder", 0, 0, 1, 1, 0, page);
+        FolderTile.set(it, f.name, new ArrayList<>(f.apps));
+        closeDrawer();
+        addItem(it, page, 0, 0);
+        toast("\"" + f.name + "\" copiato sulla home");
+    }
+
+    /** Passa all'ordine libero tenendo l'ordine alfabetico attuale come punto di partenza. */
+    private void ensureFreeOrder() {
+        if (drawerFree()) return;
+        sections.sortAll(this);
+        prefs.edit().putString("drawerOrder", "free").apply();
+        toast("Ordine libero attivato: ora puoi disporre app e contenitori");
+    }
+
     private void pickSectionIcon(java.util.function.Consumer<String> cb) {
         final String[][] ch = SectionIcons.CHOICES;
         final int s = px(54);
@@ -809,9 +828,20 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     @Override
+    public void folderDrag(Sections.Section s, Sections.Entry f, View icon) {
+        dragEntry = f;
+        beginDrag(SRC_DFOLDER, null, null, icon);
+        if (dragSrc != SRC_DFOLDER) dragEntry = null;
+    }
+
+    @Override
     public void folderLongPress(Sections.Section s, Sections.Entry f) {
-        String[] opts = {"Rinomina", "Sposta in sezione…", "Sciogli contenitore"};
-        Sheet.list(this, th, f.name, opts, -1, w -> {
+        folderMenu(s, f);
+    }
+
+    private Dialog folderMenu(Sections.Section s, Sections.Entry f) {
+        String[] opts = {"Rinomina", "Sposta in sezione…", "Copia sulla home", "Sciogli contenitore"};
+        return Sheet.list(this, th, f.name, opts, -1, w -> {
             switch (w) {
                 case 0:
                     Sheet.input(this, th, "Nome del contenitore", "es. Social", f.name, n -> {
@@ -821,9 +851,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     break;
                 case 1:
                     pickSection("Sposta in sezione", to -> {
-                        sections.moveEntry(f, s, to);
+                        Sections.Section from = sections.sectionOfEntry(f);
+                        if (from != null) sections.moveEntry(f, from, to);
                         saveSections(secView.current());
                     });
+                    break;
+                case 2:
+                    copyFolderToHome(f);
                     break;
                 default:
                     sections.dissolve(s, f);
@@ -2151,7 +2185,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     // Trascinamento: dal cassetto, dalla home e dal dock verso home, dock, cartelle e barra in alto
     // =====================================================================
 
-    private static final int SRC_HOME = 0, SRC_DOCK = 1, SRC_DRAWER = 2;
+    private static final int SRC_HOME = 0, SRC_DOCK = 1, SRC_DRAWER = 2, SRC_DFOLDER = 3;
+    private Sections.Entry dragEntry; // contenitore del cassetto trascinato
     private static final int T_NONE = 0, T_BAR = 1, T_DOCK = 2, T_CELL = 3, T_MERGE = 4, T_BAD = 5;
     // destinazioni dentro il cassetto a sezioni
     private static final int T_DTAB = 6, T_DMERGE = 7, T_DPOS = 8, T_DSEC = 9;
@@ -2251,7 +2286,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         tKind = T_NONE;
 
         Bitmap snap;
-        if (src == SRC_HOME && v.getWidth() > 0) {
+        if ((src == SRC_HOME || src == SRC_DFOLDER) && v.getWidth() > 0) {
             int[] loc = new int[2];
             v.getLocationOnScreen(loc);
             snap = Bitmap.createBitmap(v.getWidth(), Math.max(1, v.getHeight()), Bitmap.Config.ARGB_8888);
@@ -2270,11 +2305,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dragShadow = new ImageView(this);
         if (snap != null) dragShadow.setImageBitmap(snap);
         dragShadow.setElevation(px(10));
-        dragShadow.setVisibility(src == SRC_DRAWER ? View.INVISIBLE : View.VISIBLE);
+        dragShadow.setVisibility(src == SRC_DRAWER || src == SRC_DFOLDER ? View.INVISIBLE : View.VISIBLE);
         root.addView(dragShadow, new FrameLayout.LayoutParams(shadowW, shadowH));
         positionShadow();
         dragShadow.animate().scaleX(1.06f).scaleY(1.06f).setDuration(120).start();
-        if (src != SRC_DRAWER) v.setAlpha(0.25f);
+        if (src != SRC_DRAWER && src != SRC_DFOLDER) v.setAlpha(0.25f);
 
         TileGrid.anyDragging = true;
         v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
@@ -2285,6 +2320,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (gestures != null) gestures.onTouchEvent(cancel);
         cancel.recycle();
         // nel cassetto il menù compare subito; se il dito si sposta si chiude e parte il trascinamento
+        if (src == SRC_DFOLDER && dragEntry != null) {
+            Sections.Section fs = sections.sectionOfEntry(dragEntry);
+            if (fs != null) dragMenu = folderMenu(fs, dragEntry);
+        }
         if (src == SRC_DRAWER && key != null) {
             AppEntry a = appsByKey.get(key);
             if (a != null) dragMenu = showAppMenu(a, null);
@@ -2310,10 +2349,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     }
                     // dal cassetto a sezioni il trascinamento resta nel cassetto (sezioni, contenitori, ordine);
                     // per portare l'app sulla home si passa sopra "Sulla home" in alto
-                    drawerDrag = dragSrc == SRC_DRAWER && drawerOpen && !searchMode;
+                    drawerDrag = (dragSrc == SRC_DRAWER || dragSrc == SRC_DFOLDER) && drawerOpen && !searchMode;
                     if (dragSrc == SRC_DRAWER && !drawerDrag) hideDrawerNow();
                     if (drawerDrag && dragSourceView != null) dragSourceView.setAlpha(0.3f);
-                    if (dragSourceView != null && dragSrc != SRC_DRAWER) dragSourceView.setVisibility(View.INVISIBLE);
+                    if (dragSourceView != null && dragSrc != SRC_DRAWER && dragSrc != SRC_DFOLDER)
+                        dragSourceView.setVisibility(View.INVISIBLE);
                     dragShadow.setVisibility(View.VISIBLE);
                     showDropBar();
                     if (!drawerDrag) {
@@ -2496,7 +2536,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             styleDropPill(right ? dropRight : dropLeft, true);
             secView.clearHighlight();
             setEdge(0);
-            hover(right ? -2 : -1, right ? null : this::switchDragToHome, 450);
+            hover(right ? -2 : -1, right || dragSrc != SRC_DRAWER ? null : this::switchDragToHome, 450);
             return;
         }
         // 2) barra delle sezioni: lasciando l'app su un'icona la si sposta in quella sezione
@@ -2529,20 +2569,22 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         tSec = sec;
         AppSections.Hit h = secView.hit(lastRawX, lastRawY);
-        if (h != null && h.entry != null && !dragKey.equals(h.entry.app)) {
-            if (h.center) {
+        boolean folder = dragSrc == SRC_DFOLDER;
+        boolean self = h != null && h.entry != null
+                && (folder ? h.entry == dragEntry : dragKey != null && dragKey.equals(h.entry.app));
+        if (h != null && h.entry != null && !self) {
+            if (h.center && !folder) {
                 tKind = T_DMERGE;
                 tEntry = h.entry;
                 secView.mark(h.cell, 1);
                 return;
             }
-            if (drawerFree()) {
-                tKind = T_DPOS;
-                tEntry = h.entry;
-                tAfter = h.after;
-                secView.mark(h.cell, h.after ? 3 : 2);
-                return;
-            }
+            // di lato: posizione (in ordine alfabetico si passa all'ordine libero)
+            tKind = T_DPOS;
+            tEntry = h.entry;
+            tAfter = h.after;
+            secView.mark(h.cell, h.after ? 3 : 2);
+            return;
         }
         secView.mark(null, 0);
         tKind = T_DSEC;
@@ -2633,6 +2675,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dragMenu = null;
         boolean wasDrawer = drawerDrag;
         drawerDrag = false;
+        Sections.Entry dEntry = dragEntry;
+        dragEntry = null;
         clearHover();
         if (secView != null) secView.clearHighlight();
         dragSrc = -1;
@@ -2644,8 +2688,37 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (!menuShown) showMenuFor(src, it, key);
             return;
         }
-        if (wasDrawer) dropInDrawer(key, kind);
+        if (wasDrawer && src == SRC_DFOLDER) dropFolderInDrawer(dEntry, kind);
+        else if (wasDrawer) dropInDrawer(key, kind);
         else performDrop(src, it, key, kind);
+    }
+
+    private void dropFolderInDrawer(Sections.Entry e, int kind) {
+        if (e == null) return;
+        Sections.Section from = sections.sectionOfEntry(e);
+        if (from == null) return;
+        switch (kind) {
+            case T_BAR:
+                if (tZone == 1) copyFolderToHome(e);
+                return;
+            case T_DTAB:
+            case T_DSEC: {
+                if (tSec < 0 || tSec >= sections.list.size()) return;
+                Sections.Section to = sections.list.get(tSec);
+                if (to == from) return;
+                sections.moveEntry(e, from, to);
+                if (kind == T_DTAB) toast("\"" + e.name + "\" → " + to.name);
+                break;
+            }
+            case T_DPOS:
+                if (tEntry == null || tSec < 0 || tSec >= sections.list.size()) return;
+                ensureFreeOrder();
+                sections.moveEntryNear(e, sections.list.get(tSec), tEntry, tAfter);
+                break;
+            default:
+                return;
+        }
+        saveSections(secView.current());
     }
 
     private void dropInDrawer(String key, int kind) {
@@ -2673,6 +2746,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 break;
             case T_DPOS:
                 if (tEntry == null || tSec < 0) return;
+                ensureFreeOrder();
                 sections.moveTo(key, sections.list.get(tSec), tEntry, tAfter);
                 break;
             case T_DSEC: {
@@ -3212,6 +3286,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         final boolean free = drawerFree();
         names.add("Ordine delle app nel cassetto: " + (free ? "libero" : "alfabetico"));
         acts.add(() -> {
+            if (!free) {
+                sections.sortAll(this);
+                sections.save();
+            }
             prefs.edit().putString("drawerOrder", free ? "alpha" : "free").apply();
             refreshDrawer();
             toast(free ? "Ordine alfabetico" : "Ordine libero: trascina le app per disporle");

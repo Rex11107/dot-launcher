@@ -67,6 +67,29 @@ final class SectionIcons {
     static final String[] MORE = {
             "....#....", "...###...", "....#....", ".........", "....#....",
             "...###...", "....#....", ".........", "....#...."};
+    static final String[] SLIDERS = {".........", "###R#####", ".........", "######R##", ".........", "#R#######", ".........", "####R####", "........."};
+    static final String[] PHONE = {".#######.", ".#.....#.", ".#.....#.", ".#.....#.", ".#.....#.", ".#.....#.", ".#######.", ".#..R..#.", ".#######."};
+    static final String[] CHIP = {".#.#.#.#.", "#########", ".#.....#.", "##.###.##", ".#.#R#.#.", "##.###.##", ".#.....#.", "#########", ".#.#.#.#."};
+    static final String[] WIFI = {".........", "..#####..", ".#.....#.", "#..###..#", "..#...#..", "....#....", "...#R#...", "....#....", "........."};
+    static final String[] CAMERA = {".........", "...###...", "#########", "#..###..#", "#.#...#R#", "#.#...#.#", "#..###..#", "#########", "........."};
+    static final String[] PIN = {"..#####..", ".#.....#.", "#..###..#", "#..#R#..#", "#..###..#", ".#.....#.", "..#...#..", "...#.#...", "....#...."};
+    static final String[] CALENDAR = {".#.....#.", "#########", "#.......#", "#########", "#.#.#.#.#", "#.......#", "#.#.#.R.#", "#.......#", "#########"};
+    static final String[] MAIL = {".........", "#########", "##.....##", "#.#...#.#", "#..#.#..#", "#...#...#", "#.......#", "#########", "........."};
+    static final String[] LOCK = {"...###...", "..#...#..", "..#...#..", ".#######.", ".#######.", ".###R###.", ".###R###.", ".#######.", "........."};
+    static final String[] COFFEE = {"..R..R...", ".R..R....", ".........", "#######..", "#######.#", "#######.#", ".#####.#.", "..###....", "#########"};
+    static final String[] BALL = {"..#####..", ".#..#..#.", "#...#...#", "#...#...#", "#########", "#...#...#", "#...#...#", ".#..#..#.", "..#####.."};
+    static final String[] PLANE = {"....#....", "...###...", "...###...", ".#######.", "#########", "...###...", "...###...", "..#####..", ".##...##."};
+    static final String[] CART = {"#........", ".#.......", ".########", ".#......#", ".#.....#.", ".#######.", ".#.......", "..R...R..", "........."};
+    static final String[] PALETTE = {"..#####..", ".#.R.R.#.", "#.......#", "#.R...#.#", "#.....##.", "#....#...", "#.....##.", ".#.....#.", "..######."};
+    static final String[] MOON = {"...###...", ".##......", ".#.......", "#........", "#........", "#.......#", ".#.....#.", ".##...##.", "...###..."};
+    static final String[] WRENCH = {"......##.", ".....#..#", ".....#.#.", "....###..", "...###...", "..###....", ".###.....", "###......", "##......."};
+    static final String[] DOWNLOAD = {"....#....", "....#....", "....#....", "..#.#.#..", "...###...", "....#....", ".........", "#.......#", "#########"};
+    static final String[] LEAF = {"......###", "....#####", "...###.##", "..###.###", ".###.###.", ".#.####..", "..###....", ".#.......", "#........"};
+    static final String[] PAW = {".#.....#.", ".#..#..#.", "....#....", "#.......#", "...###...", "..#####..", ".#######.", ".###.###.", "........."};
+    static final String[] FILM = {"#########", "#.#.#.#.#", "#########", "#.......#", "#...R...#", "#.......#", "#########", "#.#.#.#.#", "#########"};
+    static final String[] NEWS = {"########.", "#......##", "#.###..##", "#.###..##", "#......##", "#.####.##", "#......##", "#.####.##", "#########"};
+    static final String[] CHART = {"#........", "#......R.", "#.....R..", "#..R.R...", "#.R.R....", "#R.......", "#........", "#........", "#########"};
+    static final String[] PEOPLE = {"..#...#..", ".###.###.", "..#...#..", ".........", ".###.###.", "#########", "#########", ".........", "........."};
     static final String[] CLOSE = {
             "#.......#", ".#.....#.", "..#...#..", "...#.#...", "....#....",
             "...#.#...", "..#...#..", ".#.....#.", "#.......#"};
@@ -86,7 +109,14 @@ final class SectionIcons {
             {"pad", "Giochi"}, {"cap", "Studio"}, {"money", "Soldi"}, {"gear", "Strumenti"},
             {"shapes", "Varie"}, {"music", "Musica"}, {"heart", "Preferiti"}, {"star", "Stella"},
             {"bag", "Acquisti"}, {"book", "Lettura"}, {"work", "Lavoro"}, {"health", "Salute"},
-            {"home", "Casa"}, {"car", "Viaggi"}, {"code", "Sviluppo"}, {"grid", "Tutte"}
+            {"home", "Casa"}, {"car", "Auto"}, {"code", "Sviluppo"}, {"grid", "Tutte"},
+            {"sliders", "Impostazioni"}, {"phone", "Dispositivo"}, {"chip", "Sistema"}, {"wifi", "Connessioni"},
+            {"camera", "Fotocamera"}, {"pin", "Mappe"}, {"calendar", "Calendario"}, {"mail", "Posta"},
+            {"lock", "Sicurezza"}, {"cloud", "Cloud"}, {"bolt", "Energia"}, {"bell", "Avvisi"},
+            {"coffee", "Cibo"}, {"ball", "Sport"}, {"plane", "Viaggi"}, {"cart", "Spesa"},
+            {"palette", "Arte"}, {"sun", "Meteo"}, {"moon", "Notte"}, {"wrench", "Attrezzi"},
+            {"download", "Download"}, {"leaf", "Natura"}, {"paw", "Animali"}, {"film", "Film"},
+            {"news", "Notizie"}, {"chart", "Grafici"}, {"people", "Persone"}, {"steps", "Fitness"}
     };
 
     static String[] get(String name) {
@@ -111,6 +141,34 @@ final class SectionIcons {
             case "car": return CAR;
             case "code": return CODE;
             case "grid": return GRID;
+            case "sliders": return SLIDERS;
+            case "phone": return PHONE;
+            case "chip": return CHIP;
+            case "wifi": return WIFI;
+            case "camera": return CAMERA;
+            case "pin": return PIN;
+            case "calendar": return CALENDAR;
+            case "mail": return MAIL;
+            case "lock": return LOCK;
+            case "coffee": return COFFEE;
+            case "ball": return BALL;
+            case "plane": return PLANE;
+            case "cart": return CART;
+            case "palette": return PALETTE;
+            case "moon": return MOON;
+            case "wrench": return WRENCH;
+            case "download": return DOWNLOAD;
+            case "leaf": return LEAF;
+            case "paw": return PAW;
+            case "film": return FILM;
+            case "news": return NEWS;
+            case "chart": return CHART;
+            case "people": return PEOPLE;
+            case "cloud": return Draw.CLOUD;
+            case "bolt": return Draw.BOLT;
+            case "bell": return Draw.BELL;
+            case "sun": return Draw.SUN;
+            case "steps": return Draw.STEPS;
             default: return SHAPES;
         }
     }

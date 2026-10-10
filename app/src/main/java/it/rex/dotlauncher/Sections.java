@@ -324,6 +324,29 @@ final class Sections {
         to.entries.add(e);
     }
 
+    /** Sposta un elemento (app o contenitore) accanto a ref nella sezione to; ref null = in fondo. */
+    void moveEntryNear(Entry e, Section to, Entry ref, boolean after) {
+        if (e == ref) return;
+        Section from = sectionOfEntry(e);
+        if (from != null) from.entries.remove(e);
+        int idx = ref == null ? -1 : to.entries.indexOf(ref);
+        if (idx < 0) to.entries.add(e);
+        else to.entries.add(after ? idx + 1 : idx, e);
+    }
+
+    /** Mette tutto in ordine alfabetico (usato passando all'ordine libero, così nulla si sposta). */
+    void sortAll(LabelSource labels) {
+        final Collator col = Collator.getInstance(Locale.ITALIAN);
+        for (Section s : list) {
+            Collections.sort(s.entries, (x, y) -> col.compare(
+                    x.isFolder() ? x.name : labels.labelFor(x.app),
+                    y.isFolder() ? y.name : labels.labelFor(y.app)));
+            for (Entry e : s.entries) {
+                if (e.isFolder()) Collections.sort(e.apps, (p, q) -> col.compare(labels.labelFor(p), labels.labelFor(q)));
+            }
+        }
+    }
+
     Section sectionOfEntry(Entry e) {
         for (Section s : list) if (s.entries.contains(e)) return s;
         return null;
