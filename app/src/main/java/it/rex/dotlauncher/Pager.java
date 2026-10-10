@@ -38,6 +38,17 @@ class Pager extends ViewGroup {
         edgeR = right;
     }
 
+    /** Trascinando oltre la prima pagina verso destra (pagina a sinistra della home). */
+    interface EdgeListener {
+        void onPullBeforeFirst();
+    }
+
+    private EdgeListener edge;
+
+    void setEdgeListener(EdgeListener l) {
+        edge = l;
+    }
+
     void setListener(Listener l) {
         listener = l;
     }
@@ -117,6 +128,15 @@ class Pager extends ViewGroup {
             case MotionEvent.ACTION_CANCEL:
                 vt.computeCurrentVelocity(1000);
                 float v = vt.getXVelocity();
+                if (ev.getActionMasked() == MotionEvent.ACTION_UP && edge != null && current == 0 && dragging
+                        && (getScrollX() < -W * 0.06f || (getScrollX() <= 0 && v > minFling))) {
+                    snapTo(0);
+                    vt.recycle();
+                    vt = null;
+                    dragging = false;
+                    edge.onPullBeforeFirst();
+                    return true;
+                }
                 int target = Math.round(getScrollX() / (float) Math.max(1, W));
                 if (Math.abs(v) > minFling) target = v < 0 ? current + 1 : current - 1;
                 snapTo(target);

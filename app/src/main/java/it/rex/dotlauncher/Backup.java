@@ -25,13 +25,18 @@ final class Backup {
             "wjson", "wt", "blurWallId", "askedLoc", "widgets", "wcity",
             "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday");
 
+    /** Dati da non esportare: cache, stato dei sensori e soprattutto le chiavi API. */
+    private static boolean skip(String k) {
+        return SKIP.contains(k) || k.startsWith("aiKey_") || k.equals("newsCache") || k.equals("newsTime");
+    }
+
     static void export(Context c, SharedPreferences prefs, Uri uri) throws Exception {
         JSONObject root = new JSONObject();
         root.put("app", "DotLauncher");
         root.put("version", 1);
         JSONObject data = new JSONObject();
         for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
-            if (SKIP.contains(e.getKey())) continue;
+            if (skip(e.getKey())) continue;
             Object v = e.getValue();
             JSONObject o = new JSONObject();
             if (v instanceof String) { o.put("t", "s"); o.put("v", v); }
@@ -67,7 +72,7 @@ final class Backup {
         if (!"DotLauncher".equals(root.optString("app"))) throw new Exception("not a backup");
         JSONObject data = root.getJSONObject("prefs");
         SharedPreferences.Editor ed = prefs.edit();
-        for (String k : prefs.getAll().keySet()) if (!SKIP.contains(k)) ed.remove(k);
+        for (String k : prefs.getAll().keySet()) if (!skip(k)) ed.remove(k);
         int droppedSys = 0;
         JSONArray keys = data.names();
         if (keys != null) {

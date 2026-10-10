@@ -106,6 +106,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_IMPORT = 5;
     private static final int REQ_PHOTO = 6;
     private static final int REQ_STEPS = 7;
+    private static final int REQ_CAL = 8;
     private static final int HOST_ID = 0x0D07;
     private static final int MAX_DOCK = 5;
 
@@ -156,6 +157,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private boolean receiversOn;
     private boolean fitted;
     private SensorHub sensors;
+    private LeftPanel panel;
+    private boolean panelOpen;
     private boolean started;
     private Item pendingPhoto;
 
@@ -343,6 +346,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         launcherApps.unregisterCallback(appsCallback);
         appExec.shutdownNow();
         netExec.shutdownNow();
+        if (panel != null) panel.shutdown();
     }
 
     @Override
@@ -357,7 +361,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         // Solo se eravamo già sulla home (Home premuto di nuovo): chiudi il cassetto o torna alla prima pagina.
         // Se invece si sta tornando da un'app, la home resta com'era, senza animazioni.
         boolean alreadyHome = hasWindowFocus();
-        if (drawerOpen) {
+        if (panelOpen) {
+            if (alreadyHome) closePanel();
+            else hidePanelNow();
+        } else if (drawerOpen) {
             if (alreadyHome) closeDrawer();
             else hideDrawerNow();
         } else if (alreadyHome && pager != null && pager.getCurrent() != 0) {
@@ -368,6 +375,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onBackPressed() {
         if (resizer != null) exitResize();
+        else if (panelOpen) closePanel();
         else if (drawerOpen) {
             if (searchMode) exitSearch();
             else closeDrawer();
@@ -382,7 +390,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             onDragEvent(ev);
             return true;
         }
-        if (gestures != null && resizer == null) gestures.onTouchEvent(ev);
+        if (gestures != null && resizer == null && !panelOpen) gestures.onTouchEvent(ev);
         return super.dispatchTouchEvent(ev);
     }
 
@@ -423,6 +431,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         root.addView(home, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
 
+        if (prefs.getBoolean("panel", true)) {
+            panel = new LeftPanel(this, th, prefs, h24, new LeftPanel.Host() {
+                @Override public void closePanel() { HomeActivity.this.closePanel(); }
+                @Override public void startSafe(Intent i) { safeStart(i); }
+                @Override public void toast(String s) { HomeActivity.this.toast(s); }
+                @Override public void requestCalendar() {
+                    requestPermissions(new String[]{Manifest.permission.READ_CALENDAR}, REQ_CAL);
+                }
+            });
+            panel.setVisibility(View.GONE);
+            root.addView(panel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            pager.setEdgeListener(this::openPanel);
+        }
+
         buildDrawer();
         root.addView(drawer, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
@@ -455,6 +478,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             grid.setPadding(0, 0, 0, px(24) + (r[7] > 0 ? 0 : r[3]));
             secView.setPadding(0, 0, 0, r[7] > 0 ? 0 : r[3]);
             secView.setEdgeGuard(r[4], r[5]);
+            if (panel != null) panel.setInsets(r[1], Math.max(r[3], r[7]));
             gestureBottom = r[6];
             dropBar.setPadding(0, r[1] + px(8), 0, px(8));
             navBottom = r[3];
@@ -864,6 +888,38 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     saveSections(secView.current());
             }
         });
+    }
+
+    // ---------- pagina a sinistra ----------
+
+    private void openPanel() {
+        if (panel == null || panelOpen || drawerOpen) return;
+        panelOpen = true;
+        panel.setVisibility(View.VISIBLE);
+        panel.setTranslationX(-Math.max(1, root.getWidth()));
+        panel.animate().translationX(0).setDuration(220).start();
+        panel.onShown();
+    }
+
+    private void closePanel() {
+        if (panel == null || !panelOpen) return;
+        panelOpen = false;
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(panel.getWindowToken(), 0);
+        panel.animate().translationX(-Math.max(1, root.getWidth())).setDuration(180)
+                .withEndAction(() -> {
+                    if (!panelOpen) panel.setVisibility(View.GONE);
+                }).start();
+    }
+
+    private void hidePanelNow() {
+        if (panel == null) return;
+        panelOpen = false;
+        panel.animate().cancel();
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(panel.getWindowToken(), 0);
+        panel.setVisibility(View.GONE);
+        panel.setTranslationX(0);
     }
 
     private void openDrawer(boolean keyboard) {
@@ -3300,6 +3356,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             prefs.edit().putBoolean("drawerAll", !allOn).apply();
             refreshDrawer();
         });
+        final boolean panelOn = prefs.getBoolean("panel", true);
+        names.add("Pagina a sinistra (IA, notizie, calendario): " + (panelOn ? "sì" : "no"));
+        acts.add(() -> toggle("panel", panelOn));
         names.add("Sfondo: " + (wall ? "sfondo di sistema" : "tinta unita"));
         acts.add(() -> toggle("wall", wall));
         names.add("Nomi delle app sulla home: " + (labels ? "sì" : "no"));
@@ -3481,6 +3540,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
         super.onRequestPermissionsResult(req, perms, results);
+        if (req == REQ_CAL) {
+            if (panel != null) panel.refreshCalendar();
+            return;
+        }
         if (req == REQ_STEPS) {
             State.stepPerm = SensorHub.stepPermission(this);
             if (!State.stepPerm) toast("Senza il permesso \"Attività fisica\" il contapassi non può contare");
