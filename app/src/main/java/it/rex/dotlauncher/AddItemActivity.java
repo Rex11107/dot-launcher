@@ -14,7 +14,7 @@ import java.util.Set;
 
 /**
  * Riceve le richieste "Aggiungi alla schermata Home" dalle altre app (es. Chrome, WhatsApp).
- * Accetta la scorciatoia e la mette in coda: la home la posiziona al prossimo avvio.
+ * Accetta la scorciatoia e la mette in coda: la home la posiziona appena torna in primo piano.
  */
 public class AddItemActivity extends Activity {
 
@@ -41,7 +41,7 @@ public class AddItemActivity extends Activity {
                     Set<String> pend = new HashSet<>(p.getStringSet("pendingSc", new HashSet<>()));
                     pend.add(k);
                     p.edit().putStringSet("pendingSc", pend).commit();
-                    Toast.makeText(this, "Aggiunto alla home", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, "Scorciatoia aggiunta alla home", Toast.LENGTH_SHORT).show();
                 }
             }
         } catch (Exception e) {

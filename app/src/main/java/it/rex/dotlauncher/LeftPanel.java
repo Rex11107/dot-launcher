@@ -12,8 +12,6 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Paint;
-import android.graphics.Path;
-import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Handler;
@@ -73,7 +71,7 @@ class LeftPanel extends FrameLayout {
     private final Activity act;
     private final Host host;
     private final Theme th;
-    private final SharedPreferences prefs;
+    private final SharedPreferences prefs, secret;
     private final boolean h24;
     private final float dp;
     private final ScrollView scroll;
@@ -90,6 +88,16 @@ class LeftPanel extends FrameLayout {
         this.prefs = prefs;
         this.h24 = h24;
         this.host = host;
+        // le chiavi API stanno in un file a parte, escluso dai backup automatici e dall'esportazione
+        secret = a.getSharedPreferences("secret", Context.MODE_PRIVATE);
+        SharedPreferences.Editor move = null;
+        for (String k : new ArrayList<>(prefs.getAll().keySet())) {
+            if (!k.startsWith("aiKey_")) continue;
+            if (move == null) move = secret.edit();
+            move.putString(k, prefs.getString(k, ""));
+            prefs.edit().remove(k).apply();
+        }
+        if (move != null) move.apply();
         dp = a.getResources().getDisplayMetrics().density;
         slop = ViewConfiguration.get(a).getScaledTouchSlop();
         setBackgroundColor(th.drawerBg);
@@ -126,7 +134,16 @@ class LeftPanel extends FrameLayout {
     }
 
     void shutdown() {
+        ui.removeCallbacksAndMessages(null);
         net.shutdownNow();
+    }
+
+    private void bg(Runnable r) {
+        if (net.isShutdown()) return;
+        try {
+            net.execute(r);
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+        }
     }
 
     // =====================================================================
@@ -323,7 +340,7 @@ class LeftPanel extends FrameLayout {
     }
 
     private String aiKey(String p) {
-        return prefs.getString("aiKey_" + p, "");
+        return secret.getString("aiKey_" + p, "");
     }
 
     /** Risposte direttamente qui solo se c'è una chiave e la modalità API è attiva. */
@@ -455,11 +472,18 @@ class LeftPanel extends FrameLayout {
         history.add(new String[]{"user", q});
         aiBusy = true;
         renderLog();
-        final List<String[]> h = new ArrayList<>(history);
+        // gli errori (e la domanda che li ha causati) non vengono rimandati al servizio
+        final List<String[]> h = new ArrayList<>();
+        for (int i = 0; i < history.size(); i++) {
+            String[] m = history.get(i);
+            boolean failedQ = "user".equals(m[0]) && i + 1 < history.size() && history.get(i + 1)[1].startsWith("⚠");
+            if (failedQ || m[1].startsWith("⚠")) continue;
+            h.add(m);
+        }
         final String key = aiKey(p);
         final String model = prefs.getString("aiModel_" + p, "");
         final String base = prefs.getString("aiBase_" + p, "");
-        net.execute(() -> {
+        bg(() -> {
             String ans;
             try {
                 ans = AiClient.ask(p, key, model, base, h);
@@ -470,10 +494,6 @@ class LeftPanel extends FrameLayout {
             final String a = ans;
             ui.post(() -> {
                 aiBusy = false;
-                if (a.startsWith("⚠")) {
-                    history.remove(history.size() - 1);
-                    history.add(new String[]{"user", q});
-                }
                 history.add(new String[]{"assistant", a});
                 renderLog();
             });
@@ -562,7 +582,8 @@ class LeftPanel extends FrameLayout {
                             aiSettings();
                         });
             } else if (o.startsWith("Cancella")) {
-                prefs.edit().remove("aiKey_" + p).putString("aiMode_" + p, "app").apply();
+                secret.edit().remove("aiKey_" + p).apply();
+                prefs.edit().putString("aiMode_" + p, "app").apply();
                 updateAiChip();
                 host.toast("Chiave cancellata");
             }
@@ -573,9 +594,8 @@ class LeftPanel extends FrameLayout {
         Sheet.input(act, th, "Chiave API di " + AiClient.label(p), "resta solo su questo telefono", "", v -> {
             String k = v.trim();
             if (k.isEmpty()) return;
-            SharedPreferences.Editor e = prefs.edit().putString("aiKey_" + p, k);
-            if (enable) e.putString("aiMode_" + p, "api");
-            e.apply();
+            secret.edit().putString("aiKey_" + p, k).apply();
+            if (enable) prefs.edit().putString("aiMode_" + p, "api").apply();
             updateAiChip();
             host.toast("Chiave salvata solo su questo telefono");
             aiSettings();
@@ -645,7 +665,7 @@ class LeftPanel extends FrameLayout {
         newsLoading = true;
         showNews();
         final List<String[]> src = newsSources();
-        net.execute(() -> {
+        bg(() -> {
             List<NewsFeed.Article> list = NewsFeed.fetchAll(src);
             ui.post(() -> {
                 newsLoading = false;
@@ -696,7 +716,7 @@ class LeftPanel extends FrameLayout {
             Bitmap b = NewsFeed.cached(a.image);
             if (b != null) iv.setImageBitmap(b);
             else {
-                net.execute(() -> {
+                bg(() -> {
                     Bitmap bm = NewsFeed.image(a.image, px(240));
                     if (bm != null) ui.post(() -> iv.setImageBitmap(bm));
                 });
@@ -807,9 +827,7 @@ class LeftPanel extends FrameLayout {
         Item fake = new Item("calendar", 0, 0, 4, 3, 0, 0);
         NothingTile cal = new NothingTile(act, fake, th, h24);
         cal.setOnClickListener(v -> {
-            Uri.Builder b = CalendarContract.CONTENT_URI.buildUpon().appendPath("time");
-            ContentUris.appendId(b, System.currentTimeMillis());
-            host.startSafe(new Intent(Intent.ACTION_VIEW).setData(b.build()));
+            host.startSafe(HomeActivity.calendarIntent());
         });
         int w = act.getResources().getDisplayMetrics().widthPixels - px(64);
         c.addView(cal, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.round(w * 0.72f)));
@@ -831,7 +849,7 @@ class LeftPanel extends FrameLayout {
             return;
         }
         final long now = System.currentTimeMillis();
-        net.execute(() -> {
+        bg(() -> {
             List<Object[]> evs = new ArrayList<>();
             Uri.Builder b = CalendarContract.Instances.CONTENT_URI.buildUpon();
             Calendar start = Calendar.getInstance();
@@ -865,15 +883,12 @@ class LeftPanel extends FrameLayout {
             eventsBox.addView(t);
             return;
         }
-        SimpleDateFormat tf = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm a", Locale.ITALIAN);
+        SimpleDateFormat tf = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.ITALIAN);
         SimpleDateFormat df = new SimpleDateFormat("EEE d", Locale.ITALIAN);
-        Calendar today = Calendar.getInstance();
         for (Object[] e : evs) {
             long id = (Long) e[0], begin = (Long) e[2], end = (Long) e[3];
             boolean allDay = (Boolean) e[4];
             int color = (Integer) e[5];
-            Calendar bc = Calendar.getInstance();
-            bc.setTimeInMillis(begin);
             int diff = WData.daysTo(begin);
             String day = diff <= 0 ? "Oggi" : diff == 1 ? "Domani" : df.format(new Date(begin)).replace(".", "");
             String when = day + (allDay ? "" : " · " + tf.format(new Date(begin)));

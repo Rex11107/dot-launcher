@@ -148,10 +148,6 @@ class AppSections extends LinearLayout {
         return scrolls.get(current).canScrollVertically(-1);
     }
 
-    void scrollToBottom() {
-        for (ScrollView s : scrolls) s.post(() -> s.fullScroll(View.FOCUS_DOWN));
-    }
-
     // =====================================================================
     // costruzione
     // =====================================================================
@@ -244,7 +240,7 @@ class AppSections extends LinearLayout {
         }
         if (entries.isEmpty()) {
             TextView empty = new TextView(getContext());
-            empty.setText(sec == null ? "Nessuna app" : "Sezione vuota: trascina qui un'app sull'icona della sezione in basso");
+            empty.setText(sec == null ? "Nessuna app" : "Sezione vuota: trascina un'app sull'icona di questa sezione nella barra in basso");
             empty.setTextColor(th.sub);
             empty.setTypeface(th.bodyFace);
             empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
@@ -337,7 +333,7 @@ class AppSections extends LinearLayout {
         more.setImageBitmap(SectionIcons.bitmap(SectionIcons.MORE, s, th.onTile, th.accent, 0));
         more.setPadding(px(9), px(9), px(9), px(9));
         more.setOnClickListener(v -> menu.run());
-        more.setContentDescription("Menù della sezione");
+        more.setContentDescription("Menu della sezione");
         LayoutParams ml = new LayoutParams(s, s);
         ml.leftMargin = px(4);
         r.addView(more, ml);

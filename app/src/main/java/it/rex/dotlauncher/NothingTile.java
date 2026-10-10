@@ -68,10 +68,6 @@ class NothingTile extends View {
     private boolean chargeAnim;
     private final Rect visRect = new Rect();
 
-    private boolean isBattery() {
-        return item.type.startsWith("battery");
-    }
-
     /** Fase 0..1 del ciclo di ricarica. */
     private float phase(long period) {
         return (SystemClock.uptimeMillis() % period) / (float) period;

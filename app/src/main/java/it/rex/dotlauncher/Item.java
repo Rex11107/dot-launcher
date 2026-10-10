@@ -50,17 +50,23 @@ final class Item {
     static List<Item> listFromJson(String s) {
         List<Item> out = new ArrayList<>();
         if (s == null || s.isEmpty()) return out;
+        JSONArray a;
         try {
-            JSONArray a = new JSONArray(s);
-            for (int i = 0; i < a.length(); i++) {
+            a = new JSONArray(s);
+        } catch (Exception e) {
+            return out;
+        }
+        for (int i = 0; i < a.length(); i++) {
+            // un elemento rovinato si salta, senza perdere tutta la home
+            try {
                 JSONObject o = a.getJSONObject(i);
-                Item it = new Item(o.getString("t"), o.optInt("c"), o.optInt("r"),
+                Item it = new Item(o.getString("t"), Math.max(0, o.optInt("c")), Math.max(0, o.optInt("r")),
                         Math.max(1, o.optInt("w", 1)), Math.max(1, o.optInt("h", 1)),
-                        o.optInt("o"), o.optInt("p"));
+                        Math.max(0, Math.min(2, o.optInt("o"))), Math.max(0, o.optInt("p")));
                 it.data = o.optString("d", "");
                 out.add(it);
+            } catch (Exception ignored) {
             }
-        } catch (Exception ignored) {
         }
         return out;
     }

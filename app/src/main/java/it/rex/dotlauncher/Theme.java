@@ -126,6 +126,8 @@ final class Theme {
 
     /** Colore principale dello sfondo di sistema, reso abbastanza vivo da fare da accento. */
     private static int wallpaperAccent(Context c) {
+        // WallpaperColors esiste da Android 8.1 (API 27)
+        if (android.os.Build.VERSION.SDK_INT < 27) return RED;
         try {
             WallpaperColors wc = WallpaperManager.getInstance(c).getWallpaperColors(WallpaperManager.FLAG_SYSTEM);
             if (wc == null) return RED;
@@ -136,7 +138,7 @@ final class Theme {
             hsv[1] = Math.max(hsv[1], 0.5f);
             hsv[2] = Math.min(Math.max(hsv[2], 0.6f), 0.92f);
             return Color.HSVToColor(hsv);
-        } catch (Exception e) {
+        } catch (Throwable e) {
             return RED;
         }
     }

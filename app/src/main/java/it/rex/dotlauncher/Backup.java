@@ -23,11 +23,27 @@ final class Backup {
     // dati temporanei che non ha senso copiare
     private static final List<String> SKIP = Arrays.asList(
             "wjson", "wt", "blurWallId", "askedLoc", "widgets", "wcity",
-            "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday");
+            "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday", "pendPos", "newsCache", "newsTime");
+
+    // tipi attesi delle impostazioni lette come numeri o sì/no (le altre sono testi o insiemi)
+    private static final Set<String> BOOLS = new HashSet<>(Arrays.asList("anim", "askedLoc", "dockInit",
+            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24"));
+    private static final Set<String> INTS = new HashSet<>(Arrays.asList("blurWallId", "cols", "pages", "stepAcc",
+            "stepGoal", "stepToday", "wallVer"));
+    private static final Set<String> LONGS = new HashSet<>(Arrays.asList("mlat", "mlon", "newsTime", "updCheck", "wt"));
+    private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast"));
+
+    private static boolean typeOk(String k, String t) {
+        if (BOOLS.contains(k)) return "b".equals(t);
+        if (INTS.contains(k)) return "i".equals(t);
+        if (LONGS.contains(k)) return "l".equals(t);
+        if (FLOATS.contains(k)) return "f".equals(t);
+        return "s".equals(t) || "set".equals(t);
+    }
 
     /** Dati da non esportare: cache, stato dei sensori e soprattutto le chiavi API. */
     private static boolean skip(String k) {
-        return SKIP.contains(k) || k.startsWith("aiKey_") || k.equals("newsCache") || k.equals("newsTime");
+        return SKIP.contains(k) || k.startsWith("aiKey_");
     }
 
     static void export(Context c, SharedPreferences prefs, Uri uri) throws Exception {
@@ -79,6 +95,7 @@ final class Backup {
             for (int i = 0; i < keys.length(); i++) {
                 String k = keys.getString(i);
                 JSONObject o = data.getJSONObject(k);
+                if (!typeOk(k, o.getString("t"))) continue; // tipo inatteso: meglio saltarlo che bloccare la home
                 switch (o.getString("t")) {
                     case "s":
                         String v = o.getString("v");

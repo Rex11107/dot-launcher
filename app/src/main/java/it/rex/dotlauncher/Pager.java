@@ -81,19 +81,25 @@ class Pager extends ViewGroup {
         if (TileGrid.anyDragging) return false;
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                activeId = ev.getPointerId(0);
                 downX = lastX = ev.getX();
                 downY = ev.getY();
                 edgeTouch = downX < edgeL || downX > getWidth() - edgeR;
                 dragging = !scroller.isFinished();
                 if (dragging) scroller.abortAnimation();
                 break;
-            case MotionEvent.ACTION_MOVE:
+            case MotionEvent.ACTION_MOVE: {
                 if (edgeTouch) break;
-                float dx = ev.getX() - downX, dy = ev.getY() - downY;
+                int idx = index(ev);
+                float dx = ev.getX(idx) - downX, dy = ev.getY(idx) - downY;
                 if (Math.abs(dx) > slop && Math.abs(dx) > Math.abs(dy) * 1.2f) {
                     dragging = true;
-                    lastX = ev.getX();
+                    lastX = ev.getX(idx);
                 }
+                break;
+            }
+            case MotionEvent.ACTION_POINTER_UP:
+                pointerUp(ev);
                 break;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
@@ -110,19 +116,26 @@ class Pager extends ViewGroup {
         int W = getWidth();
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_DOWN:
+                activeId = ev.getPointerId(0);
                 downX = lastX = ev.getX();
                 downY = ev.getY();
                 if (!scroller.isFinished()) scroller.abortAnimation();
                 return true;
-            case MotionEvent.ACTION_MOVE:
-                if (!dragging && Math.abs(ev.getX() - downX) > slop) dragging = true;
+            case MotionEvent.ACTION_MOVE: {
+                int idx = index(ev);
+                float x = ev.getX(idx);
+                if (!dragging && Math.abs(x - downX) > slop) dragging = true;
                 if (dragging) {
-                    float d = lastX - ev.getX();
+                    float d = lastX - x;
                     int max = Math.max(0, (getChildCount() - 1) * W);
                     float nx = Math.max(-W * 0.15f, Math.min(max + W * 0.15f, getScrollX() + d));
                     scrollTo((int) nx, 0);
                 }
-                lastX = ev.getX();
+                lastX = x;
+                return true;
+            }
+            case MotionEvent.ACTION_POINTER_UP:
+                pointerUp(ev);
                 return true;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
@@ -146,6 +159,25 @@ class Pager extends ViewGroup {
                 return true;
         }
         return true;
+    }
+
+    // ---------- più dita: si segue un solo dito, e se si alza si passa all'altro senza salti ----------
+
+    private int activeId;
+
+    private int index(MotionEvent ev) {
+        int i = ev.findPointerIndex(activeId);
+        return i < 0 ? 0 : i;
+    }
+
+    private void pointerUp(MotionEvent ev) {
+        int i = ev.getActionIndex();
+        if (ev.getPointerId(i) != activeId) return;
+        int other = i == 0 ? 1 : 0;
+        activeId = ev.getPointerId(other);
+        lastX = ev.getX(other);
+        downX = lastX;
+        downY = ev.getY(other);
     }
 
     void snapTo(int page) {
@@ -172,7 +204,4 @@ class Pager extends ViewGroup {
         }
     }
 
-    View pageView(int i) {
-        return getChildAt(i);
-    }
 }

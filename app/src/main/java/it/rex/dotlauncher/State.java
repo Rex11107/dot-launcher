@@ -13,7 +13,7 @@ final class State {
     static String nextAlarm = "";
 
     // bussola e contapassi (SensorHub)
-    static boolean hasCompass, headingOk, hasSteps, stepPerm = true;
+    static boolean hasCompass, hasSteps, stepPerm = true;
     static float heading;
     static int compassAccuracy = 3;
     static int steps;

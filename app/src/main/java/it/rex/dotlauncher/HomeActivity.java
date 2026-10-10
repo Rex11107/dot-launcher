@@ -4,7 +4,6 @@ import android.Manifest;
 import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.AlarmManager;
-import android.app.AlertDialog;
 import android.app.DatePickerDialog;
 import android.app.Dialog;
 import android.appwidget.AppWidgetHostView;
@@ -122,7 +121,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private boolean noLimits;
     private Pager pager;
     private int gestureBottom;
-    private int navBottom;
     private IndicatorView indicator;
     private LinearLayout dock;
     private final List<TileGrid> grids = new ArrayList<>();
@@ -142,7 +140,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private final List<AppEntry> allApps = new ArrayList<>();
     private final Map<String, AppEntry> appsByKey = new HashMap<>();
-    private final Map<String, Bitmap> iconCache = new HashMap<>();
+    /** Icone pronte: limitate a un ottavo della memoria dell'app (telefoni con poca RAM). */
+    private final android.util.LruCache<String, Bitmap> iconCache = new android.util.LruCache<String, Bitmap>(
+            (int) Math.max(4L * 1024 * 1024, Runtime.getRuntime().maxMemory() / 8)) {
+        @Override
+        protected int sizeOf(String k, Bitmap b) {
+            return b.getByteCount();
+        }
+    };
     private LauncherApps launcherApps;
     private AppWidgetManager awm;
     private WidgetHost host;
@@ -196,11 +201,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     };
 
     private final LauncherApps.Callback appsCallback = new LauncherApps.Callback() {
-        @Override public void onPackageRemoved(String p, UserHandle u) { loadApps(); }
-        @Override public void onPackageAdded(String p, UserHandle u) { loadApps(); }
-        @Override public void onPackageChanged(String p, UserHandle u) { loadApps(); }
-        @Override public void onPackagesAvailable(String[] p, UserHandle u, boolean r) { loadApps(); }
-        @Override public void onPackagesUnavailable(String[] p, UserHandle u, boolean r) { loadApps(); }
+        // più eventi ravvicinati (es. aggiornamenti in blocco) producono un solo ricaricamento
+        @Override public void onPackageRemoved(String p, UserHandle u) { reloadAppsSoon(); }
+        @Override public void onPackageAdded(String p, UserHandle u) { reloadAppsSoon(); }
+        @Override public void onPackageChanged(String p, UserHandle u) { reloadAppsSoon(); }
+        @Override public void onPackagesAvailable(String[] p, UserHandle u, boolean r) { reloadAppsSoon(); }
+        @Override public void onPackagesUnavailable(String[] p, UserHandle u, boolean r) { reloadAppsSoon(); }
     };
 
     // ---------- ciclo di vita ----------
@@ -374,10 +380,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onDestroy() {
         super.onDestroy();
+        destroyed = true;
         launcherApps.unregisterCallback(appsCallback);
+        ui.removeCallbacksAndMessages(null);
+        if (locCancel != null) locCancel.cancel();
         appExec.shutdownNow();
         netExec.shutdownNow();
         if (panel != null) panel.shutdown();
+    }
+
+    private boolean destroyed;
+    private android.os.CancellationSignal locCancel;
+
+    /** Lavoro in background che non fa crollare nulla se la home è già stata chiusa (es. dopo recreate). */
+    private void bg(ExecutorService ex, Runnable r) {
+        if (destroyed || ex.isShutdown()) return;
+        try {
+            ex.execute(r);
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+        }
     }
 
     @Override
@@ -580,7 +601,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (settings != null) settings.setInsets(r[1], r[3]);
             gestureBottom = r[6];
             dropBar.setPadding(0, r[1] + px(8), 0, px(8));
-            navBottom = r[3];
             pager.setEdgeGuard(r[4], r[5]);
             return in;
         });
@@ -1306,8 +1326,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 return null;
             }
             AppWidgetProviderInfo info = awm.getAppWidgetInfo(id);
-            if (info == null) return null;
-            v = host.createView(getApplicationContext(), id, info);
+            if (info == null) {
+                // app del widget disattivata, aggiornata o non raggiungibile: si tiene il posto invece di perderlo
+                v = missingWidget();
+            } else {
+                v = host.createView(getApplicationContext(), id, info);
+            }
         } else {
             v = new NothingTile(this, it, th, h24);
             v.setOnClickListener(x -> onTileClick(it));
@@ -1319,6 +1343,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             return true;
         });
         return v;
+    }
+
+    private View missingWidget() {
+        TextView t = new TextView(this);
+        t.setText("Widget non disponibile\ntieni premuto per toglierlo");
+        t.setGravity(Gravity.CENTER);
+        t.setTextColor(th.sub);
+        t.setTypeface(th.bodyFace);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Theme.alpha(th.tile, 0.6f));
+        bg.setCornerRadius(px(24));
+        bg.setStroke(Math.max(1, px(1)), Theme.alpha(th.onTile, 0.15f));
+        t.setBackground(bg);
+        return t;
     }
 
     private void refreshTiles(String prefix) {
@@ -1334,19 +1373,23 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "clock_dots":
             case "clock_analog":
             case "clock_pill":
+            case "clock_ring":
+            case "world_clock":
             case "alarm":
                 safeStart(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
                 break;
             case "date_big":
             case "date_dot":
-            case "calendar": {
-                Uri.Builder b = CalendarContract.CONTENT_URI.buildUpon().appendPath("time");
-                ContentUris.appendId(b, System.currentTimeMillis());
-                safeStart(new Intent(Intent.ACTION_VIEW).setData(b.build()));
+            case "calendar":
+            case "year":
+            case "day":
+            case "week":
+                safeStart(calendarIntent());
                 break;
-            }
             case "weather":
             case "weather_week":
+            case "sun":
+            case "weather_hours":
                 refreshWeather(true);
                 toast("Aggiorno il meteo…");
                 break;
@@ -1366,9 +1409,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "countdown":
                 editCountdown(it);
                 break;
-            case "world_clock":
-                safeStart(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
-                break;
             case "steps":
                 if (!SensorHub.stepPermission(this)) askStepPermission();
                 else editStepGoal();
@@ -1384,28 +1424,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 }
                 break;
             }
-            case "year":
-            case "day":
-            case "week": {
-                Uri.Builder b = CalendarContract.CONTENT_URI.buildUpon().appendPath("time");
-                ContentUris.appendId(b, System.currentTimeMillis());
-                safeStart(new Intent(Intent.ACTION_VIEW).setData(b.build()));
-                break;
-            }
-            case "clock_ring":
-                safeStart(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
-                break;
             case "moon": {
                 double age = NothingTile.moonAge();
                 int next = (int) Math.round((NothingTile.SYNODIC / 2 - age + NothingTile.SYNODIC) % NothingTile.SYNODIC);
                 toast(NothingTile.moonName(age) + " · luna piena tra " + next + (next == 1 ? " giorno" : " giorni"));
                 break;
             }
-            case "sun":
-            case "weather_hours":
-                refreshWeather(true);
-                toast("Aggiorno il meteo…");
-                break;
             case "counter":
                 WData.put(it, "n", String.valueOf(WData.getLong(it, "n", 0) + 1));
                 saveLayout();
@@ -1434,6 +1458,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 toggleTorch();
                 break;
         }
+    }
+
+    /** Apre il calendario del telefono su oggi. */
+    static Intent calendarIntent() {
+        Uri.Builder b = CalendarContract.CONTENT_URI.buildUpon().appendPath("time");
+        ContentUris.appendId(b, System.currentTimeMillis());
+        return new Intent(Intent.ACTION_VIEW).setData(b.build());
     }
 
     private void editNote(Item it) {
@@ -1668,40 +1699,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
     }
 
-    public boolean onDropOnto(Item dragged, int page, int col, int row) {
-        if (!dragged.isApp()) return false;
-        Item target = null;
-        for (Item o : items) {
-            if (o == dragged || o.page != page) continue;
-            if (col >= o.col && col < o.col + o.w && row >= o.row && row < o.row + o.h) {
-                target = o;
-                break;
-            }
-        }
-        if (target == null) return false;
-        if ("folder".equals(target.type)) {
-            List<String> apps = FolderTile.apps(target);
-            if (!apps.contains(dragged.data)) apps.add(dragged.data);
-            FolderTile.set(target, FolderTile.name(target), apps);
-            items.remove(dragged);
-        } else if (target.isApp()) {
-            Item f = new Item("folder", target.col, target.row, 1, 1, 0, target.page);
-            List<String> apps = new ArrayList<>();
-            apps.add(target.data);
-            if (!apps.contains(dragged.data)) apps.add(dragged.data);
-            FolderTile.set(f, "Cartella", apps);
-            items.remove(target);
-            items.remove(dragged);
-            items.add(f);
-            toast("Cartella creata");
-        } else {
-            return false;
-        }
-        saveLayout();
-        ui.post(this::buildPages);
-        return true;
-    }
-
     private void openFolder(Item folder) {
         List<String> keys = FolderTile.apps(folder);
         List<AppEntry> apps = new ArrayList<>();
@@ -1762,10 +1759,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (f.view != null) f.view.invalidate();
             closeDrawer();
         });
-    }
-
-    public void onItemMoved(Item it) {
-        saveLayout();
     }
 
     public void onItemMenu(Item it) {
@@ -1889,41 +1882,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
     }
 
-    private void chooseSize(Item it) {
-        int[][] sizes = Widgets.sizes(it.type);
-        String[] labels = new String[sizes.length];
-        int sel = -1;
-        for (int i = 0; i < sizes.length; i++) {
-            labels[i] = sizes[i][0] + " × " + sizes[i][1];
-            if (sizes[i][0] == it.w && sizes[i][1] == it.h) sel = i;
-        }
-        Sheet.list(this, th, "Dimensione", labels, sel, w -> {
-            int nw = sizes[w][0], nh = sizes[w][1];
-            if (canPlace(it, it.page, it.col, it.row, nw, nh)) {
-                it.w = nw;
-                it.h = nh;
-            } else {
-                int ow = it.w, oh = it.h;
-                it.w = nw;
-                it.h = nh;
-                int[] spot = findSpot(it, it.page, 0, 0, false);
-                if (spot == null) {
-                    it.w = ow;
-                    it.h = oh;
-                    toast("Non c'è spazio per questa dimensione");
-                    return;
-                }
-                it.page = spot[0];
-                it.col = spot[1];
-                it.row = spot[2];
-            }
-            saveLayout();
-            buildPages();
-        });
-    }
-
     private void chooseTone(Item it) {
-        String[] labels = {"Standard", "Contrasto", "Accento (rosso)"};
+        String[] labels = {"Standard", "Contrasto", "Colore d'accento"};
         Sheet.list(this, th, "Colore", labels, it.tone, w -> {
             it.tone = w;
             saveLayout();
@@ -2186,7 +2146,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
             LinearLayout.LayoutParams il = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(110));
             card.addView(iv, il);
-            appExec.execute(() -> {
+            bg(appExec, () -> {
                 android.graphics.drawable.Drawable d = null;
                 try {
                     d = info.loadPreviewImage(this, dpi);
@@ -2217,18 +2177,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dlg[0] = Sheet.custom(this, th, "Widget di sistema", list);
     }
 
-    private String widgetLabel(PackageManager pm, AppWidgetProviderInfo p) {
-        String app;
-        try {
-            app = String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(p.provider.getPackageName(), 0)));
-        } catch (Exception e) {
-            app = p.provider.getPackageName();
-        }
-        String w = String.valueOf(p.loadLabel(pm));
-        return w.equals(app) ? app : app + " · " + w;
-    }
-
     private void bindWidget(AppWidgetProviderInfo info) {
+        prefs.edit().putString("pendPos", pendingPage + "," + pendingCol + "," + pendingRow).apply();
         int id = host.allocateAppWidgetId();
         pendingWidgetId = id;
         boolean ok;
@@ -2270,6 +2220,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void finishAdd(int id) {
+        prefs.edit().remove("pendPos").apply();
         AppWidgetProviderInfo info = awm.getAppWidgetInfo(id);
         if (info == null) {
             cancelPending();
@@ -2286,6 +2237,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void cancelPending() {
+        prefs.edit().remove("pendPos").apply();
         if (pendingWidgetId != -1) {
             try {
                 host.deleteAppWidgetId(pendingWidgetId);
@@ -2353,6 +2305,20 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (it.view != null) it.view.invalidate();
             return;
         }
+        if ((req == REQ_BIND || req == REQ_CONFIG) && data != null) {
+            // se il launcher è stato chiuso nel frattempo, l'id e la posizione si recuperano qui
+            int id = data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1);
+            if (id != -1) pendingWidgetId = id;
+        }
+        if ((req == REQ_BIND || req == REQ_CONFIG) && pendingWidgetId != -1 && prefs.contains("pendPos")) {
+            String[] pp = prefs.getString("pendPos", "0,0,0").split(",");
+            try {
+                pendingPage = Integer.parseInt(pp[0]);
+                pendingCol = Integer.parseInt(pp[1]);
+                pendingRow = Integer.parseInt(pp[2]);
+            } catch (Exception ignored) {
+            }
+        }
         if (req == REQ_BIND) {
             if (res == RESULT_OK && pendingWidgetId != -1) configureOrAdd(pendingWidgetId);
             else cancelPending();
@@ -2364,10 +2330,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     // ---------- app ----------
 
+    private final Runnable reloadApps = this::loadApps;
+
+    private void reloadAppsSoon() {
+        ui.removeCallbacks(reloadApps);
+        ui.postDelayed(reloadApps, 400);
+    }
+
     private void loadApps() {
-        appExec.execute(() -> {
+        bg(appExec, () -> {
             List<AppEntry> list = new ArrayList<>();
             try {
+                final UserHandle me = android.os.Process.myUserHandle();
+                final android.os.UserManager um = (android.os.UserManager) getSystemService(USER_SERVICE);
                 for (UserHandle u : launcherApps.getProfiles()) {
                     for (LauncherActivityInfo i : launcherApps.getActivityList(null, u)) {
                         ComponentName cn = i.getComponentName();
@@ -2376,7 +2351,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         a.label = String.valueOf(i.getLabel());
                         a.component = cn;
                         a.user = u;
-                        a.key = cn.flattenToString();
+                        // le app del profilo di lavoro hanno una chiave distinta (stessa app, utente diverso)
+                        a.key = u.equals(me) ? cn.flattenToString()
+                                : cn.flattenToString() + "#" + (um != null ? um.getSerialNumberForUser(u) : u.hashCode());
                         try {
                             ApplicationInfo ai = i.getApplicationInfo();
                             a.cat = ai.category;
@@ -2408,7 +2385,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     int mode = origs.contains(a.key) ? IconFactory.MODE_ORIGINAL
                             : glyphs.contains(a.key) ? IconFactory.MODE_GLYPH : IconFactory.MODE_AUTO;
                     pre.put(a.key + "@" + size, makeIcon(a, size, style, reds.contains(a.key), mode, pack));
-                } catch (Exception ignored) {
+                } catch (Exception | OutOfMemoryError ignored) {
+                    // memoria finita: le icone mancanti si creano più tardi, quando servono
                 }
             }
             ui.post(() -> {
@@ -2417,8 +2395,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 allApps.addAll(list);
                 appsByKey.clear();
                 for (AppEntry a : list) appsByKey.put(a.key, a);
-                iconCache.clear();
-                iconCache.putAll(pre);
+                iconCache.evictAll();
+                for (Map.Entry<String, Bitmap> e : pre.entrySet()) iconCache.put(e.getKey(), e.getValue());
                 refreshDrawer();
                 buildDock();
                 refreshAppViews();
@@ -2440,9 +2418,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         return IconFactory.MODE_AUTO;
     }
 
-    /** Scelta per singola app: automatica, sempre originale, sempre Nothing, rossa. */
+    /** Scelta per singola app: automatica, sempre originale, sempre a simbolo, simbolo nel colore d'accento. */
     private void chooseIconMode(AppEntry a) {
-        String[] labels = {"Automatica", "Originale (non modificata)", "Simbolo (forzato)", "Simbolo rosso"};
+        String[] labels = {"Automatica", "Originale (non modificata)", "Simbolo (forzato)", "Simbolo nel colore d'accento"};
         int cur = isRed(a.key) ? 3 : iconMode(a.key);
         Sheet.list(this, th, "Stile icona", labels, cur, w -> {
             Set<String> o = new HashSet<>(prefs.getStringSet("origApps", new HashSet<>()));
@@ -2455,7 +2433,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             else if (w == 2) g.add(a.key);
             else if (w == 3) r.add(a.key);
             prefs.edit().putStringSet("origApps", o).putStringSet("glyphApps", g).putStringSet("redApps", r).apply();
-            iconCache.clear();
+            iconCache.evictAll();
             refreshDrawer();
             buildDock();
             refreshAppViews();
@@ -2470,16 +2448,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private boolean isRed(String key) {
         return prefs.getStringSet("redApps", new HashSet<>()).contains(key);
-    }
-
-    private void toggleRed(String key) {
-        Set<String> s = new HashSet<>(prefs.getStringSet("redApps", new HashSet<>()));
-        if (!s.remove(key)) s.add(key);
-        prefs.edit().putStringSet("redApps", s).apply();
-        iconCache.clear();
-        refreshDrawer();
-        buildDock();
-        refreshAppViews();
     }
 
     @Override
@@ -2497,7 +2465,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (a == null || a.icon == null) return null;
         try {
             b = makeIcon(a, size, prefs.getString("icons", IconFactory.AUTO), isRed(key), iconMode(key), iconPack);
-        } catch (Exception e) {
+        } catch (Exception | OutOfMemoryError e) {
             return null;
         }
         iconCache.put(ck, b);
@@ -3602,6 +3570,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private static String[] scParts(String key) {
+        if (key == null || !key.startsWith("sc:")) return new String[]{"", "", "0", ""};
         String[] p = key.substring(3).split("\\|", 4);
         return p.length == 4 ? p : new String[]{"", "", "0", ""};
     }
@@ -3824,7 +3793,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (!manual && now - prefs.getLong("updCheck", 0) < 6 * 60 * 60 * 1000L) return;
         prefs.edit().putLong("updCheck", now).apply();
         if (manual) toast("Controllo gli aggiornamenti…");
-        netExec.execute(() -> {
+        bg(netExec, () -> {
             try {
                 JSONObject j = new JSONObject(http("https://api.github.com/repos/Rex11107/dot-launcher/releases/latest"));
                 String tag = j.optString("tag_name", "");
@@ -3847,8 +3816,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
         });
     }
-
-    // ---------- impostazioni ----------
 
     // ---------- impostazioni (pagina a schermo intero) ----------
 
@@ -3963,7 +3930,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     prefs.edit().putBoolean("drawerAll", on).apply();
                     refreshDrawer();
                 });
-        st.row(SectionIcons.LOCK, "App nascoste", hidden().size() + (hidden().size() == 1 ? " app" : " app") + " nascoste",
+        final int nHidden = hidden().size();
+        st.row(SectionIcons.LOCK, "App nascoste", nHidden == 0 ? "Nessuna" : nHidden + (nHidden == 1 ? " app nascosta" : " app nascoste"),
                 this::manageHidden);
 
         st.section("Meteo e sensori");
@@ -4176,17 +4144,37 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             try {
                 String provider = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
                         ? LocationManager.NETWORK_PROVIDER : LocationManager.PASSIVE_PROVIDER;
-                lm.getCurrentLocation(provider, null, getMainExecutor(), loc -> {
+                if (locCancel != null) locCancel.cancel();
+                locCancel = new android.os.CancellationSignal();
+                lm.getCurrentLocation(provider, locCancel, getMainExecutor(), loc -> {
+                    if (destroyed) return;
                     if (loc != null) fetchWeather(loc.getLatitude(), loc.getLongitude(), null);
                     else toast("Posizione non disponibile: imposta una città");
                 });
+            } catch (Exception ignored) {
+            }
+        } else {
+            // Android 8-10: una sola lettura della posizione dalla rete (anche senza servizi Google)
+            try {
+                String provider = lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+                        ? LocationManager.NETWORK_PROVIDER : LocationManager.GPS_PROVIDER;
+                @SuppressWarnings("deprecation")
+                android.location.LocationListener l = new android.location.LocationListener() {
+                    @Override public void onLocationChanged(Location loc) {
+                        if (!destroyed && loc != null) fetchWeather(loc.getLatitude(), loc.getLongitude(), null);
+                    }
+                    @Override public void onStatusChanged(String p, int st, Bundle b) {}
+                    @Override public void onProviderEnabled(String p) {}
+                    @Override public void onProviderDisabled(String p) {}
+                };
+                lm.requestSingleUpdate(provider, l, Looper.getMainLooper());
             } catch (Exception ignored) {
             }
         }
     }
 
     private void fetchWeather(double lat, double lon, String knownCity) {
-        netExec.execute(() -> {
+        bg(netExec, () -> {
             try {
                 String url = String.format(Locale.US,
                         "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f"
@@ -4197,10 +4185,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 String json = http(url);
                 String city = knownCity;
                 if (city == null || city.isEmpty()) city = reverseCity(lat, lon);
-                State.parseWeather(json, city);
                 prefs.edit().putString("wjson", json).putString("wcity", city)
                         .putLong("wt", System.currentTimeMillis()).apply();
-                ui.post(() -> refreshTiles(null));
+                // i dati condivisi dai widget si aggiornano sul thread dell'interfaccia, mai durante un disegno
+                final String fc = city;
+                ui.post(() -> {
+                    State.parseWeather(json, fc);
+                    refreshTiles(null);
+                });
             } catch (Exception ignored) {
             }
         });
@@ -4218,7 +4210,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void geocode(String city) {
-        netExec.execute(() -> {
+        bg(netExec, () -> {
             try {
                 String url = "https://geocoding-api.open-meteo.com/v1/search?count=1&language=it&name="
                         + URLEncoder.encode(city, "UTF-8");

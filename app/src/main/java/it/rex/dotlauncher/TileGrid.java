@@ -36,7 +36,7 @@ class TileGrid extends ViewGroup {
     private float downX, downY;
 
     private int pMode = PREVIEW_NONE, pCol, pRow, pW, pH;
-    private int accent = 0xFFD71921, neutral = 0x66FFFFFF;
+    private int accent = Theme.RED, neutral = 0x66FFFFFF;
     private final Paint pp = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF pr = new RectF();
     private final float dp;
@@ -155,7 +155,7 @@ class TileGrid extends ViewGroup {
         float w = pW * cell + (pW - 1) * gap, h = pH * cell + (pH - 1) * gap;
         pr.set(x, y, x + w, y + h);
         float m = Math.min(w, h);
-        float rad = (pW == 1 && pH == 1) || pW == 1 || pH == 1 ? m / 2f : Theme.radius(m, dp);
+        float rad = pW == 1 || pH == 1 ? m / 2f : Theme.radius(m, dp);
         int col = pMode == PREVIEW_BAD ? neutral : accent;
         pp.setStyle(Paint.Style.FILL);
         pp.setPathEffect(null);

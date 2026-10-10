@@ -254,11 +254,6 @@ final class Sections {
         return null;
     }
 
-    Entry folderOf(String key) {
-        for (Section s : list) for (Entry e : s.entries) if (e.isFolder() && e.apps.contains(key)) return e;
-        return null;
-    }
-
     /** Toglie l'app da dove si trova. Un contenitore rimasto con una sola app torna app singola. */
     void removeKey(String key) {
         for (Section s : list) {

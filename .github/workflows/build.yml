@@ -19,9 +19,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Verifica Android SDK
-        run: echo "ANDROID_HOME=$ANDROID_HOME" && ls "$ANDROID_HOME/platforms" || true
-
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'

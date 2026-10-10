@@ -121,7 +121,6 @@ final class SensorHub implements SensorEventListener {
         if (d > 180) d -= 360;
         if (d < -180) d += 360;
         State.heading = (State.heading + d * 0.25f + 360f) % 360f;
-        State.headingOk = true;
         long now = SystemClock.uptimeMillis();
         float moved = Math.abs(State.heading - lastShown);
         if (moved > 180) moved = 360 - moved;
