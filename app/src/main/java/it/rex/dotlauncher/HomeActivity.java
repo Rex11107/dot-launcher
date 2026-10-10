@@ -17,6 +17,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ApplicationInfo;
 import android.content.pm.LauncherActivityInfo;
 import android.content.pm.LauncherApps;
 import android.content.pm.PackageInfo;
@@ -97,7 +98,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Source {
+public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Source, AppSections.Host {
     private static final int REQ_BIND = 1;
     private static final int REQ_CONFIG = 2;
     private static final int REQ_LOC = 3;
@@ -132,6 +133,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private GridView grid;
     private AppAdapter adapter;
     private boolean drawerOpen;
+    private LinearLayout searchRow;
+    private boolean searchMode;
+    private Sections sections;
+    private AppSections secView;
+    private boolean drawerDirty = true;
 
     private final List<AppEntry> allApps = new ArrayList<>();
     private final Map<String, AppEntry> appsByKey = new HashMap<>();
@@ -159,6 +165,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         ComponentName component;
         UserHandle user;
         Drawable icon;
+        int cat = -1;     // categoria dichiarata dall'app (ApplicationInfo.CATEGORY_*)
+        boolean game;
     }
 
     // ---------- ricevitori ----------
@@ -243,7 +251,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 if (!drawerOpen) {
                     if (dy < -min) openDrawer(false);
                     else if (dy > min) expandNotifications();
-                } else if (dy > min && !grid.canScrollVertically(-1)) {
+                } else if (dy > min && !(searchMode ? grid.canScrollVertically(-1) : secView.canScrollUp())) {
                     closeDrawer();
                 }
                 return false;
@@ -360,7 +368,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onBackPressed() {
         if (resizer != null) exitResize();
-        else if (drawerOpen) closeDrawer();
+        else if (drawerOpen) {
+            if (searchMode) exitSearch();
+            else closeDrawer();
+        }
     }
 
     @Override
@@ -442,6 +453,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             homeBox.setPadding(r[0], r[1] + px(8), r[2], r[3] + px(6));
             drawer.setPadding(px(16) + r[0], r[1] + px(20), px(16) + r[2], r[7]);
             grid.setPadding(0, 0, 0, px(24) + (r[7] > 0 ? 0 : r[3]));
+            secView.setPadding(0, 0, 0, r[7] > 0 ? 0 : r[3]);
+            secView.setEdgeGuard(r[4], r[5]);
             gestureBottom = r[6];
             dropBar.setPadding(0, r[1] + px(8), 0, px(8));
             navBottom = r[3];
@@ -468,14 +481,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         drawer.setPadding(px(16), px(28), px(16), 0);
         drawer.setVisibility(View.GONE);
         drawer.setClickable(true);
-
-        DotTextView title = new DotTextView(this);
-        title.setPitch(3.6f * dp);
-        title.setColor(th.onTile);
-        title.setText("APP.");
-        title.setAccent(".", th.accent);
-        title.setPadding(px(6), 0, 0, 0);
-        drawer.addView(title);
 
         search = new EditText(this);
         search.setHint("Cerca");
@@ -504,11 +509,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             return false;
         });
+        searchRow = new LinearLayout(this);
+        searchRow.setOrientation(LinearLayout.HORIZONTAL);
+        searchRow.setGravity(Gravity.CENTER_VERTICAL);
+        searchRow.addView(search, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        ImageView closeSearch = new ImageView(this);
+        closeSearch.setImageBitmap(SectionIcons.bitmap(SectionIcons.CLOSE, px(44), th.onTile, th.accent,
+                Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f)));
+        closeSearch.setPadding(px(4), px(4), px(4), px(4));
+        closeSearch.setContentDescription("Chiudi la ricerca");
+        closeSearch.setOnClickListener(v -> exitSearch());
+        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(px(48), px(48));
+        cl.leftMargin = px(8);
+        searchRow.addView(closeSearch, cl);
+        searchRow.setVisibility(View.GONE);
         LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         slp.topMargin = px(16);
         slp.bottomMargin = px(16);
-        drawer.addView(search, slp);
+        drawer.addView(searchRow, slp);
 
         grid = new GridView(this);
         grid.setNumColumns(TileGrid.COLS);
@@ -527,26 +546,303 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             beginDrag(SRC_DRAWER, null, a.key, icon);
             return true;
         });
+        grid.setVisibility(View.GONE);
         drawer.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        // sezioni del cassetto
+        sections = new Sections(prefs);
+        secView = new AppSections(this, this);
+        drawer.addView(secView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+    }
+
+    // ---------- cassetto a sezioni ----------
+
+    private boolean drawerFree() {
+        return "free".equals(prefs.getString("drawerOrder", "alpha"));
+    }
+
+    /** Elenco app cambiato (installazioni, app nascoste, icone): riallinea ricerca e sezioni. */
+    private void refreshDrawer() {
+        adapter.refresh();
+        if (sections != null && sections.sync(allApps)) sections.save();
+        drawerDirty = true;
+        if (drawerOpen) rebuildDrawer();
+    }
+
+    private void rebuildDrawer() {
+        if (secView == null) return;
+        drawerDirty = false;
+        secView.setModel(sections, !drawerFree(), prefs.getBoolean("drawerAll", true));
+        secView.rebuild();
+    }
+
+    private void saveSections(int page) {
+        sections.save();
+        rebuildDrawer();
+        secView.setPageNow(page);
+    }
+
+    private void enterSearch() {
+        searchMode = true;
+        secView.setVisibility(View.GONE);
+        searchRow.setVisibility(View.VISIBLE);
+        grid.setVisibility(View.VISIBLE);
+        search.setText("");
+        adapter.setQuery("");
+        grid.setSelection(0);
+        ui.postDelayed(() -> {
+            search.requestFocus();
+            InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
+        }, 150);
+    }
+
+    private void exitSearch() {
+        searchMode = false;
+        InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (imm != null) imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
+        search.clearFocus();
+        searchRow.setVisibility(View.GONE);
+        grid.setVisibility(View.GONE);
+        secView.setVisibility(View.VISIBLE);
+    }
+
+    @Override
+    public Theme theme() {
+        return th;
+    }
+
+    @Override
+    public Set<String> hiddenKeys() {
+        return hidden();
+    }
+
+    @Override
+    public List<AppEntry> apps() {
+        return allApps;
+    }
+
+    @Override
+    public void launchKey(String key, View v) {
+        launch(appsByKey.get(key), v);
+    }
+
+    @Override
+    public void appLongPress(String key, View icon) {
+        beginDrag(SRC_DRAWER, null, key, icon);
+    }
+
+    @Override
+    public void search() {
+        enterSearch();
+    }
+
+    @Override
+    public void openBrowser() {
+        Intent i = Intent.makeMainSelectorActivity(Intent.ACTION_MAIN, Intent.CATEGORY_APP_BROWSER);
+        try {
+            startActivity(i);
+        } catch (Exception e) {
+            safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com")));
+        }
+    }
+
+    private AppEntry storeApp(boolean fdroid) {
+        String[] pk = fdroid
+                ? new String[]{"org.fdroid.fdroid", "org.fdroid.basic", "com.looker.droidify", "com.machiav3lli.fdroid"}
+                : new String[]{"com.android.vending"};
+        for (String p : pk) {
+            for (AppEntry a : allApps) if (a.component.getPackageName().equals(p)) return a;
+        }
+        return null;
+    }
+
+    @Override
+    public void openStore(boolean fdroid) {
+        AppEntry a = storeApp(fdroid);
+        if (a == null) toast(fdroid ? "F-Droid non è installato" : "Play Store non disponibile");
+        else launch(a, null);
+    }
+
+    @Override
+    public Bitmap storeIcon(boolean fdroid, int size) {
+        AppEntry a = storeApp(fdroid);
+        return a == null ? null : iconFor(a.key, size);
+    }
+
+    @Override
+    public void sectionMenu(int idx) {
+        if (idx < 0 || idx >= sections.list.size()) return;
+        Sections.Section s = sections.list.get(idx);
+        String[] opts = {"Rinomina", "Cambia icona", "Sposta a sinistra", "Sposta a destra", "Nuova sezione", "Elimina sezione"};
+        Sheet.list(this, th, s.name, opts, -1, w -> {
+            switch (w) {
+                case 0:
+                    Sheet.input(this, th, "Nome della sezione", "es. Lavoro", s.name, n -> {
+                        if (n.isEmpty()) return;
+                        s.name = n;
+                        saveSections(idx);
+                    });
+                    break;
+                case 1:
+                    pickSectionIcon(ic -> {
+                        s.icon = ic;
+                        saveSections(idx);
+                    });
+                    break;
+                case 2:
+                    if (idx > 0) {
+                        sections.swap(idx, idx - 1);
+                        saveSections(idx - 1);
+                    }
+                    break;
+                case 3:
+                    if (idx < sections.list.size() - 1) {
+                        sections.swap(idx, idx + 1);
+                        saveSections(idx + 1);
+                    }
+                    break;
+                case 4:
+                    newSection();
+                    break;
+                default:
+                    Sheet.confirm(this, th, "Elimina sezione",
+                            "Le app di \"" + s.name + "\" passano nella sezione Varie (o nell'ultima rimasta).",
+                            "Elimina", () -> {
+                                if (sections.remove(s)) saveSections(Math.max(0, idx - 1));
+                                else toast("Serve almeno una sezione");
+                            });
+            }
+        });
+    }
+
+    @Override
+    public void allMenu() {
+        String[] opts = {"Nascondi \"Tutte le app\"", "Nuova sezione"};
+        Sheet.list(this, th, "Tutte le app", opts, -1, w -> {
+            if (w == 0) {
+                prefs.edit().putBoolean("drawerAll", false).apply();
+                refreshDrawer();
+                toast("Si riattiva dalle impostazioni");
+            } else newSection();
+        });
+    }
+
+    @Override
+    public void newSection() {
+        Sheet.input(this, th, "Nuova sezione", "es. Lavoro", "", n -> {
+            if (n.isEmpty()) return;
+            pickSectionIcon(ic -> {
+                sections.add(n, ic);
+                saveSections(sections.list.size() - 1);
+                toast("Trascina le app sull'icona della nuova sezione");
+            });
+        });
+    }
+
+    private void pickSectionIcon(java.util.function.Consumer<String> cb) {
+        final String[][] ch = SectionIcons.CHOICES;
+        final int s = px(54);
+        final int circle = Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f);
+        Sheet.grid(this, th, "Icona", ch.length,
+                i -> SectionIcons.bitmap(SectionIcons.get(ch[i][0]), s, th.onTile, th.accent, circle),
+                i -> ch[i][1], i -> cb.accept(ch[i][0]), i -> cb.accept(ch[i][0]),
+                "Scegli l'icona della sezione");
+    }
+
+    private void pickSection(String title, java.util.function.Consumer<Sections.Section> cb) {
+        String[] names = new String[sections.list.size()];
+        Bitmap[] icons = new Bitmap[names.length];
+        int circle = Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f);
+        for (int i = 0; i < names.length; i++) {
+            Sections.Section s = sections.list.get(i);
+            names[i] = s.name;
+            icons[i] = SectionIcons.bitmap(SectionIcons.get(s.icon), px(36), th.onTile, th.accent, circle);
+        }
+        Sheet.list(this, th, title, names, icons, -1, w -> cb.accept(sections.list.get(w)), null);
+    }
+
+    private void moveAppToSection(AppEntry a) {
+        pickSection("Sposta in sezione", s -> {
+            sections.moveTo(a.key, s, null, false);
+            saveSections(secView.current());
+            toast(a.label + " → " + s.name);
+        });
+    }
+
+    @Override
+    public void folderClick(Sections.Section s, Sections.Entry f) {
+        final List<AppEntry> apps = new ArrayList<>();
+        Set<String> h = hidden();
+        for (String k : f.apps) {
+            AppEntry a = appsByKey.get(k);
+            if (a != null && !h.contains(k)) apps.add(a);
+        }
+        if (!drawerFree()) {
+            final Collator col = Collator.getInstance(Locale.ITALIAN);
+            Collections.sort(apps, (x, y) -> col.compare(x.label, y.label));
+        }
+        Sheet.grid(this, th, f.name, apps.size(),
+                i -> iconFor(apps.get(i).key, px(54)), i -> apps.get(i).label,
+                i -> launch(apps.get(i), null),
+                i -> folderAppMenu(s, f, apps.get(i)),
+                "Tocca per aprire · tieni premuto per altre opzioni");
+    }
+
+    private void folderAppMenu(Sections.Section s, Sections.Entry f, AppEntry a) {
+        String[] opts = {"Togli dal contenitore", "Sposta in sezione…", "Aggiungi alla home", "Info app", "Disinstalla"};
+        Sheet.list(this, th, a.label, opts, -1, w -> {
+            switch (w) {
+                case 0:
+                    sections.moveTo(a.key, s, f, true);
+                    saveSections(secView.current());
+                    break;
+                case 1: moveAppToSection(a); break;
+                case 2:
+                    closeDrawer();
+                    addAppToHome(a, pager.getCurrent(), 0, 0);
+                    break;
+                case 3: appInfo(a); break;
+                default: uninstall(a);
+            }
+        });
+    }
+
+    @Override
+    public void folderLongPress(Sections.Section s, Sections.Entry f) {
+        String[] opts = {"Rinomina", "Sposta in sezione…", "Sciogli contenitore"};
+        Sheet.list(this, th, f.name, opts, -1, w -> {
+            switch (w) {
+                case 0:
+                    Sheet.input(this, th, "Nome del contenitore", "es. Social", f.name, n -> {
+                        f.name = n.isEmpty() ? "Contenitore" : n;
+                        saveSections(secView.current());
+                    });
+                    break;
+                case 1:
+                    pickSection("Sposta in sezione", to -> {
+                        sections.moveEntry(f, s, to);
+                        saveSections(secView.current());
+                    });
+                    break;
+                default:
+                    sections.dissolve(s, f);
+                    saveSections(secView.current());
+            }
+        });
     }
 
     private void openDrawer(boolean keyboard) {
         if (drawerOpen) return;
         drawerOpen = true;
-        search.setText("");
+        if (drawerDirty) rebuildDrawer();
+        if (keyboard) enterSearch();
+        else exitSearch();
         drawer.setAlpha(0f);
         drawer.setTranslationY(px(60));
         drawer.setVisibility(View.VISIBLE);
         drawer.animate().alpha(1f).translationY(0).setDuration(180).start();
-        grid.setSelection(0);
         playWave();
-        if (keyboard) {
-            ui.postDelayed(() -> {
-                search.requestFocus();
-                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
-                if (imm != null) imm.showSoftInput(search, InputMethodManager.SHOW_IMPLICIT);
-            }, 220);
-        }
     }
 
     private void closeDrawer() {
@@ -556,7 +852,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (imm != null) imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
         search.clearFocus();
         drawer.animate().alpha(0f).translationY(px(60)).setDuration(150)
-                .withEndAction(() -> drawer.setVisibility(View.GONE)).start();
+                .withEndAction(() -> {
+                    drawer.setVisibility(View.GONE);
+                    if (!drawerOpen) exitSearch();
+                }).start();
     }
 
     private void hideDrawerNow() {
@@ -568,6 +867,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         drawer.setVisibility(View.GONE);
         drawer.setAlpha(1f);
         drawer.setTranslationY(0);
+        exitSearch();
     }
 
     private void expandNotifications() {
@@ -1511,6 +1811,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         a.user = u;
                         a.key = cn.flattenToString();
                         try {
+                            ApplicationInfo ai = i.getApplicationInfo();
+                            a.cat = ai.category;
+                            a.game = (ai.flags & ApplicationInfo.FLAG_IS_GAME) != 0;
+                        } catch (Exception ignored) {
+                        }
+                        try {
                             a.icon = i.getIcon(0);
                         } catch (Exception ignored) {
                         }
@@ -1546,7 +1852,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 for (AppEntry a : list) appsByKey.put(a.key, a);
                 iconCache.clear();
                 iconCache.putAll(pre);
-                adapter.refresh();
+                refreshDrawer();
                 buildDock();
                 refreshAppViews();
             });
@@ -1583,7 +1889,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             else if (w == 3) r.add(a.key);
             prefs.edit().putStringSet("origApps", o).putStringSet("glyphApps", g).putStringSet("redApps", r).apply();
             iconCache.clear();
-            adapter.notifyDataSetChanged();
+            refreshDrawer();
             buildDock();
             refreshAppViews();
         });
@@ -1604,7 +1910,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (!s.remove(key)) s.add(key);
         prefs.edit().putStringSet("redApps", s).apply();
         iconCache.clear();
-        adapter.notifyDataSetChanged();
+        refreshDrawer();
         buildDock();
         refreshAppViews();
     }
@@ -1763,6 +2069,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         labels.add("Stile icona");
         acts.add(() -> chooseIconMode(a));
         if (fromDock == null) {
+            labels.add("Sposta in sezione…");
+            acts.add(() -> moveAppToSection(a));
             labels.add("Aggiungi a una cartella");
             acts.add(() -> addToFolder(a));
             labels.add("Nascondi dal cassetto");
@@ -1770,7 +2078,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 Set<String> h = hidden();
                 h.add(a.key);
                 prefs.edit().putStringSet("hidden", h).apply();
-                adapter.refresh();
+                refreshDrawer();
             });
         }
         labels.add("Info app");
@@ -1845,6 +2153,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private static final int SRC_HOME = 0, SRC_DOCK = 1, SRC_DRAWER = 2;
     private static final int T_NONE = 0, T_BAR = 1, T_DOCK = 2, T_CELL = 3, T_MERGE = 4, T_BAD = 5;
+    // destinazioni dentro il cassetto a sezioni
+    private static final int T_DTAB = 6, T_DMERGE = 7, T_DPOS = 8, T_DSEC = 9;
+    private boolean drawerDrag; // trascinamento che resta nel cassetto
+    private int tSec = -1;
+    private Sections.Entry tEntry;
+    private boolean tAfter;
+    private Runnable hoverRun;
+    private int hoverCode = Integer.MIN_VALUE;
 
     private int dragSrc = -1;
     private Item dragItem;
@@ -1992,14 +2308,20 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         dragMenu.dismiss();
                         dragMenu = null;
                     }
-                    if (dragSrc == SRC_DRAWER) hideDrawerNow();
+                    // dal cassetto a sezioni il trascinamento resta nel cassetto (sezioni, contenitori, ordine);
+                    // per portare l'app sulla home si passa sopra "Sulla home" in alto
+                    drawerDrag = dragSrc == SRC_DRAWER && drawerOpen && !searchMode;
+                    if (dragSrc == SRC_DRAWER && !drawerDrag) hideDrawerNow();
+                    if (drawerDrag && dragSourceView != null) dragSourceView.setAlpha(0.3f);
                     if (dragSourceView != null && dragSrc != SRC_DRAWER) dragSourceView.setVisibility(View.INVISIBLE);
                     dragShadow.setVisibility(View.VISIBLE);
                     showDropBar();
-                    // la home si rimpicciolisce verso il basso per fare spazio alla barra in alto
-                    pager.setPivotX(pager.getWidth() / 2f);
-                    pager.setPivotY(pager.getHeight());
-                    pager.animate().scaleX(0.88f).scaleY(0.88f).setDuration(180).start();
+                    if (!drawerDrag) {
+                        // la home si rimpicciolisce verso il basso per fare spazio alla barra in alto
+                        pager.setPivotX(pager.getWidth() / 2f);
+                        pager.setPivotY(pager.getHeight());
+                        pager.animate().scaleX(0.88f).scaleY(0.88f).setDuration(180).start();
+                    }
                 }
                 if (dragMoved) {
                     positionShadow();
@@ -2017,7 +2339,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void showDropBar() {
         boolean app = dragKey != null && !dragKey.startsWith("sc:") && appsByKey.containsKey(dragKey);
-        dropLeft.setText(dragSrc == SRC_DRAWER ? "Info app" : dragSrc == SRC_DOCK ? "Togli dal dock" : "Rimuovi");
+        dropLeft.setText(drawerDrag ? "Sulla home" : dragSrc == SRC_DRAWER ? "Info app"
+                : dragSrc == SRC_DOCK ? "Togli dal dock" : "Rimuovi");
         dropRight.setText("Disinstalla");
         dropRight.setVisibility(app ? View.VISIBLE : View.GONE);
         if (dragSrc == SRC_DRAWER && !app) dropLeft.setVisibility(View.GONE);
@@ -2051,6 +2374,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void updateTarget() {
+        if (drawerDrag) {
+            updateDrawerTarget();
+            return;
+        }
         clearTargets();
         tKind = T_NONE;
         tTarget = null;
@@ -2137,6 +2464,105 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         setEdge(edgeDirAt());
     }
 
+    private void hover(int code, Runnable r, long delay) {
+        if (code == hoverCode) return;
+        clearHover();
+        hoverCode = code;
+        if (r != null) {
+            hoverRun = r;
+            ui.postDelayed(r, delay);
+        }
+    }
+
+    private void clearHover() {
+        if (hoverRun != null) ui.removeCallbacks(hoverRun);
+        hoverRun = null;
+        hoverCode = Integer.MIN_VALUE;
+    }
+
+    /** Destinazioni mentre si trascina un'app dentro il cassetto a sezioni. */
+    private void updateDrawerTarget() {
+        clearTargets();
+        tKind = T_NONE;
+        tEntry = null;
+        tSec = -1;
+        // 1) barra in alto: "Sulla home" (passandoci sopra si va alla home) o "Disinstalla"
+        int[] bl = new int[2];
+        dropBar.getLocationOnScreen(bl);
+        if (lastRawY < bl[1] + dropBar.getHeight()) {
+            boolean right = dropRight.getVisibility() == View.VISIBLE && lastRawX > root.getWidth() / 2f;
+            tKind = T_BAR;
+            tZone = right ? 2 : 1;
+            styleDropPill(right ? dropRight : dropLeft, true);
+            secView.clearHighlight();
+            setEdge(0);
+            hover(right ? -2 : -1, right ? null : this::switchDragToHome, 450);
+            return;
+        }
+        // 2) barra delle sezioni: lasciando l'app su un'icona la si sposta in quella sezione
+        int tab = secView.tabAt(lastRawX, lastRawY);
+        if (tab != -2) {
+            secView.mark(null, 0);
+            setEdge(0);
+            if (tab >= 0) {
+                secView.highlightTab(tab);
+                if (tab < sections.list.size()) {
+                    tKind = T_DTAB;
+                    tSec = tab;
+                }
+                final int page = tab;
+                hover(1000 + tab, () -> secView.snapTo(page), 700);
+            } else {
+                secView.highlightTab(-1);
+                clearHover();
+            }
+            return;
+        }
+        secView.highlightTab(-1);
+        clearHover();
+        setEdge(edgeDirAt());
+        // 3) la pagina della sezione: sopra un'app = contenitore; di lato = posizione (ordine libero)
+        int sec = secView.currentSection();
+        if (sec < 0) {
+            secView.mark(null, 0);
+            return;
+        }
+        tSec = sec;
+        AppSections.Hit h = secView.hit(lastRawX, lastRawY);
+        if (h != null && h.entry != null && !dragKey.equals(h.entry.app)) {
+            if (h.center) {
+                tKind = T_DMERGE;
+                tEntry = h.entry;
+                secView.mark(h.cell, 1);
+                return;
+            }
+            if (drawerFree()) {
+                tKind = T_DPOS;
+                tEntry = h.entry;
+                tAfter = h.after;
+                secView.mark(h.cell, h.after ? 3 : 2);
+                return;
+            }
+        }
+        secView.mark(null, 0);
+        tKind = T_DSEC;
+    }
+
+    /** Dal cassetto alla home senza lasciare l'app. */
+    private void switchDragToHome() {
+        if (!drawerDrag || dragSrc < 0) return;
+        drawerDrag = false;
+        clearHover();
+        secView.clearHighlight();
+        hideDrawerNow();
+        showDropBar();
+        pager.setPivotX(pager.getWidth() / 2f);
+        pager.setPivotY(pager.getHeight());
+        pager.animate().scaleX(0.88f).scaleY(0.88f).setDuration(180).start();
+        root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+        updateTarget();
+    }
+
     private int edgeDirAt() {
         int edge = px(28);
         return lastRawX < edge ? -1 : lastRawX > root.getWidth() - edge ? 1 : 0;
@@ -2152,6 +2578,16 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     /** Dito fermo al bordo: si passa alla pagina accanto (e se serve se ne crea una nuova). */
     private void edgeTick() {
         if (dragSrc < 0 || edgeDir == 0) return;
+        if (drawerDrag) {
+            int t = secView.current() + edgeDir;
+            if (t >= 0 && t < secView.realPages()) {
+                secView.mark(null, 0);
+                secView.snapTo(t);
+                root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+            }
+            ui.postDelayed(edgeRun, 900);
+            return;
+        }
         int target = pager.getCurrent() + edgeDir;
         if (target < 0) return;
         if (target >= pages) {
@@ -2195,6 +2631,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         int kind = tKind;
         boolean menuShown = dragMenu != null;
         dragMenu = null;
+        boolean wasDrawer = drawerDrag;
+        drawerDrag = false;
+        clearHover();
+        if (secView != null) secView.clearHighlight();
         dragSrc = -1;
         dragItem = null;
         dragKey = null;
@@ -2204,7 +2644,48 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (!menuShown) showMenuFor(src, it, key);
             return;
         }
-        performDrop(src, it, key, kind);
+        if (wasDrawer) dropInDrawer(key, kind);
+        else performDrop(src, it, key, kind);
+    }
+
+    private void dropInDrawer(String key, int kind) {
+        AppEntry a = key == null ? null : appsByKey.get(key);
+        if (key == null) return;
+        switch (kind) {
+            case T_BAR:
+                if (tZone == 2 && a != null) uninstall(a);
+                else if (tZone == 1 && a != null) {
+                    closeDrawer();
+                    addAppToHome(a, pager.getCurrent(), 0, 0);
+                    toast(a.label + " aggiunta alla home");
+                }
+                return;
+            case T_DTAB: {
+                if (tSec < 0 || tSec >= sections.list.size()) return;
+                Sections.Section s = sections.list.get(tSec);
+                if (sections.sectionOf(key) == s) return;
+                sections.moveTo(key, s, null, false);
+                toast((a != null ? a.label : "App") + " → " + s.name);
+                break;
+            }
+            case T_DMERGE:
+                if (tEntry == null || !sections.merge(key, tEntry)) return;
+                break;
+            case T_DPOS:
+                if (tEntry == null || tSec < 0) return;
+                sections.moveTo(key, sections.list.get(tSec), tEntry, tAfter);
+                break;
+            case T_DSEC: {
+                if (tSec < 0 || tSec >= sections.list.size()) return;
+                Sections.Section s = sections.list.get(tSec);
+                if (sections.sectionOf(key) == s) return;
+                sections.moveTo(key, s, null, false);
+                break;
+            }
+            default:
+                return;
+        }
+        saveSections(secView.current());
     }
 
     private void showMenuFor(int src, Item it, String key) {
@@ -2728,6 +3209,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons));
         names.add("Griglia della home: " + TileGrid.COLS + " colonne");
         acts.add(() -> setColumns(TileGrid.COLS == 5 ? 4 : 5));
+        final boolean free = drawerFree();
+        names.add("Ordine delle app nel cassetto: " + (free ? "libero" : "alfabetico"));
+        acts.add(() -> {
+            prefs.edit().putString("drawerOrder", free ? "alpha" : "free").apply();
+            refreshDrawer();
+            toast(free ? "Ordine alfabetico" : "Ordine libero: trascina le app per disporle");
+        });
+        final boolean allOn = prefs.getBoolean("drawerAll", true);
+        names.add("Sezione \"Tutte le app\" nel cassetto: " + (allOn ? "sì" : "no"));
+        acts.add(() -> {
+            prefs.edit().putBoolean("drawerAll", !allOn).apply();
+            refreshDrawer();
+        });
         names.add("Sfondo: " + (wall ? "sfondo di sistema" : "tinta unita"));
         acts.add(() -> toggle("wall", wall));
         names.add("Nomi delle app sulla home: " + (labels ? "sì" : "no"));
@@ -2859,7 +3353,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     Set<String> s = hidden();
                     s.remove(a.key);
                     prefs.edit().putStringSet("hidden", s).apply();
-                    adapter.refresh();
+                    refreshDrawer();
                     toast(a.label + " di nuovo nel cassetto");
                     if (!s.isEmpty()) manageHidden();
                     break;
