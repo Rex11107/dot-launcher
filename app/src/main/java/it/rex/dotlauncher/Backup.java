@@ -22,7 +22,8 @@ import java.util.Set;
 final class Backup {
     // dati temporanei che non ha senso copiare
     private static final List<String> SKIP = Arrays.asList(
-            "wjson", "wt", "blurWallId", "askedLoc", "widgets", "wcity");
+            "wjson", "wt", "blurWallId", "askedLoc", "widgets", "wcity",
+            "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday");
 
     static void export(Context c, SharedPreferences prefs, Uri uri) throws Exception {
         JSONObject root = new JSONObject();

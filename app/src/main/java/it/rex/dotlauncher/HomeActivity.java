@@ -5,6 +5,8 @@ import android.app.Activity;
 import android.app.ActivityOptions;
 import android.app.AlarmManager;
 import android.app.AlertDialog;
+import android.app.DatePickerDialog;
+import android.app.Dialog;
 import android.appwidget.AppWidgetHostView;
 import android.appwidget.AppWidgetManager;
 import android.appwidget.AppWidgetProviderInfo;
@@ -83,6 +85,7 @@ import java.text.Collator;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
@@ -100,6 +103,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_LOC = 3;
     private static final int REQ_EXPORT = 4;
     private static final int REQ_IMPORT = 5;
+    private static final int REQ_PHOTO = 6;
+    private static final int REQ_STEPS = 7;
     private static final int HOST_ID = 0x0D07;
     private static final int MAX_DOCK = 5;
 
@@ -144,6 +149,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private GestureDetector gestures;
     private boolean receiversOn;
     private boolean fitted;
+    private SensorHub sensors;
+    private boolean started;
+    private Item pendingPhoto;
 
     static class AppEntry {
         String label;
@@ -192,6 +200,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dp = getResources().getDisplayMetrics().density;
         prefs = getSharedPreferences("dot", MODE_PRIVATE);
         migrateFromV1();
+        TileGrid.COLS = prefs.getInt("cols", 4) == 5 ? 5 : 4;
         Draw.ghost = prefs.getBoolean("ghost", true);
         Draw.anim = prefs.getBoolean("anim", true);
         th = Theme.build(this, prefs);
@@ -210,6 +219,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
         State.parseWeather(prefs.getString("wjson", ""), prefs.getString("wcity", ""));
         loadLayout();
+        if (saved != null) {
+            int pi = saved.getInt("pph", -1);
+            if (pi >= 0 && pi < items.size()) pendingPhoto = items.get(pi);
+        }
+        State.stepGoal = prefs.getInt("stepGoal", 8000);
+        sensors = new SensorHub(this, prefs, this::refreshTiles);
 
         buildUi();
         setContentView(root);
@@ -248,6 +263,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         out.putInt("pp", pendingPage);
         out.putInt("pc", pendingCol);
         out.putInt("pr", pendingRow);
+        out.putInt("pph", pendingPhoto == null ? -1 : items.indexOf(pendingPhoto));
     }
 
     @Override
@@ -272,6 +288,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
             receiversOn = true;
         }
+        started = true;
+        startSensors();
         updateAlarm();
         refreshTiles(null);
         maybeRefreshWeather();
@@ -303,6 +321,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             unregisterReceiver(batteryReceiver);
             receiversOn = false;
         }
+        started = false;
+        if (sensors != null) sensors.stop();
         if (dragSrc >= 0) finishDrag(false);
         exitResize();
         // uscendo verso un'app il cassetto si chiude subito: al ritorno la home è pulita
@@ -491,7 +511,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         drawer.addView(search, slp);
 
         grid = new GridView(this);
-        grid.setNumColumns(4);
+        grid.setNumColumns(TileGrid.COLS);
         grid.setVerticalSpacing(px(20));
         grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
         grid.setSelector(new ColorDrawable(Color.TRANSPARENT));
@@ -669,6 +689,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             updateSysWidgetSizes();
             if (th.glass) pager.postDelayed(() -> refreshTiles(null), 300);
         });
+        startSensors();
+    }
+
+    /** Accende bussola e contapassi solo se sulla home c'è il widget relativo. */
+    private void startSensors() {
+        if (!started || sensors == null) return;
+        boolean compass = false, steps = false;
+        for (Item it : items) {
+            if ("compass".equals(it.type)) compass = true;
+            if ("steps".equals(it.type)) steps = true;
+        }
+        sensors.start(this, compass, steps);
     }
 
     /** Dopo la prima misura: sposta gli elementi che non entrano nello schermo. */
@@ -777,7 +809,135 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "search":
                 openDrawer(true);
                 break;
+            case "compass":
+                toast(State.compassAccuracy <= 1
+                        ? "Bussola imprecisa: muovi il telefono disegnando un 8"
+                        : "Se la bussola sbaglia, muovi il telefono disegnando un 8");
+                break;
+            case "countdown":
+                editCountdown(it);
+                break;
+            case "world_clock":
+                safeStart(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
+                break;
+            case "steps":
+                if (!SensorHub.stepPermission(this)) askStepPermission();
+                else editStepGoal();
+                break;
+            case "photo": {
+                String u = WData.get(it, "u", "");
+                if (u.isEmpty() || Photos.failed(u)) pickPhoto(it);
+                else {
+                    Intent i = new Intent(Intent.ACTION_VIEW);
+                    i.setDataAndType(Uri.parse(u), "image/*");
+                    i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    safeStart(i);
+                }
+                break;
+            }
         }
+    }
+
+    // ---------- impostazioni dei nuovi widget ----------
+
+    /** Dopo aver aggiunto un widget che ha bisogno di essere impostato. */
+    private void configureNew(Item it) {
+        switch (it.type) {
+            case "countdown": editCountdown(it); break;
+            case "photo": pickPhoto(it); break;
+            case "steps":
+                if (!SensorHub.stepPermission(this)) askStepPermission();
+                break;
+            case "world_clock":
+                if (it.data == null || it.data.isEmpty()) {
+                    WData.put(it, "z", WData.DEFAULT_ZONES);
+                    saveLayout();
+                }
+                break;
+        }
+    }
+
+    private void editCountdown(Item it) {
+        Sheet.input(this, th, "Nome dell'evento", "es. Vacanze", WData.get(it, "t", ""), t -> {
+            Calendar c = Calendar.getInstance();
+            long cur = WData.getLong(it, "d", 0);
+            if (cur > 0) c.setTimeInMillis(cur);
+            else c.add(Calendar.DAY_OF_MONTH, 30);
+            DatePickerDialog picker = new DatePickerDialog(this,
+                    th.light ? android.R.style.Theme_DeviceDefault_Light_Dialog : android.R.style.Theme_DeviceDefault_Dialog,
+                    (v, y, m, d) -> {
+                        Calendar sel = Calendar.getInstance();
+                        sel.set(y, m, d, 12, 0, 0);
+                        sel.set(Calendar.MILLISECOND, 0);
+                        WData.put(it, "t", t.isEmpty() ? "Evento" : t);
+                        WData.put(it, "d", String.valueOf(sel.getTimeInMillis()));
+                        saveLayout();
+                        if (it.view != null) it.view.invalidate();
+                    }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH));
+            picker.setTitle("Data dell'evento");
+            picker.show();
+        });
+    }
+
+    private void pickPhoto(Item it) {
+        pendingPhoto = it;
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("image/*");
+        try {
+            startActivityForResult(i, REQ_PHOTO);
+        } catch (Exception e) {
+            pendingPhoto = null;
+            toast("Impossibile aprire la galleria");
+        }
+    }
+
+    private void chooseCities(Item it) {
+        List<String[]> cur = WData.zones(it);
+        String[] labels = new String[WData.CITIES.length];
+        for (int i = 0; i < labels.length; i++) {
+            boolean on = false;
+            for (String[] z : cur) if (z[1].equals(WData.CITIES[i][1])) on = true;
+            labels[i] = (on ? "✓  " : "      ") + WData.CITIES[i][0] + "  ·  " + WData.offsetLabel(WData.CITIES[i][1]);
+        }
+        Sheet.list(this, th, "Città (max 5)", labels, -1, w -> {
+            String[] c = WData.CITIES[w];
+            String[] found = null;
+            for (String[] z : cur) if (z[1].equals(c[1])) found = z;
+            if (found != null) {
+                if (cur.size() == 1) {
+                    toast("Lascia almeno una città");
+                } else cur.remove(found);
+            } else if (cur.size() >= 5) {
+                toast("Al massimo 5 città");
+            } else {
+                cur.add(new String[]{c[0], c[1]});
+            }
+            WData.setZones(it, cur);
+            saveLayout();
+            if (it.view != null) it.view.invalidate();
+            chooseCities(it);
+        });
+    }
+
+    private void askStepPermission() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            requestPermissions(new String[]{"android.permission.ACTIVITY_RECOGNITION"}, REQ_STEPS);
+        }
+    }
+
+    private void editStepGoal() {
+        Sheet.input(this, th, "Obiettivo di passi", "es. 8000", String.valueOf(State.stepGoal), v -> {
+            try {
+                int g = Integer.parseInt(v.replaceAll("[^0-9]", ""));
+                g = Math.max(500, Math.min(100000, g));
+                prefs.edit().putInt("stepGoal", g).apply();
+                State.stepGoal = g;
+                refreshTiles("steps");
+            } catch (NumberFormatException e) {
+                toast("Scrivi un numero, es. 8000");
+            }
+        });
     }
 
     private void updateAlarm() {
@@ -949,6 +1109,32 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             labels.add("Colore");
             acts.add(() -> chooseTone(it));
         }
+        switch (it.type) {
+            case "photo": {
+                boolean dots = "dots".equals(WData.get(it, "s", ""));
+                labels.add("Cambia foto");
+                acts.add(() -> pickPhoto(it));
+                labels.add(dots ? "Effetto: foto normale" : "Effetto: foto a puntini");
+                acts.add(() -> {
+                    WData.put(it, "s", dots ? "" : "dots");
+                    saveLayout();
+                    if (it.view != null) it.view.invalidate();
+                });
+                break;
+            }
+            case "countdown":
+                labels.add("Modifica evento");
+                acts.add(() -> editCountdown(it));
+                break;
+            case "world_clock":
+                labels.add("Scegli le città");
+                acts.add(() -> chooseCities(it));
+                break;
+            case "steps":
+                labels.add("Obiettivo di passi");
+                acts.add(this::editStepGoal);
+                break;
+        }
         if (it.isApp()) {
             AppEntry a = appsByKey.get(it.data);
             if (a != null) {
@@ -1116,7 +1302,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             String type = Widgets.TYPES[w];
             int[] s = Widgets.sizes(type)[0];
             int tone = "alarm".equals(type) ? 2 : 0;
-            addItem(new Item(type, col, row, s[0], s[1], tone, page), page, col, row);
+            Item it = new Item(type, col, row, s[0], s[1], tone, page);
+            addItem(it, page, col, row);
+            configureNew(it);
         });
     }
 
@@ -1281,6 +1469,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             } catch (Exception e) {
                 toast(req == REQ_EXPORT ? "Esportazione non riuscita" : "File di configurazione non valido");
             }
+            return;
+        }
+        if (req == REQ_PHOTO) {
+            Item it = pendingPhoto;
+            pendingPhoto = null;
+            if (res != RESULT_OK || data == null || data.getData() == null || it == null) return;
+            Uri uri = data.getData();
+            try {
+                getContentResolver().takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) {
+            }
+            Photos.forget(uri.toString());
+            WData.put(it, "u", uri.toString());
+            saveLayout();
+            if (it.view != null) it.view.invalidate();
             return;
         }
         if (req == REQ_BIND) {
@@ -1534,7 +1737,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
     }
 
-    private void showAppMenu(AppEntry a, Boolean fromDock) {
+    private Dialog showAppMenu(AppEntry a, Boolean fromDock) {
         final List<String> dk = dockKeys();
         final boolean inDock = dk.contains(a.key);
         List<String> labels = new ArrayList<>();
@@ -1575,7 +1778,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         labels.add("Disinstalla");
         acts.add(() -> safeStart(new Intent(Intent.ACTION_DELETE,
                 Uri.fromParts("package", a.component.getPackageName(), null))));
-        showMenuWithShortcuts(a.label, a, labels, acts);
+        return showMenuWithShortcuts(a.label, a, labels, acts);
     }
 
     private class AppAdapter extends BaseAdapter {
@@ -1651,6 +1854,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private int shadowW, shadowH, dragW = 1, dragH = 1;
     private float touchOffX, touchOffY, lastRawX, lastRawY, dragStartX, dragStartY;
     private boolean dragMoved;
+    private Dialog dragMenu; // menù aperto subito alla pressione prolungata nel cassetto
     private LinearLayout dropBar;
     private TextView dropLeft, dropRight;
     private int tKind = T_NONE, tCol, tRow, tZone, tDockIndex;
@@ -1764,6 +1968,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         super.dispatchTouchEvent(cancel);
         if (gestures != null) gestures.onTouchEvent(cancel);
         cancel.recycle();
+        // nel cassetto il menù compare subito; se il dito si sposta si chiude e parte il trascinamento
+        if (src == SRC_DRAWER && key != null) {
+            AppEntry a = appsByKey.get(key);
+            if (a != null) dragMenu = showAppMenu(a, null);
+        }
     }
 
     private void positionShadow() {
@@ -1779,6 +1988,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case MotionEvent.ACTION_MOVE:
                 if (!dragMoved && Math.hypot(lastRawX - dragStartX, lastRawY - dragStartY) > px(10)) {
                     dragMoved = true;
+                    if (dragMenu != null) {
+                        dragMenu.dismiss();
+                        dragMenu = null;
+                    }
                     if (dragSrc == SRC_DRAWER) hideDrawerNow();
                     if (dragSourceView != null && dragSrc != SRC_DRAWER) dragSourceView.setVisibility(View.INVISIBLE);
                     dragShadow.setVisibility(View.VISIBLE);
@@ -1980,13 +2193,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         String key = dragKey;
         boolean moved = dragMoved;
         int kind = tKind;
+        boolean menuShown = dragMenu != null;
+        dragMenu = null;
         dragSrc = -1;
         dragItem = null;
         dragKey = null;
         dragSourceView = null;
         if (!commit) return;
         if (!moved) {
-            showMenuFor(src, it, key);
+            if (!menuShown) showMenuFor(src, it, key);
             return;
         }
         performDrop(src, it, key, kind);
@@ -2403,7 +2618,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     /** Mostra il menu di un'app con le azioni rapide in cima. */
-    private void showMenuWithShortcuts(String title, AppEntry a, List<String> labels, List<Runnable> acts) {
+    private Dialog showMenuWithShortcuts(String title, AppEntry a, List<String> labels, List<Runnable> acts) {
         List<ShortcutInfo> scs = a == null ? new ArrayList<>() : appShortcuts(a);
         int n = scs.size();
         String[] all = new String[n + labels.size()];
@@ -2413,7 +2628,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             icons[i] = shortcutRowIcon(scs.get(i));
         }
         for (int i = 0; i < labels.size(); i++) all[n + i] = labels.get(i);
-        Sheet.list(this, th, title, all, icons, -1, w -> {
+        Dialog d = Sheet.list(this, th, title, all, icons, -1, w -> {
             if (w < n) {
                 ShortcutInfo si = scs.get(w);
                 try {
@@ -2431,6 +2646,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             prefs.edit().putBoolean("scHint", true).apply();
             toast("Tieni premuta un'azione per metterla sulla home");
         }
+        return d;
     }
 
     // =====================================================================
@@ -2497,60 +2713,64 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         String city = prefs.getString("city", "");
         boolean ghost = prefs.getBoolean("ghost", true);
         boolean anim = prefs.getBoolean("anim", true);
-        String[] items = {
-                "Stile: " + ("nuovo".equals(style) ? "Nuovo (5.0)" : "Classico"),
-                "Tema: " + ("light".equals(mode) ? "Chiaro" : "auto".equals(mode) ? "Automatico"
-                        : "grey".equals(mode) ? "Scuro (grigio)" : "Extra scuro (nero)"),
-                "Icone: " + (IconFactory.INVERSE.equals(icons) ? "invertite"
-                        : IconFactory.COLOR.equals(icons) ? "a colori" : "monocromatiche"),
-                "Sfondo: " + (wall ? "sfondo di sistema" : "tinta unita"),
-                "Nomi delle app sulla home: " + (labels ? "sì" : "no"),
-                "Orologio: " + (h24 ? "24 ore" : "12 ore"),
-                "Meteo: " + (city.isEmpty() ? "posizione automatica" : city),
-                "Pacchetto di icone: " + packLabel(),
-                "Punti spenti sui display: " + (ghost ? "sì" : "no"),
-                "Animazioni a punti: " + (anim ? "sì" : "no"),
-                "App nascoste…",
-                "Esporta configurazione",
-                "Importa configurazione",
-                "Versione " + versionName() + " · cerca aggiornamenti"
-        };
-        Sheet.list(this, th, "Impostazioni", items, -1, w -> {
-            switch (w) {
-                case 0: choose("Stile", new String[]{"Classico", "Nuovo (5.0)"},
-                        new String[]{"classic", "nuovo"}, "style", style); break;
-                case 1: choose("Tema", new String[]{"Extra scuro (nero)", "Scuro (grigio)", "Chiaro", "Automatico"},
-                        new String[]{"dark", "grey", "light", "auto"}, "mode", mode); break;
-                case 2: choose("Icone", new String[]{"Monocromatiche", "Invertite", "A colori"},
-                        new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons); break;
-                case 3:
-                    prefs.edit().putBoolean("wall", !wall).apply();
-                    recreate();
-                    break;
-                case 4:
-                    prefs.edit().putBoolean("labels", !labels).apply();
-                    recreate();
-                    break;
-                case 5:
-                    prefs.edit().putBoolean("h24", !h24).apply();
-                    recreate();
-                    break;
-                case 6: askCity(); break;
-                case 7: pickIconPack(); break;
-                case 8:
-                    prefs.edit().putBoolean("ghost", !ghost).apply();
-                    recreate();
-                    break;
-                case 9:
-                    prefs.edit().putBoolean("anim", !anim).apply();
-                    recreate();
-                    break;
-                case 10: manageHidden(); break;
-                case 11: exportBackup(); break;
-                case 12: importBackup(); break;
-                case 13: checkUpdate(true); break;
-            }
-        });
+        List<String> names = new ArrayList<>();
+        List<Runnable> acts = new ArrayList<>();
+        names.add("Stile: " + ("nuovo".equals(style) ? "Nuovo (5.0)" : "Classico"));
+        acts.add(() -> choose("Stile", new String[]{"Classico", "Nuovo (5.0)"},
+                new String[]{"classic", "nuovo"}, "style", style));
+        names.add("Tema: " + ("light".equals(mode) ? "Chiaro" : "auto".equals(mode) ? "Automatico"
+                : "grey".equals(mode) ? "Scuro (grigio)" : "Extra scuro (nero)"));
+        acts.add(() -> choose("Tema", new String[]{"Extra scuro (nero)", "Scuro (grigio)", "Chiaro", "Automatico"},
+                new String[]{"dark", "grey", "light", "auto"}, "mode", mode));
+        names.add("Icone: " + (IconFactory.INVERSE.equals(icons) ? "invertite"
+                : IconFactory.COLOR.equals(icons) ? "a colori" : "monocromatiche"));
+        acts.add(() -> choose("Icone", new String[]{"Monocromatiche", "Invertite", "A colori"},
+                new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons));
+        names.add("Griglia della home: " + TileGrid.COLS + " colonne");
+        acts.add(() -> setColumns(TileGrid.COLS == 5 ? 4 : 5));
+        names.add("Sfondo: " + (wall ? "sfondo di sistema" : "tinta unita"));
+        acts.add(() -> toggle("wall", wall));
+        names.add("Nomi delle app sulla home: " + (labels ? "sì" : "no"));
+        acts.add(() -> toggle("labels", labels));
+        names.add("Orologio: " + (h24 ? "24 ore" : "12 ore"));
+        acts.add(() -> toggle("h24", h24));
+        names.add("Meteo: " + (city.isEmpty() ? "posizione automatica" : city));
+        acts.add(this::askCity);
+        names.add("Pacchetto di icone: " + packLabel());
+        acts.add(this::pickIconPack);
+        names.add("Punti spenti sui display: " + (ghost ? "sì" : "no"));
+        acts.add(() -> toggle("ghost", ghost));
+        names.add("Animazioni a punti: " + (anim ? "sì" : "no"));
+        acts.add(() -> toggle("anim", anim));
+        names.add("App nascoste…");
+        acts.add(this::manageHidden);
+        names.add("Esporta configurazione");
+        acts.add(this::exportBackup);
+        names.add("Importa configurazione");
+        acts.add(this::importBackup);
+        names.add("Versione " + versionName() + " · cerca aggiornamenti");
+        acts.add(() -> checkUpdate(true));
+        Sheet.list(this, th, "Impostazioni", names.toArray(new String[0]), -1, w -> acts.get(w).run());
+    }
+
+    private void toggle(String key, boolean cur) {
+        prefs.edit().putBoolean(key, !cur).apply();
+        recreate();
+    }
+
+    /** Passa da 4 a 5 colonne (o viceversa): i widget a tutta larghezza si adattano. */
+    private void setColumns(int n) {
+        int old = TileGrid.COLS;
+        if (n == old) return;
+        TileGrid.COLS = n;
+        for (Item it : items) {
+            if (it.isApp() || "folder".equals(it.type) || "shortcut".equals(it.type)) continue;
+            if (it.w != old) continue;
+            if (n < old || canPlace(it, it.page, it.col, it.row, n, it.h)) it.w = n;
+        }
+        saveLayout();
+        prefs.edit().putInt("cols", n).apply();
+        recreate();
     }
 
     private void choose(String title, String[] labels, String[] values, String key, String cur) {
@@ -2689,6 +2909,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
         super.onRequestPermissionsResult(req, perms, results);
+        if (req == REQ_STEPS) {
+            State.stepPerm = SensorHub.stepPermission(this);
+            if (!State.stepPerm) toast("Senza il permesso \"Attività fisica\" il contapassi non può contare");
+            startSensors();
+            refreshTiles("steps");
+            return;
+        }
         if (req != REQ_LOC) return;
         if (results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) locateAndFetch();
         else askCity();

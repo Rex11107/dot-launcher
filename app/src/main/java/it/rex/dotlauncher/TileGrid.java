@@ -10,7 +10,7 @@ import android.view.View;
 import android.view.ViewGroup;
 
 /**
- * Una pagina della home: griglia di 4 colonne a celle quadrate.
+ * Una pagina della home: griglia di 4 o 5 colonne a celle quadrate.
  * Il trascinamento è gestito da HomeActivity; qui si disegna solo l'anteprima della posizione.
  */
 class TileGrid extends ViewGroup {
@@ -20,7 +20,8 @@ class TileGrid extends ViewGroup {
     }
 
     static boolean anyDragging;
-    static final int COLS = 4;
+    /** Colonne della griglia: 4 (predefinito) o 5, dalle impostazioni. */
+    static int COLS = 4;
 
     static final int PREVIEW_NONE = 0;
     static final int PREVIEW_OK = 1;     // posto libero

@@ -13,7 +13,9 @@ import android.view.View;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
+import java.util.TimeZone;
 
 /** Widget in stile Nothing disegnato interamente sul Canvas. */
 class NothingTile extends View {
@@ -127,6 +129,11 @@ class NothingTile extends View {
             case "battery_dots": batteryDots(cv, W, H); break;
             case "alarm": alarm(cv, W, H); break;
             case "search": search(cv, W, H); break;
+            case "compass": compass(cv, W, H); break;
+            case "countdown": countdown(cv, W, H); break;
+            case "world_clock": worldClock(cv, W, H); break;
+            case "steps": steps(cv, W, H); break;
+            case "photo": photo(cv, W, H); break;
         }
         if (animating) postInvalidateOnAnimation();
         else if (Draw.anim && State.charging && isBattery() && getWindowVisibility() == VISIBLE && isShown())
@@ -490,6 +497,261 @@ class NothingTile extends View {
                 cv.drawCircle(x0 + col * pitch + pitch / 2f, gTop + row * pitch + pitch / 2f, rad, p);
             }
         }
+    }
+
+    // ---------- bussola ----------
+
+    private static final String[] DIRS = {"N", "NE", "E", "SE", "S", "SO", "O", "NO"};
+
+    private void compass(Canvas cv, float W, float H) {
+        float cx = W / 2f, cy = H / 2f, R = Math.min(W, H) / 2f;
+        if (!State.hasCompass) {
+            Draw.label(cv, th, "Bussola non disponibile", cx, cy, R * 0.13f, sub(), 0, p, W * 0.8f);
+            return;
+        }
+        float hd = State.heading;
+        boolean small = item.w == 1;
+        float rr = R * 0.8f;
+        p.setStyle(Paint.Style.FILL);
+        for (int i = 1; i < 36; i++) {
+            double a = Math.toRadians(i * 10 - hd);
+            boolean major = i % 9 == 0;
+            p.setColor(Theme.alpha(fg(), major ? 0.85f : 0.28f));
+            cv.drawCircle(cx + (float) Math.sin(a) * rr, cy - (float) Math.cos(a) * rr,
+                    R * (major ? 0.04f : 0.022f), p);
+        }
+        double an = Math.toRadians(-hd);
+        p.setColor(acc());
+        cv.drawCircle(cx + (float) Math.sin(an) * rr, cy - (float) Math.cos(an) * rr, R * 0.07f, p);
+        // indicatore fisso in alto: la direzione verso cui punta il telefono
+        p.setColor(fg());
+        Path tri = new Path();
+        tri.moveTo(cx, cy - R * 0.95f);
+        tri.lineTo(cx - R * 0.05f, cy - R * 0.87f);
+        tri.lineTo(cx + R * 0.05f, cy - R * 0.87f);
+        tri.close();
+        cv.drawPath(tri, p);
+        int deg = Math.round(hd) % 360;
+        String dir = DIRS[Math.round(deg / 45f) % 8];
+        if (small) {
+            Draw.big(cv, th, String.valueOf(deg), cx, cy, R * 0.3f, R * 1.0f, fg(), "", acc(), 0, p, true);
+            return;
+        }
+        String[] card = {"N", "E", "S", "O"};
+        for (int k = 0; k < 4; k++) {
+            double a = Math.toRadians(k * 90 - hd);
+            float lr = R * 0.6f;
+            Draw.big(cv, th, card[k], cx + (float) Math.sin(a) * lr, cy - (float) Math.cos(a) * lr,
+                    R * 0.1f, R * 0.2f, k == 0 ? acc() : sub(), "", acc(), 0, p, true);
+        }
+        Draw.big(cv, th, deg + "°", cx, cy - R * 0.06f, R * 0.2f, R * 0.7f, fg(), "°", acc(), 0, p, true);
+        Draw.label(cv, th, dir, cx, cy + R * 0.25f, R * 0.11f, sub(), 0, p, R);
+    }
+
+    // ---------- conto alla rovescia ----------
+
+    private void countdown(Canvas cv, float W, float H) {
+        float m = Math.min(W, H), pad = m * 0.14f;
+        long target = WData.getLong(item, "d", 0);
+        String title = WData.get(item, "t", "Evento");
+        if (target == 0) {
+            Draw.label(cv, th, "Tocca per impostare", W / 2f, H / 2f, m * 0.09f, sub(), 0, p, W * 0.8f);
+            return;
+        }
+        int d = WData.daysTo(target);
+        String num = d == 0 ? "OGGI" : String.valueOf(Math.abs(d));
+        String unit = d == 0 ? title : (Math.abs(d) == 1 ? "giorno" : "giorni") + (d < 0 ? " fa" : "");
+        int numColor = d == 0 ? acc() : fg();
+        if (isCircle()) {
+            Draw.big(cv, th, num, W / 2f, H * 0.44f, H * 0.24f, W * 0.62f, numColor, "", acc(), 0, p, true);
+            Draw.label(cv, th, d == 0 ? "" : unit, W / 2f, H * 0.74f, H * 0.09f, sub(), 0, p, W * 0.6f);
+            return;
+        }
+        if (item.h == 1) {
+            float w = Draw.big(cv, th, num, pad, H / 2f, H * 0.38f, W * 0.5f, numColor, "", acc(), -1, p, true);
+            float x = pad + w + H * 0.18f, maxW = W - x - pad;
+            Draw.label(cv, th, title, x, H * 0.46f, H * 0.16f, fg(), -1, p, maxW);
+            if (d != 0) Draw.label(cv, th, unit, x, H * 0.7f, H * 0.13f, acc(), -1, p, maxW);
+            return;
+        }
+        Draw.label(cv, th, title, pad, pad + m * 0.08f, m * 0.085f, fg(), -1, p, W - pad * 2);
+        Draw.big(cv, th, num, W / 2f, H * 0.5f, H * 0.3f, W - pad * 2, numColor, "", acc(), 0, p, true);
+        if (d != 0) Draw.label(cv, th, unit, W / 2f, H * 0.76f, m * 0.08f, acc(), 0, p, W - pad * 2);
+        String date = new SimpleDateFormat("d MMM yyyy", Locale.ITALIAN).format(new Date(target));
+        Draw.label(cv, th, date, W / 2f, H - pad * 0.8f, m * 0.065f, sub(), 0, p, W - pad * 2);
+    }
+
+    // ---------- fusi orari ----------
+
+    private String zoneTime(String zone) {
+        SimpleDateFormat f = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.ITALIAN);
+        f.setTimeZone(TimeZone.getTimeZone(zone));
+        return f.format(new Date());
+    }
+
+    private boolean night(String zone) {
+        Calendar c = Calendar.getInstance(TimeZone.getTimeZone(zone));
+        int h = c.get(Calendar.HOUR_OF_DAY);
+        return h < 6 || h >= 20;
+    }
+
+    private void worldClock(Canvas cv, float W, float H) {
+        List<String[]> z = WData.zones(item);
+        float m = Math.min(W, H), pad = m * 0.13f;
+        if (z.isEmpty()) {
+            Draw.label(cv, th, "Tocca per scegliere", W / 2f, H / 2f, m * 0.09f, sub(), 0, p, W * 0.8f);
+            return;
+        }
+        if (isCircle()) {
+            String[] c0 = z.get(0);
+            Draw.big(cv, th, zoneTime(c0[1]), W / 2f, H * 0.47f, H * 0.2f, W * 0.66f, fg(), ":", acc(), 0, p, true);
+            Draw.label(cv, th, c0[0], W / 2f, H * 0.74f, H * 0.085f, sub(), 0, p, W * 0.6f);
+            return;
+        }
+        if (item.h >= 2 && item.w <= 2) {
+            // elenco verticale: città a sinistra, ora a destra
+            int n = Math.min(z.size(), item.h >= 3 ? 5 : 3);
+            float rowH = (H - pad * 2) / n;
+            for (int i = 0; i < n; i++) {
+                String[] c = z.get(i);
+                float y = pad + rowH * i + rowH / 2f;
+                Draw.label(cv, th, c[0], pad, y - rowH * 0.02f, rowH * 0.22f, fg(), -1, p, W * 0.42f);
+                Draw.label(cv, th, WData.offsetLabel(c[1]), pad, y + rowH * 0.24f, rowH * 0.17f,
+                        night(c[1]) ? acc() : sub(), -1, p, W * 0.42f);
+                Draw.big(cv, th, zoneTime(c[1]), W - pad, y, rowH * 0.36f, W * 0.48f, fg(), ":", acc(), 1, p, true);
+            }
+            return;
+        }
+        int n = Math.min(z.size(), item.w <= 2 ? 2 : 4);
+        float cw = (W - pad * 2) / n;
+        boolean tall = item.h >= 2;
+        for (int i = 0; i < n; i++) {
+            String[] c = z.get(i);
+            float x = pad + cw * i + cw / 2f;
+            Draw.label(cv, th, c[0], x, tall ? H * 0.3f : H * 0.33f, tall ? H * 0.075f : H * 0.13f, sub(), 0, p, cw * 0.92f);
+            Draw.big(cv, th, zoneTime(c[1]), x, tall ? H * 0.52f : H * 0.62f, tall ? H * 0.17f : H * 0.26f,
+                    cw * 0.86f, fg(), ":", acc(), 0, p, true);
+            if (tall) Draw.label(cv, th, WData.offsetLabel(c[1]), x, H * 0.78f, H * 0.065f,
+                    night(c[1]) ? acc() : sub(), 0, p, cw * 0.9f);
+        }
+    }
+
+    // ---------- contapassi ----------
+
+    private void steps(Canvas cv, float W, float H) {
+        float cx = W / 2f, cy = H / 2f, m = Math.min(W, H), pad = m * 0.14f;
+        if (!State.hasSteps) {
+            Draw.icon(cv, Draw.STEPS, cx, H * 0.4f, m * 0.26f, p, fg(), acc());
+            Draw.label(cv, th, "Contapassi assente", cx, H * 0.78f, m * 0.08f, sub(), 0, p, W * 0.8f);
+            return;
+        }
+        if (!State.stepPerm) {
+            Draw.icon(cv, Draw.STEPS, cx, H * 0.4f, m * 0.26f, p, fg(), acc());
+            Draw.label(cv, th, "Tocca per attivare", cx, H * 0.78f, m * 0.08f, sub(), 0, p, W * 0.8f);
+            return;
+        }
+        int goal = Math.max(100, State.stepGoal);
+        int s = State.steps;
+        float frac = Math.min(1f, s / (float) goal);
+        if (item.h >= 2 || isCircle()) {
+            boolean circ = isCircle();
+            int n = circ ? 28 : 40;
+            float R = m * (circ ? 0.4f : 0.38f);
+            int lit = Math.round(frac * n);
+            p.setStyle(Paint.Style.FILL);
+            for (int i = 0; i < n; i++) {
+                double a = Math.PI * 2 * i / n;
+                p.setColor(i < lit ? (i == lit - 1 || frac >= 1f ? acc() : fg()) : Theme.alpha(fg(), 0.15f));
+                cv.drawCircle(cx + (float) Math.sin(a) * R, cy - (float) Math.cos(a) * R, m * (circ ? 0.028f : 0.022f), p);
+            }
+            Draw.big(cv, th, String.valueOf(s), cx, circ ? cy : cy - m * 0.04f, m * (circ ? 0.15f : 0.13f),
+                    R * 1.3f, fg(), "", acc(), 0, p, true);
+            if (!circ) {
+                Draw.label(cv, th, "passi", cx, cy + m * 0.13f, m * 0.065f, sub(), 0, p, R);
+                Draw.label(cv, th, "obiettivo " + goal, cx, cy + m * 0.22f, m * 0.05f, acc(), 0, p, R * 1.2f);
+            }
+            return;
+        }
+        Draw.icon(cv, Draw.STEPS, pad + H * 0.18f, H * 0.4f, H * 0.32f, p, fg(), acc());
+        float x = pad + H * 0.45f;
+        Draw.big(cv, th, String.valueOf(s), x, H * 0.4f, H * 0.3f, W - x - pad, fg(), "", acc(), -1, p, true);
+        int n = 18;
+        float barW = W - pad * 2, step = barW / n;
+        int lit = Math.round(frac * n);
+        for (int i = 0; i < n; i++) {
+            p.setColor(i < lit ? acc() : Theme.alpha(fg(), 0.15f));
+            cv.drawCircle(pad + step * i + step / 2f, H * 0.78f, Math.min(step * 0.32f, H * 0.045f), p);
+        }
+    }
+
+    // ---------- foto ----------
+
+    private Bitmap halfSrc;
+    private String halfKey;
+
+    private void photo(Canvas cv, float W, float H) {
+        float m = Math.min(W, H);
+        String u = WData.get(item, "u", "");
+        if (u.isEmpty() || Photos.failed(u)) {
+            Draw.icon(cv, Draw.PHOTO, W / 2f, H * 0.42f, m * 0.26f, p, fg(), acc());
+            Draw.label(cv, th, u.isEmpty() ? "Tocca per scegliere" : "Foto non disponibile", W / 2f, H * 0.76f,
+                    m * 0.075f, sub(), 0, p, W * 0.8f);
+            return;
+        }
+        Bitmap b = Photos.get(getContext(), u, (int) Math.max(W, H), this);
+        if (b == null) return;
+        clip.reset();
+        if (isCircle()) clip.addCircle(W / 2f, H / 2f, m / 2f, Path.Direction.CW);
+        else {
+            float r = (item.w == 1 || item.h == 1) ? m / 2f : Theme.radius(m, getResources().getDisplayMetrics().density);
+            clip.addRoundRect(0, 0, W, H, r, r, Path.Direction.CW);
+        }
+        // ritaglio centrale (center crop)
+        float bw = b.getWidth(), bh = b.getHeight();
+        float sc = Math.max(W / bw, H / bh);
+        float cw = W / sc, ch = H / sc;
+        src.set(Math.round((bw - cw) / 2f), Math.round((bh - ch) / 2f),
+                Math.round((bw + cw) / 2f), Math.round((bh + ch) / 2f));
+        if ("dots".equals(WData.get(item, "s", ""))) {
+            halftone(cv, b, W, H);
+            return;
+        }
+        cv.save();
+        cv.clipPath(clip);
+        rf.set(0, 0, W, H);
+        cv.drawBitmap(b, src, rf, bp);
+        cv.restore();
+    }
+
+    /** Foto a puntini: ogni punto è grande quanto è chiara (o scura, nel tema chiaro) quella zona. */
+    private void halftone(Canvas cv, Bitmap b, float W, float H) {
+        float m = Math.min(W, H);
+        float pitch = Math.max(6f, m / (isCircle() ? 16f : 22f));
+        int cols = Math.max(1, (int) (W / pitch)), rows = Math.max(1, (int) (H / pitch));
+        String key = System.identityHashCode(b) + "@" + cols + "x" + rows + src.toShortString();
+        if (!key.equals(halfKey)) {
+            Bitmap crop = Bitmap.createBitmap(b, src.left, src.top,
+                    Math.max(1, Math.min(src.width(), b.getWidth() - src.left)),
+                    Math.max(1, Math.min(src.height(), b.getHeight() - src.top)));
+            halfSrc = Bitmap.createScaledBitmap(crop, cols, rows, true);
+            halfKey = key;
+        }
+        float ox = (W - cols * pitch) / 2f + pitch / 2f, oy = (H - rows * pitch) / 2f + pitch / 2f;
+        cv.save();
+        cv.clipPath(clip);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(fg());
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                int c = halfSrc.getPixel(x, y);
+                float l = (0.299f * ((c >> 16) & 0xFF) + 0.587f * ((c >> 8) & 0xFF) + 0.114f * (c & 0xFF)) / 255f;
+                float v = th.light && item.tone == 0 ? 1f - l : l;
+                float r = pitch * 0.5f * (float) Math.pow(v, 0.8);
+                if (r < pitch * 0.06f) continue;
+                cv.drawCircle(ox + x * pitch, oy + y * pitch, r, p);
+            }
+        }
+        cv.restore();
     }
 
     // ---------- sveglia e ricerca ----------
