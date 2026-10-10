@@ -5,7 +5,19 @@ final class Widgets {
     static final String[] TYPES = {
             "clock_dots", "clock_analog", "clock_pill", "date_big", "date_dot", "calendar",
             "weather", "weather_week", "battery_ring", "battery_pill", "battery_dots", "alarm", "search",
-            "world_clock", "countdown", "photo", "compass", "steps"
+            "world_clock", "countdown", "photo", "compass", "steps",
+            "year", "day", "clock_ring", "moon", "sun", "weather_hours", "counter", "proverb", "dice", "week",
+            "storage", "note", "torch"
+    };
+
+    /** Categorie per la scelta dei widget: {titolo, tipi…}. */
+    static final String[][] CATEGORIES = {
+            {"Orologi", "clock_dots", "clock_analog", "clock_pill", "clock_ring", "world_clock", "alarm"},
+            {"Data e tempo", "date_big", "date_dot", "calendar", "week", "year", "day", "countdown"},
+            {"Meteo e cielo", "weather", "weather_week", "weather_hours", "sun", "moon"},
+            {"Batteria e sistema", "battery_ring", "battery_pill", "battery_dots", "storage", "torch"},
+            {"Strumenti", "search", "compass", "steps", "counter", "dice"},
+            {"Foto e testi", "photo", "note", "proverb"}
     };
 
     static String name(String type) {
@@ -28,6 +40,19 @@ final class Widgets {
             case "photo": return "Foto";
             case "compass": return "Bussola";
             case "steps": return "Contapassi";
+            case "year": return "Anno in punti";
+            case "day": return "Giornata";
+            case "clock_ring": return "Orologio ad anello";
+            case "moon": return "Fase lunare";
+            case "sun": return "Alba e tramonto";
+            case "weather_hours": return "Meteo delle prossime ore";
+            case "counter": return "Contatore";
+            case "proverb": return "Proverbio del giorno";
+            case "dice": return "Dado";
+            case "week": return "Settimana";
+            case "storage": return "Memoria";
+            case "note": return "Nota";
+            case "torch": return "Torcia";
             case "app": return "App";
             case "folder": return "Cartella";
             case "shortcut": return "Scorciatoia";
@@ -57,6 +82,19 @@ final class Widgets {
             case "photo": return new int[][]{{2, 2}, {1, 1}, {2, 1}, {F, 2}, {F, 3}};
             case "compass": return new int[][]{{2, 2}, {1, 1}};
             case "steps": return new int[][]{{2, 2}, {2, 1}, {1, 1}};
+            case "year": return new int[][]{{F, 2}, {2, 2}, {F, 3}};
+            case "day": return new int[][]{{F, 1}, {2, 1}};
+            case "clock_ring": return new int[][]{{2, 2}, {1, 1}};
+            case "moon": return new int[][]{{2, 2}, {1, 1}};
+            case "sun": return new int[][]{{2, 2}, {2, 1}, {F, 1}};
+            case "weather_hours": return new int[][]{{F, 2}, {F, 1}, {2, 2}};
+            case "counter": return new int[][]{{2, 1}, {1, 1}};
+            case "proverb": return new int[][]{{F, 2}, {2, 2}};
+            case "dice": return new int[][]{{1, 1}, {2, 2}};
+            case "week": return new int[][]{{F, 1}};
+            case "storage": return new int[][]{{2, 2}, {2, 1}};
+            case "note": return new int[][]{{2, 2}, {2, 1}, {F, 2}};
+            case "torch": return new int[][]{{1, 1}};
             case "app": return new int[][]{{1, 1}, {2, 2}};
             case "folder": return new int[][]{{1, 1}, {2, 2}};
             case "shortcut": return new int[][]{{1, 1}};

@@ -134,6 +134,19 @@ class NothingTile extends View {
             case "world_clock": worldClock(cv, W, H); break;
             case "steps": steps(cv, W, H); break;
             case "photo": photo(cv, W, H); break;
+            case "year": year(cv, W, H); break;
+            case "day": dayProgress(cv, W, H); break;
+            case "clock_ring": clockRing(cv, W, H); break;
+            case "moon": moon(cv, W, H); break;
+            case "sun": sun(cv, W, H); break;
+            case "weather_hours": weatherHours(cv, W, H); break;
+            case "counter": counter(cv, W, H); break;
+            case "proverb": proverb(cv, W, H); break;
+            case "dice": dice(cv, W, H); break;
+            case "week": week(cv, W, H); break;
+            case "storage": storage(cv, W, H); break;
+            case "note": note(cv, W, H); break;
+            case "torch": torch(cv, W, H); break;
         }
         if (animating) postInvalidateOnAnimation();
         else if (Draw.anim && State.charging && isBattery() && getWindowVisibility() == VISIBLE && isShown())
@@ -752,6 +765,399 @@ class NothingTile extends View {
             }
         }
         cv.restore();
+    }
+
+    // =====================================================================
+    // widget della serie 3
+    // =====================================================================
+
+    // ---------- anno in punti ----------
+
+    private void year(Canvas cv, float W, float H) {
+        Calendar c = Calendar.getInstance();
+        int days = c.getActualMaximum(Calendar.DAY_OF_YEAR), today = c.get(Calendar.DAY_OF_YEAR);
+        float m = Math.min(W, H), pad = m * 0.12f;
+        float head = H * (item.h >= 3 ? 0.12f : 0.18f);
+        int pct = Math.round(100f * (today - 1) / days);
+        Draw.big(cv, th, String.valueOf(c.get(Calendar.YEAR)), pad, pad + head * 0.4f, head * 0.55f, W * 0.5f, fg(), "",
+                acc(), -1, p, true);
+        Draw.big(cv, th, pct + "%", W - pad, pad + head * 0.4f, head * 0.55f, W * 0.4f, acc(), "", acc(), 1, p, true);
+        float gx = pad, gy = pad + head, gw = W - pad * 2, gh = H - gy - pad;
+        // colonne e righe che riempiono al meglio l'area
+        int cols = Math.max(7, (int) Math.round(Math.sqrt(days * gw / gh)));
+        int rows = (int) Math.ceil(days / (float) cols);
+        float pitch = Math.min(gw / cols, gh / rows);
+        float ox = gx + (gw - pitch * cols) / 2f, oy = gy + (gh - pitch * rows) / 2f;
+        p.setStyle(Paint.Style.FILL);
+        for (int i = 0; i < days; i++) {
+            int col = i % cols, row = i / cols;
+            float x = ox + col * pitch + pitch / 2f, y = oy + row * pitch + pitch / 2f;
+            int d = i + 1;
+            p.setColor(d < today ? fg() : d == today ? acc() : Theme.alpha(fg(), 0.15f));
+            cv.drawCircle(x, y, pitch * (d == today ? 0.45f : 0.32f), p);
+        }
+    }
+
+    // ---------- giornata ----------
+
+    private void dayProgress(Canvas cv, float W, float H) {
+        Calendar c = Calendar.getInstance();
+        int hr = c.get(Calendar.HOUR_OF_DAY), min = c.get(Calendar.MINUTE);
+        float frac = (hr * 60 + min) / 1440f;
+        float pad = H * 0.16f;
+        Draw.label(cv, th, "Giornata", pad, H * 0.36f, H * 0.14f, sub(), -1, p, W * 0.5f);
+        Draw.big(cv, th, Math.round(frac * 100) + "%", W - pad, H * 0.3f, H * 0.2f, W * 0.4f, acc(), "", acc(), 1, p, true);
+        int n = 24;
+        float bw = W - pad * 2, step = bw / n, cy = H * 0.68f;
+        for (int i = 0; i < n; i++) {
+            boolean past = i < hr, now = i == hr;
+            float r = Math.min(step * 0.36f, H * 0.11f);
+            if (now) {
+                float k = min / 60f;
+                p.setColor(Theme.alpha(fg(), 0.15f));
+                cv.drawCircle(pad + step * i + step / 2f, cy, r, p);
+                p.setColor(acc());
+                cv.drawCircle(pad + step * i + step / 2f, cy, r * (0.35f + 0.65f * k), p);
+                continue;
+            }
+            p.setColor(past ? fg() : Theme.alpha(fg(), 0.15f));
+            cv.drawCircle(pad + step * i + step / 2f, cy, r * (i % 6 == 0 ? 1f : 0.8f), p);
+        }
+    }
+
+    // ---------- orologio ad anello ----------
+
+    private void clockRing(Canvas cv, float W, float H) {
+        Calendar c = Calendar.getInstance();
+        int min = c.get(Calendar.MINUTE);
+        String hh = time("HH", "h");
+        float cx = W / 2f, cy = H / 2f, R = Math.min(W, H) * 0.4f;
+        for (int i = 0; i < 60; i++) {
+            double a = Math.PI * 2 * i / 60;
+            boolean on = i <= min;
+            float r = R * (i % 5 == 0 ? 0.055f : 0.035f);
+            p.setColor(i == min ? acc() : on ? fg() : Theme.alpha(fg(), 0.15f));
+            cv.drawCircle(cx + (float) Math.sin(a) * R, cy - (float) Math.cos(a) * R, r, p);
+        }
+        Draw.big(cv, th, hh, cx, cy, R * 0.62f, R * 1.2f, fg(), "", acc(), 0, p, true, prog(1, hh));
+    }
+
+    // ---------- luna ----------
+
+    static final double SYNODIC = 29.530588853;
+
+    /** Età della luna in giorni (0 = luna nuova). */
+    static double moonAge() {
+        long ref = 947182440000L; // 6 gennaio 2000, 18:14 UTC: luna nuova
+        double days = (System.currentTimeMillis() - ref) / 86400000.0;
+        double age = days % SYNODIC;
+        return age < 0 ? age + SYNODIC : age;
+    }
+
+    static String moonName(double age) {
+        String[] n = {"Luna nuova", "Crescente", "Primo quarto", "Gibbosa crescente", "Luna piena",
+                "Gibbosa calante", "Ultimo quarto", "Calante"};
+        return n[(int) Math.floor((age / SYNODIC) * 8 + 0.5) % 8];
+    }
+
+    private void moon(Canvas cv, float W, float H) {
+        double age = moonAge();
+        double ph = 2 * Math.PI * age / SYNODIC;
+        boolean waxing = age < SYNODIC / 2;
+        int illum = (int) Math.round((1 - Math.cos(ph)) / 2 * 100);
+        boolean circ = isCircle();
+        float cx = W / 2f, cy = circ ? H / 2f : H * 0.42f, R = Math.min(W, H) * (circ ? 0.34f : 0.27f);
+        int n = 15;
+        float pitch = R * 2 / n;
+        for (int y = 0; y < n; y++) {
+            for (int x = 0; x < n; x++) {
+                float nx = (x + 0.5f) / n * 2 - 1, ny = (y + 0.5f) / n * 2 - 1;
+                if (nx * nx + ny * ny > 1) continue;
+                double edge = Math.sqrt(1 - ny * ny) * Math.cos(ph);
+                boolean lit = waxing ? nx > edge : nx < -edge;
+                p.setColor(lit ? fg() : Theme.alpha(fg(), 0.13f));
+                cv.drawCircle(cx - R + (x + 0.5f) * pitch, cy - R + (y + 0.5f) * pitch, pitch * 0.4f, p);
+            }
+        }
+        if (!circ) {
+            Draw.label(cv, th, moonName(age), W / 2f, H * 0.8f, H * 0.075f, fg(), 0, p, W * 0.85f);
+            Draw.label(cv, th, illum + "% illuminata", W / 2f, H * 0.9f, H * 0.06f, sub(), 0, p, W * 0.85f);
+        }
+    }
+
+    // ---------- alba e tramonto ----------
+
+    private void sun(Canvas cv, float W, float H) {
+        if (!State.wOk || State.sunrise.isEmpty()) {
+            Draw.icon(cv, Draw.SUN, W / 2f, H * 0.42f, Math.min(W, H) * 0.3f, p, fg(), acc());
+            Draw.label(cv, th, "Tocca per il meteo", W / 2f, H * 0.8f, Math.min(W, H) * 0.08f, sub(), 0, p, W * 0.8f);
+            return;
+        }
+        float pad = Math.min(W, H) * 0.14f;
+        float baseY = item.h >= 2 ? H * 0.62f : H * 0.66f;
+        float R = Math.min((W - pad * 2) / 2f, baseY - pad * 1.2f);
+        float cx = W / 2f;
+        int n = 25;
+        float frac = State.sunFraction();
+        for (int i = 0; i < n; i++) {
+            double a = Math.PI * i / (n - 1);
+            float x = cx - (float) Math.cos(a) * R, y = baseY - (float) Math.sin(a) * R;
+            p.setColor(i / (float) (n - 1) <= frac ? Theme.alpha(fg(), 0.8f) : Theme.alpha(fg(), 0.15f));
+            cv.drawCircle(x, y, R * 0.035f, p);
+        }
+        p.setColor(Theme.alpha(fg(), 0.3f));
+        p.setStrokeWidth(Math.max(1f, R * 0.012f));
+        cv.drawLine(pad * 0.6f, baseY, W - pad * 0.6f, baseY, p);
+        if (frac >= 0 && frac <= 1) {
+            double a = Math.PI * frac;
+            p.setColor(acc());
+            cv.drawCircle(cx - (float) Math.cos(a) * R, baseY - (float) Math.sin(a) * R, R * 0.1f, p);
+        }
+        float ls = item.h >= 2 ? H * 0.075f : H * 0.13f;
+        Draw.big(cv, th, State.sunrise, pad, baseY + ls * 1.4f, ls, W * 0.4f, fg(), ":", acc(), -1, p, true);
+        Draw.big(cv, th, State.sunset, W - pad, baseY + ls * 1.4f, ls, W * 0.4f, fg(), ":", acc(), 1, p, true);
+        if (item.h >= 2 && State.uvMax >= 0) {
+            Draw.label(cv, th, "UV max " + State.uvMax, W / 2f, H - pad * 0.7f, H * 0.06f, sub(), 0, p, W * 0.8f);
+        }
+    }
+
+    // ---------- meteo delle prossime ore ----------
+
+    private void weatherHours(Canvas cv, float W, float H) {
+        if (!State.wOk || State.hTemp.length == 0) {
+            Draw.label(cv, th, "Tocca per il meteo", W / 2f, H / 2f, Math.min(W, H) * 0.12f, sub(), 0, p, W * 0.8f);
+            return;
+        }
+        int start = State.hourIndex();
+        int n = Math.min(item.w >= 4 ? 6 : 4, State.hTemp.length - start);
+        if (n <= 0) return;
+        float pad = Math.min(W, H) * 0.1f;
+        float cw = (W - pad * 2) / n;
+        int lo = Integer.MAX_VALUE, hi = Integer.MIN_VALUE;
+        for (int i = 0; i < n; i++) {
+            lo = Math.min(lo, State.hTemp[start + i]);
+            hi = Math.max(hi, State.hTemp[start + i]);
+        }
+        boolean tall = item.h >= 2;
+        for (int i = 0; i < n; i++) {
+            int k = start + i;
+            float x = pad + cw * i + cw / 2f;
+            String lab = i == 0 ? "ora" : State.hLabel[k];
+            Draw.label(cv, th, lab, x, tall ? H * 0.2f : H * 0.28f, tall ? H * 0.065f : H * 0.13f,
+                    i == 0 ? acc() : sub(), 0, p, cw * 0.9f);
+            if (tall) {
+                Draw.icon(cv, Draw.weatherIcon(State.hCode[k]), x, H * 0.38f, Math.min(cw * 0.6f, H * 0.18f), p, fg(), acc());
+                // colonna di puntini proporzionale alla temperatura
+                float t = hi == lo ? 0.5f : (State.hTemp[k] - lo) / (float) (hi - lo);
+                int dots = 2 + Math.round(t * 4);
+                for (int d = 0; d < 6; d++) {
+                    p.setColor(d < dots ? (i == 0 ? acc() : fg()) : Theme.alpha(fg(), 0.12f));
+                    cv.drawCircle(x, H * 0.82f - d * H * 0.045f, H * 0.014f, p);
+                }
+                Draw.big(cv, th, State.hTemp[k] + "°", x, H * 0.55f, H * 0.075f, cw * 0.9f, fg(), "°", acc(), 0, p, true);
+            } else {
+                Draw.big(cv, th, State.hTemp[k] + "°", x, H * 0.64f, H * 0.2f, cw * 0.9f, fg(), "°", acc(), 0, p, true);
+            }
+        }
+    }
+
+    // ---------- contatore ----------
+
+    private void counter(Canvas cv, float W, float H) {
+        long n = WData.getLong(item, "n", 0);
+        String title = WData.get(item, "t", "");
+        String s = String.valueOf(n);
+        if (isCircle()) {
+            Draw.big(cv, th, s, W / 2f, title.isEmpty() ? H / 2f : H * 0.45f, H * 0.26f, W * 0.62f, fg(), "", acc(), 0, p, true,
+                    prog(0, s));
+            if (!title.isEmpty()) Draw.label(cv, th, title, W / 2f, H * 0.76f, H * 0.08f, sub(), 0, p, W * 0.6f);
+            return;
+        }
+        float pad = H * 0.2f;
+        Draw.big(cv, th, s, pad, H / 2f, H * 0.42f, W * 0.55f, fg(), "", acc(), -1, p, true, prog(0, s));
+        Draw.label(cv, th, title.isEmpty() ? "Contatore" : title, W - pad, H * 0.44f, H * 0.13f, sub(), 1, p, W * 0.4f);
+        p.setColor(acc());
+        cv.drawCircle(W - pad - H * 0.08f, H * 0.66f, H * 0.08f, p);
+        p.setColor(item.tone == 2 ? th.accent : 0xFFFFFFFF);
+        p.setStrokeWidth(H * 0.025f);
+        float px = W - pad - H * 0.08f, py = H * 0.66f, l = H * 0.04f;
+        cv.drawLine(px - l, py, px + l, py, p);
+        cv.drawLine(px, py - l, px, py + l, p);
+    }
+
+    // ---------- proverbio del giorno ----------
+
+    static final String[] PROVERBS = {
+            "Chi dorme non piglia pesci.", "Chi va piano va sano e va lontano.", "Meglio tardi che mai.",
+            "L'abito non fa il monaco.", "Chi trova un amico trova un tesoro.",
+            "Tra il dire e il fare c'è di mezzo il mare.", "Non tutte le ciambelle riescono col buco.",
+            "Chi semina vento raccoglie tempesta.", "Rosso di sera, bel tempo si spera.",
+            "Il buongiorno si vede dal mattino.", "Chi la dura la vince.", "L'unione fa la forza.",
+            "Sbagliando s'impara.", "Paese che vai, usanza che trovi.", "Chi fa da sé fa per tre.",
+            "A caval donato non si guarda in bocca.", "Ogni lasciata è persa.", "Chi cerca trova.",
+            "Meglio un uovo oggi che una gallina domani.", "Una mela al giorno toglie il medico di torno.",
+            "Chi ben comincia è a metà dell'opera.", "Non c'è rosa senza spine.", "Volere è potere.",
+            "Il riso fa buon sangue.", "Chi tace acconsente.", "Fidarsi è bene, non fidarsi è meglio.",
+            "Occhio non vede, cuore non duole.", "Can che abbaia non morde.", "L'appetito vien mangiando.",
+            "Aiutati che il ciel t'aiuta.", "Tutto è bene quel che finisce bene.",
+            "La pazienza è la virtù dei forti.", "Dimmi con chi vai e ti dirò chi sei.",
+            "Batti il ferro finché è caldo.", "Non rimandare a domani quello che puoi fare oggi.",
+            "Ride bene chi ride ultimo.", "Gallina vecchia fa buon brodo.", "Chi non risica non rosica.",
+            "Il tempo è galantuomo.", "Acqua passata non macina più."
+    };
+
+    static String proverb(Item it) {
+        int day = Calendar.getInstance().get(Calendar.DAY_OF_YEAR);
+        int off = (int) WData.getLong(it, "o", 0);
+        int i = (day + off) % PROVERBS.length;
+        return PROVERBS[i < 0 ? i + PROVERBS.length : i];
+    }
+
+    private void proverb(Canvas cv, float W, float H) {
+        float pad = Math.min(W, H) * 0.14f;
+        Draw.label(cv, th, "Proverbio del giorno", pad, pad + H * 0.06f, Math.min(W, H) * 0.07f, acc(), -1, p, W - pad * 2);
+        android.text.TextPaint tp = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
+        tp.setColor(fg());
+        tp.setTypeface(th.nuovo ? th.titleFace : Fonts.medium);
+        float size = Math.min(W, H) * (item.w >= 4 ? 0.13f : 0.11f);
+        String text = proverb(item);
+        android.text.StaticLayout sl;
+        float maxH = H - pad * 2 - H * 0.12f;
+        do {
+            tp.setTextSize(size);
+            sl = android.text.StaticLayout.Builder.obtain(text, 0, text.length(), tp, (int) (W - pad * 2))
+                    .setLineSpacing(0, 1.05f).build();
+            size *= 0.92f;
+        } while (sl.getHeight() > maxH && size > 8);
+        cv.save();
+        cv.translate(pad, H - pad - sl.getHeight());
+        sl.draw(cv);
+        cv.restore();
+    }
+
+    // ---------- dado ----------
+
+    private long rollTime;
+
+    void roll() {
+        rollTime = SystemClock.uptimeMillis();
+        WData.put(item, "v", String.valueOf(1 + new java.util.Random().nextInt(6)));
+        invalidate();
+    }
+
+    private void dice(Canvas cv, float W, float H) {
+        int v = (int) WData.getLong(item, "v", 5);
+        long el = SystemClock.uptimeMillis() - rollTime;
+        if (rollTime > 0 && el < 500) {
+            v = 1 + (int) ((el / 70) % 6);
+            animating = true;
+        }
+        float m = Math.min(W, H), s = m * 0.5f;
+        float cx = W / 2f, cy = H / 2f;
+        float[][] pos = {{0, 0}, {-1, -1}, {1, 1}, {-1, 1}, {1, -1}, {-1, 0}, {1, 0}};
+        int[][] faces = {{0}, {1, 2}, {1, 0, 2}, {1, 2, 3, 4}, {1, 2, 3, 4, 0}, {1, 2, 3, 4, 5, 6}};
+        float d = s * 0.33f;
+        for (int i : faces[Math.max(0, Math.min(5, v - 1))]) {
+            p.setColor(v == 1 ? acc() : fg());
+            cv.drawCircle(cx + pos[i][0] * d, cy + pos[i][1] * d, s * 0.12f, p);
+        }
+    }
+
+    // ---------- settimana ----------
+
+    private void week(Canvas cv, float W, float H) {
+        Calendar c = Calendar.getInstance();
+        int dow = (c.get(Calendar.DAY_OF_WEEK) + 5) % 7; // lunedì = 0
+        Calendar d = (Calendar) c.clone();
+        d.add(Calendar.DAY_OF_MONTH, -dow);
+        String[] names = {"L", "M", "M", "G", "V", "S", "D"};
+        float pad = H * 0.14f, cw = (W - pad * 2) / 7f;
+        for (int i = 0; i < 7; i++) {
+            float x = pad + cw * i + cw / 2f;
+            boolean today = i == dow;
+            Draw.label(cv, th, names[i], x, H * 0.36f, H * 0.14f, i >= 5 ? acc() : sub(), 0, p, cw);
+            if (today) {
+                p.setColor(acc());
+                cv.drawCircle(x, H * 0.64f, Math.min(cw, H) * 0.26f, p);
+            }
+            String num = String.valueOf(d.get(Calendar.DAY_OF_MONTH));
+            Draw.big(cv, th, num, x, H * 0.64f, H * 0.2f, cw * 0.7f,
+                    today ? (item.tone == 2 ? th.accent : 0xFFFFFFFF) : (i < dow ? sub() : fg()), "", acc(), 0, p, true);
+            d.add(Calendar.DAY_OF_MONTH, 1);
+        }
+    }
+
+    // ---------- memoria ----------
+
+    private void storage(Canvas cv, float W, float H) {
+        long total = 0, free = 0;
+        try {
+            android.os.StatFs st = new android.os.StatFs(android.os.Environment.getDataDirectory().getPath());
+            total = st.getTotalBytes();
+            free = st.getAvailableBytes();
+        } catch (Exception ignored) {
+        }
+        float used = total > 0 ? (total - free) / (float) total : 0;
+        float pad = Math.min(W, H) * 0.14f;
+        String gb = String.format(Locale.ITALIAN, "%.0f", free / 1e9);
+        boolean tall = item.h >= 2;
+        Draw.label(cv, th, "Memoria libera", pad, tall ? pad + H * 0.06f : H * 0.32f, tall ? H * 0.065f : H * 0.13f, sub(), -1,
+                p, W - pad * 2);
+        Draw.big(cv, th, gb + " GB", pad, tall ? H * 0.42f : H * 0.58f, tall ? H * 0.16f : H * 0.24f, W - pad * 2, fg(), "",
+                acc(), -1, p, true);
+        int n = tall ? 40 : 20, cols = tall ? 10 : 20;
+        int lit = Math.round(used * n);
+        float gw = W - pad * 2, pitch = gw / cols;
+        float y0 = tall ? H * 0.62f : H * 0.82f;
+        for (int i = 0; i < n; i++) {
+            int col = i % cols, row = i / cols;
+            p.setColor(i < lit ? (used > 0.9f ? acc() : fg()) : Theme.alpha(fg(), 0.15f));
+            cv.drawCircle(pad + col * pitch + pitch / 2f, y0 + row * pitch, Math.min(pitch * 0.32f, H * 0.04f), p);
+        }
+    }
+
+    // ---------- nota ----------
+
+    private void note(Canvas cv, float W, float H) {
+        String t = WData.get(item, "t", "");
+        float pad = Math.min(W, H) * 0.14f;
+        Draw.label(cv, th, "Nota", pad, pad + H * 0.04f, Math.min(W, H) * (item.h == 1 ? 0.12f : 0.07f), acc(), -1, p,
+                W * 0.5f);
+        android.text.TextPaint tp = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
+        tp.setColor(t.isEmpty() ? sub() : fg());
+        tp.setTypeface(th.bodyFace);
+        float size = Math.min(W, H) * (item.h == 1 ? 0.22f : 0.1f);
+        String text = t.isEmpty() ? "Tocca per scrivere" : t;
+        float top = pad + H * (item.h == 1 ? 0.12f : 0.1f);
+        float maxH = H - top - pad * 0.7f;
+        android.text.StaticLayout sl;
+        do {
+            tp.setTextSize(size);
+            sl = android.text.StaticLayout.Builder.obtain(text, 0, text.length(), tp, (int) (W - pad * 2))
+                    .setEllipsize(android.text.TextUtils.TruncateAt.END).setMaxLines(12).build();
+            size *= 0.92f;
+        } while (sl.getHeight() > maxH && size > 9);
+        cv.save();
+        cv.translate(pad, top);
+        cv.clipRect(0, 0, W - pad * 2, maxH);
+        sl.draw(cv);
+        cv.restore();
+    }
+
+    // ---------- torcia ----------
+
+    static final String[] BULB = {
+            "...###...", "..#####..", ".#######.", ".#######.", ".#######.",
+            "..#####..", "...###...", "...RRR...", "....R...."};
+
+    private void torch(Canvas cv, float W, float H) {
+        boolean on = State.torchOn;
+        if (on) {
+            p.setColor(Theme.alpha(acc(), 0.25f));
+            cv.drawCircle(W / 2f, H / 2f, Math.min(W, H) * 0.38f, p);
+        }
+        Draw.icon(cv, BULB, W / 2f, H / 2f, Math.min(W, H) * 0.42f, p, on ? acc() : Theme.alpha(fg(), 0.55f),
+                on ? fg() : sub());
     }
 
     // ---------- sveglia e ricerca ----------

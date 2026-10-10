@@ -199,14 +199,27 @@ final class Sheet {
     }
 
     static Dialog input(Activity a, Theme th, String title, String hint, String value, OnText cb) {
+        return input(a, th, title, hint, value, false, cb);
+    }
+
+    /** multi = testo su più righe (note), con la maiuscola a inizio frase. */
+    static Dialog input(Activity a, Theme th, String title, String hint, String value, boolean multi, OnText cb) {
         float dp = a.getResources().getDisplayMetrics().density;
         Dialog d = base(a);
         LinearLayout box = panel(a, th, title);
         EditText et = new EditText(a);
         et.setText(value);
         et.setHint(hint);
-        et.setSingleLine(true);
-        et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        if (multi) {
+            et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
+                    | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+            et.setMinLines(3);
+            et.setMaxLines(8);
+            et.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
+        } else {
+            et.setSingleLine(true);
+            et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_WORDS);
+        }
         et.setTypeface(Fonts.regular);
         et.setTextColor(th.onTile);
         et.setHintTextColor(th.sub);
@@ -315,6 +328,20 @@ final class Sheet {
         s.addState(new int[]{android.R.attr.state_pressed}, on);
         s.addState(new int[]{}, new ColorDrawable(Color.TRANSPARENT));
         return s;
+    }
+
+    /** Pannello con contenuto libero (anteprime dei widget, ecc.), scorrevole. */
+    static Dialog custom(Activity a, Theme th, String title, View content) {
+        float dp = a.getResources().getDisplayMetrics().density;
+        Dialog d = base(a);
+        LinearLayout box = panel(a, th, title);
+        ScrollView sv = new ScrollView(a);
+        sv.setVerticalScrollBarEnabled(false);
+        sv.addView(content);
+        int screenH = a.getResources().getDisplayMetrics().heightPixels;
+        box.addView(sv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (int) (screenH * 0.72f)));
+        show(d, box, dp);
+        return d;
     }
 
     private static void show(Dialog d, View content, float dp) {

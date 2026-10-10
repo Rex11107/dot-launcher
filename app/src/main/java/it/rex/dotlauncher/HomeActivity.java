@@ -265,6 +265,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         loadApps();
         buildPages();
         root.post(this::fitToScreen);
+        if (saved != null && saved.getBoolean("set", false)) {
+            final int y = saved.getInt("setY", 0);
+            root.post(() -> {
+                showSettings();
+                settings.scrollTo(y);
+            });
+        }
     }
 
     @Override
@@ -275,6 +282,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         out.putInt("pc", pendingCol);
         out.putInt("pr", pendingRow);
         out.putInt("pph", pendingPhoto == null ? -1 : items.indexOf(pendingPhoto));
+        out.putBoolean("set", settingsOpen);
+        if (settings != null) out.putInt("setY", settings.scrollY());
     }
 
     @Override
@@ -301,6 +310,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         started = true;
         startSensors();
+        watchTorch(true);
         updateAlarm();
         refreshTiles(null);
         maybeRefreshWeather();
@@ -334,6 +344,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         started = false;
         if (sensors != null) sensors.stop();
+        watchTorch(false);
         if (dragSrc >= 0) finishDrag(false);
         exitResize();
         // uscendo verso un'app il cassetto si chiude subito: al ritorno la home è pulita
@@ -361,6 +372,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         // Solo se eravamo già sulla home (Home premuto di nuovo): chiudi il cassetto o torna alla prima pagina.
         // Se invece si sta tornando da un'app, la home resta com'era, senza animazioni.
         boolean alreadyHome = hasWindowFocus();
+        if (settingsOpen) closeSettings();
         if (panelOpen) {
             if (alreadyHome) closePanel();
             else hidePanelNow();
@@ -375,6 +387,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onBackPressed() {
         if (resizer != null) exitResize();
+        else if (settingsOpen) closeSettings();
         else if (panelOpen) closePanel();
         else if (drawerOpen) {
             if (searchMode) exitSearch();
@@ -390,7 +403,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             onDragEvent(ev);
             return true;
         }
-        if (gestures != null && resizer == null && !panelOpen) gestures.onTouchEvent(ev);
+        if (gestures != null && resizer == null && !panelOpen && !settingsOpen) gestures.onTouchEvent(ev);
         return super.dispatchTouchEvent(ev);
     }
 
@@ -479,6 +492,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             secView.setPadding(0, 0, 0, r[7] > 0 ? 0 : r[3]);
             secView.setEdgeGuard(r[4], r[5]);
             if (panel != null) panel.setInsets(r[1], Math.max(r[3], r[7]));
+            if (settings != null) settings.setInsets(r[1], r[3]);
             gestureBottom = r[6];
             dropBar.setPadding(0, r[1] + px(8), 0, px(8));
             navBottom = r[3];
@@ -1225,6 +1239,126 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 }
                 break;
             }
+            case "year":
+            case "day":
+            case "week": {
+                Uri.Builder b = CalendarContract.CONTENT_URI.buildUpon().appendPath("time");
+                ContentUris.appendId(b, System.currentTimeMillis());
+                safeStart(new Intent(Intent.ACTION_VIEW).setData(b.build()));
+                break;
+            }
+            case "clock_ring":
+                safeStart(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
+                break;
+            case "moon": {
+                double age = NothingTile.moonAge();
+                int next = (int) Math.round((NothingTile.SYNODIC / 2 - age + NothingTile.SYNODIC) % NothingTile.SYNODIC);
+                toast(NothingTile.moonName(age) + " · luna piena tra " + next + (next == 1 ? " giorno" : " giorni"));
+                break;
+            }
+            case "sun":
+            case "weather_hours":
+                refreshWeather(true);
+                toast("Aggiorno il meteo…");
+                break;
+            case "counter":
+                WData.put(it, "n", String.valueOf(WData.getLong(it, "n", 0) + 1));
+                saveLayout();
+                if (it.view != null) it.view.invalidate();
+                if (it.view != null) it.view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                break;
+            case "proverb":
+                WData.put(it, "o", String.valueOf(WData.getLong(it, "o", 0) + 1));
+                saveLayout();
+                if (it.view != null) it.view.invalidate();
+                break;
+            case "dice":
+                if (it.view instanceof NothingTile) {
+                    ((NothingTile) it.view).roll();
+                    it.view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                    saveLayout();
+                }
+                break;
+            case "storage":
+                safeStart(new Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS));
+                break;
+            case "note":
+                editNote(it);
+                break;
+            case "torch":
+                toggleTorch();
+                break;
+        }
+    }
+
+    private void editNote(Item it) {
+        Sheet.input(this, th, "Nota", "Scrivi qui…", WData.get(it, "t", ""), true, t -> {
+            WData.put(it, "t", t);
+            saveLayout();
+            if (it.view != null) it.view.invalidate();
+        });
+    }
+
+    // ---------- torcia ----------
+
+    private android.hardware.camera2.CameraManager.TorchCallback torchCb;
+    private String torchId;
+
+    private String torchCamera() {
+        if (torchId != null) return torchId;
+        try {
+            android.hardware.camera2.CameraManager cm =
+                    (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
+            for (String id : cm.getCameraIdList()) {
+                Boolean f = cm.getCameraCharacteristics(id)
+                        .get(android.hardware.camera2.CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                if (Boolean.TRUE.equals(f)) {
+                    torchId = id;
+                    break;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return torchId;
+    }
+
+    private void toggleTorch() {
+        String id = torchCamera();
+        if (id == null) {
+            toast("Questo telefono non ha il flash");
+            return;
+        }
+        try {
+            android.hardware.camera2.CameraManager cm =
+                    (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
+            cm.setTorchMode(id, !State.torchOn);
+        } catch (Exception e) {
+            toast("Torcia non disponibile in questo momento");
+        }
+    }
+
+    private void watchTorch(boolean on) {
+        android.hardware.camera2.CameraManager cm =
+                (android.hardware.camera2.CameraManager) getSystemService(CAMERA_SERVICE);
+        if (cm == null) return;
+        boolean any = false;
+        for (Item it : items) if ("torch".equals(it.type)) any = true;
+        try {
+            if (on && any && torchCb == null) {
+                torchCb = new android.hardware.camera2.CameraManager.TorchCallback() {
+                    @Override
+                    public void onTorchModeChanged(String cameraId, boolean enabled) {
+                        if (!cameraId.equals(torchCamera())) return;
+                        State.torchOn = enabled;
+                        refreshTiles("torch");
+                    }
+                };
+                cm.registerTorchCallback(torchCb, ui);
+            } else if (!on && torchCb != null) {
+                cm.unregisterTorchCallback(torchCb);
+                torchCb = null;
+            }
+        } catch (Exception ignored) {
         }
     }
 
@@ -1238,6 +1372,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "steps":
                 if (!SensorHub.stepPermission(this)) askStepPermission();
                 break;
+            case "note": editNote(it); break;
+            case "torch": watchTorch(true); break;
             case "world_clock":
                 if (it.data == null || it.data.isEmpty()) {
                     WData.put(it, "z", WData.DEFAULT_ZONES);
@@ -1524,6 +1660,38 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 labels.add("Obiettivo di passi");
                 acts.add(this::editStepGoal);
                 break;
+            case "counter":
+                labels.add("Togli uno (−1)");
+                acts.add(() -> {
+                    WData.put(it, "n", String.valueOf(Math.max(0, WData.getLong(it, "n", 0) - 1)));
+                    saveLayout();
+                    if (it.view != null) it.view.invalidate();
+                });
+                labels.add("Azzera");
+                acts.add(() -> {
+                    WData.put(it, "n", "0");
+                    saveLayout();
+                    if (it.view != null) it.view.invalidate();
+                });
+                labels.add("Dai un nome");
+                acts.add(() -> Sheet.input(this, th, "Nome del contatore", "es. Caffè", WData.get(it, "t", ""), t -> {
+                    WData.put(it, "t", t);
+                    saveLayout();
+                    if (it.view != null) it.view.invalidate();
+                }));
+                break;
+            case "note":
+                labels.add("Modifica la nota");
+                acts.add(() -> editNote(it));
+                break;
+            case "proverb":
+                labels.add("Copia il proverbio");
+                acts.add(() -> {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("proverbio", NothingTile.proverb(it)));
+                    toast("Copiato");
+                });
+                break;
         }
         if (it.isApp()) {
             AppEntry a = appsByKey.get(it.data);
@@ -1686,16 +1854,131 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void pickNothingWidget(int page, int col, int row) {
-        String[] names = new String[Widgets.TYPES.length];
-        for (int i = 0; i < names.length; i++) names[i] = Widgets.name(Widgets.TYPES[i]);
-        Sheet.list(this, th, "Widget Dot", names, -1, w -> {
-            String type = Widgets.TYPES[w];
-            int[] s = Widgets.sizes(type)[0];
-            int tone = "alarm".equals(type) ? 2 : 0;
-            Item it = new Item(type, col, row, s[0], s[1], tone, page);
-            addItem(it, page, col, row);
-            configureNew(it);
-        });
+        final Dialog[] dlg = new Dialog[1];
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(px(4), 0, px(4), px(8));
+        int maxW = getResources().getDisplayMetrics().widthPixels - px(72);
+        for (String[] cat : Widgets.CATEGORIES) {
+            list.addView(pickerHeader(cat[0]));
+            for (int k = 1; k < cat.length; k++) {
+                final String type = cat[k];
+                int[][] sizes = Widgets.sizes(type);
+                LinearLayout card = pickerCard();
+                ImageView iv = new ImageView(this);
+                iv.setAdjustViewBounds(true);
+                iv.setImageBitmap(widgetPreview(type, sizes[0], maxW, px(150)));
+                LinearLayout.LayoutParams il = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                        ViewGroup.LayoutParams.WRAP_CONTENT);
+                il.gravity = Gravity.CENTER_HORIZONTAL;
+                card.addView(iv, il);
+                LinearLayout row2 = new LinearLayout(this);
+                row2.setOrientation(LinearLayout.HORIZONTAL);
+                row2.setGravity(Gravity.CENTER_VERTICAL);
+                row2.setPadding(0, px(10), 0, 0);
+                TextView name = new TextView(this);
+                name.setText(Widgets.name(type));
+                name.setTextColor(th.onTile);
+                name.setTypeface(th.bodyFace);
+                name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                row2.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                for (int[] sz : sizes) {
+                    TextView chip = new TextView(this);
+                    chip.setText(sz[0] + "×" + sz[1]);
+                    chip.setTypeface(th.labelFace);
+                    chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                    chip.setTextColor(th.onTile);
+                    chip.setPadding(px(10), px(5), px(10), px(5));
+                    GradientDrawable cb = new GradientDrawable();
+                    cb.setCornerRadius(px(14));
+                    cb.setColor(Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f));
+                    chip.setBackground(cb);
+                    chip.setOnClickListener(v -> {
+                        if (dlg[0] != null) dlg[0].dismiss();
+                        addDotWidget(type, sz, page, col, row);
+                    });
+                    LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT);
+                    cl.leftMargin = px(6);
+                    row2.addView(chip, cl);
+                }
+                card.addView(row2);
+                card.setOnClickListener(v -> {
+                    if (dlg[0] != null) dlg[0].dismiss();
+                    addDotWidget(type, sizes[0], page, col, row);
+                });
+                list.addView(card);
+            }
+        }
+        dlg[0] = Sheet.custom(this, th, "Widget Dot", list);
+    }
+
+    private void addDotWidget(String type, int[] s, int page, int col, int row) {
+        int tone = "alarm".equals(type) ? 2 : 0;
+        Item it = new Item(type, col, row, s[0], s[1], tone, page);
+        addItem(it, page, col, row);
+        configureNew(it);
+    }
+
+    private TextView pickerHeader(String title) {
+        TextView t = new TextView(this);
+        t.setText(th.upperLabels ? title.toUpperCase(Locale.ITALIAN) : title);
+        t.setTypeface(th.labelFace);
+        t.setTextColor(th.sub);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        t.setLetterSpacing(th.upperLabels ? 0.06f : 0f);
+        t.setPadding(px(10), px(16), px(10), px(8));
+        return t;
+    }
+
+    private LinearLayout pickerCard() {
+        LinearLayout card = new LinearLayout(this);
+        card.setOrientation(LinearLayout.VERTICAL);
+        card.setPadding(px(14), px(14), px(14), px(12));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setCornerRadius(px(24));
+        bg.setColor(Theme.alpha(th.onTile, th.light ? 0.05f : 0.06f));
+        card.setBackground(bg);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.bottomMargin = px(10);
+        card.setLayoutParams(lp);
+        return card;
+    }
+
+    /** Anteprima di un widget Dot disegnata alla misura reale e poi rimpicciolita. */
+    private Bitmap widgetPreview(String type, int[] size, int maxW, int maxH) {
+        float cell = grids.isEmpty() ? 0 : grids.get(0).getCell();
+        float gap = grids.isEmpty() ? px(12) : grids.get(0).getGap();
+        if (cell <= 0) cell = (getResources().getDisplayMetrics().widthPixels - px(32) - gap * (TileGrid.COLS - 1)) / TileGrid.COLS;
+        int w = Math.max(1, Math.round(size[0] * cell + (size[0] - 1) * gap));
+        int h = Math.max(1, Math.round(size[1] * cell + (size[1] - 1) * gap));
+        Item it = new Item(type, 0, 0, size[0], size[1], "alarm".equals(type) ? 2 : 0, 0);
+        switch (type) {
+            case "countdown":
+                WData.put(it, "t", "Vacanze");
+                WData.put(it, "d", String.valueOf(System.currentTimeMillis() + 12L * 86400000L));
+                break;
+            case "note": WData.put(it, "t", "Comprare il pane e ritirare il pacco"); break;
+            case "counter":
+                WData.put(it, "n", "3");
+                WData.put(it, "t", "Caffè");
+                break;
+            case "world_clock": WData.put(it, "z", WData.DEFAULT_ZONES); break;
+        }
+        NothingTile v = new NothingTile(this, it, th, h24);
+        v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
+        v.layout(0, 0, w, h);
+        Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        v.draw(new Canvas(b));
+        float sc = Math.min(1f, Math.min(maxW / (float) w, maxH / (float) h));
+        if (sc < 1f) {
+            Bitmap s2 = Bitmap.createScaledBitmap(b, Math.max(1, Math.round(w * sc)), Math.max(1, Math.round(h * sc)), true);
+            b.recycle();
+            b = s2;
+        }
+        return b;
     }
 
     private void pickAppForHome(int page, int col, int row) {
@@ -1720,24 +2003,73 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             return;
         }
         final PackageManager pm = getPackageManager();
-        final List<String> labels = new ArrayList<>();
-        for (AppWidgetProviderInfo p : providers) labels.add(widgetLabel(pm, p));
-        final Collator col2 = Collator.getInstance(Locale.ITALIAN);
-        List<Integer> order = new ArrayList<>();
-        for (int i = 0; i < providers.size(); i++) order.add(i);
-        Collections.sort(order, (a, b) -> col2.compare(labels.get(a), labels.get(b)));
-        final String[] arr = new String[order.size()];
-        final AppWidgetProviderInfo[] infos = new AppWidgetProviderInfo[order.size()];
-        for (int i = 0; i < order.size(); i++) {
-            arr[i] = labels.get(order.get(i));
-            infos[i] = providers.get(order.get(i));
+        final Map<String, String> appNames = new HashMap<>();
+        for (AppWidgetProviderInfo p : providers) {
+            String pkg = p.provider.getPackageName();
+            if (appNames.containsKey(pkg)) continue;
+            String app;
+            try {
+                app = String.valueOf(pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)));
+            } catch (Exception e) {
+                app = pkg;
+            }
+            appNames.put(pkg, app);
         }
-        Sheet.list(this, th, "Widget di sistema", arr, -1, w -> {
-            pendingPage = page;
-            pendingCol = col;
-            pendingRow = row;
-            bindWidget(infos[w]);
+        final Collator col2 = Collator.getInstance(Locale.ITALIAN);
+        Collections.sort(providers, (a, b) -> {
+            int c = col2.compare(appNames.get(a.provider.getPackageName()), appNames.get(b.provider.getPackageName()));
+            return c != 0 ? c : col2.compare(String.valueOf(a.loadLabel(pm)), String.valueOf(b.loadLabel(pm)));
         });
+        final Dialog[] dlg = new Dialog[1];
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(px(4), 0, px(4), px(8));
+        float cell = grids.isEmpty() ? px(80) : Math.max(1f, grids.get(0).getCell());
+        float gap = grids.isEmpty() ? px(12) : grids.get(0).getGap();
+        final int dpi = getResources().getDisplayMetrics().densityDpi;
+        String lastPkg = null;
+        for (AppWidgetProviderInfo info : providers) {
+            String pkg = info.provider.getPackageName();
+            if (!pkg.equals(lastPkg)) {
+                list.addView(pickerHeader(appNames.get(pkg)));
+                lastPkg = pkg;
+            }
+            LinearLayout card = pickerCard();
+            ImageView iv = new ImageView(this);
+            iv.setAdjustViewBounds(true);
+            iv.setMaxHeight(px(140));
+            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            LinearLayout.LayoutParams il = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(110));
+            card.addView(iv, il);
+            appExec.execute(() -> {
+                android.graphics.drawable.Drawable d = null;
+                try {
+                    d = info.loadPreviewImage(this, dpi);
+                    if (d == null) d = info.loadIcon(this, dpi);
+                } catch (Exception ignored) {
+                }
+                final android.graphics.drawable.Drawable fd = d;
+                if (fd != null) ui.post(() -> iv.setImageDrawable(fd));
+            });
+            int w = Math.max(1, Math.min(TileGrid.COLS, (int) Math.ceil((info.minWidth + gap) / (cell + gap))));
+            int h = Math.max(1, (int) Math.ceil((info.minHeight + gap) / (cell + gap)));
+            TextView name = new TextView(this);
+            name.setText(String.valueOf(info.loadLabel(pm)) + "   ·   " + w + "×" + h);
+            name.setTextColor(th.onTile);
+            name.setTypeface(th.bodyFace);
+            name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            name.setPadding(0, px(8), 0, 0);
+            card.addView(name);
+            card.setOnClickListener(v -> {
+                if (dlg[0] != null) dlg[0].dismiss();
+                pendingPage = page;
+                pendingCol = col;
+                pendingRow = row;
+                bindWidget(info);
+            });
+            list.addView(card);
+        }
+        dlg[0] = Sheet.custom(this, th, "Widget di sistema", list);
     }
 
     private String widgetLabel(PackageManager pm, AppWidgetProviderInfo p) {
@@ -3315,73 +3647,133 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     // ---------- impostazioni ----------
 
+    // ---------- impostazioni (pagina a schermo intero) ----------
+
+    private SettingsScreen settings;
+    private boolean settingsOpen;
+
     private void showSettings() {
+        if (settings == null) {
+            settings = new SettingsScreen(this, th, this::closeSettings);
+            settings.setVisibility(View.GONE);
+            root.addView(settings, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            root.requestApplyInsets();
+        }
+        fillSettings();
+        if (settingsOpen) return;
+        settingsOpen = true;
+        settings.bringToFront();
+        settings.setVisibility(View.VISIBLE);
+        settings.setAlpha(0f);
+        settings.setTranslationY(px(40));
+        settings.animate().alpha(1f).translationY(0).setDuration(200).start();
+    }
+
+    private void closeSettings() {
+        if (settings == null || !settingsOpen) return;
+        settingsOpen = false;
+        settings.animate().alpha(0f).translationY(px(40)).setDuration(160)
+                .withEndAction(() -> {
+                    if (!settingsOpen) settings.setVisibility(View.GONE);
+                }).start();
+    }
+
+    /** Ricostruisce le voci (dopo una modifica che non riavvia la home). */
+    private void refillSettings() {
+        if (settings == null || !settingsOpen) return;
+        int y = settings.scrollY();
+        fillSettings();
+        settings.scrollTo(y);
+    }
+
+    private void fillSettings() {
+        SettingsScreen st = settings;
+        st.clear();
         String style = prefs.getString("style", "classic");
         String mode = prefs.getString("mode", "dark");
         String icons = prefs.getString("icons", IconFactory.AUTO);
-        boolean wall = prefs.getBoolean("wall", false);
-        boolean labels = prefs.getBoolean("labels", false);
         String city = prefs.getString("city", "");
-        boolean ghost = prefs.getBoolean("ghost", true);
-        boolean anim = prefs.getBoolean("anim", true);
-        List<String> names = new ArrayList<>();
-        List<Runnable> acts = new ArrayList<>();
-        names.add("Stile: " + ("nuovo".equals(style) ? "Nuovo (5.0)" : "Classico"));
-        acts.add(() -> choose("Stile", new String[]{"Classico", "Nuovo (5.0)"},
-                new String[]{"classic", "nuovo"}, "style", style));
-        names.add("Tema: " + ("light".equals(mode) ? "Chiaro" : "auto".equals(mode) ? "Automatico"
-                : "grey".equals(mode) ? "Scuro (grigio)" : "Extra scuro (nero)"));
-        acts.add(() -> choose("Tema", new String[]{"Extra scuro (nero)", "Scuro (grigio)", "Chiaro", "Automatico"},
+
+        st.section("Aspetto");
+        st.row(SectionIcons.PALETTE, "Stile", "nuovo".equals(style) ? "Nuovo (5.0): numeri sottili, vetro"
+                : "Classico: puntini e caratteri a matrice", () -> choose("Stile",
+                new String[]{"Classico", "Nuovo (5.0)"}, new String[]{"classic", "nuovo"}, "style", style));
+        st.row(SectionIcons.MOON, "Tema", "light".equals(mode) ? "Chiaro" : "auto".equals(mode) ? "Automatico (segue il sistema)"
+                : "grey".equals(mode) ? "Scuro (grigio)" : "Extra scuro (nero)", () -> choose("Tema",
+                new String[]{"Extra scuro (nero)", "Scuro (grigio)", "Chiaro", "Automatico"},
                 new String[]{"dark", "grey", "light", "auto"}, "mode", mode));
-        names.add("Icone: " + (IconFactory.INVERSE.equals(icons) ? "invertite"
-                : IconFactory.COLOR.equals(icons) ? "a colori" : "monocromatiche"));
-        acts.add(() -> choose("Icone", new String[]{"Monocromatiche", "Invertite", "A colori"},
+        st.row(SectionIcons.GRID, "Icone", IconFactory.INVERSE.equals(icons) ? "Invertite"
+                : IconFactory.COLOR.equals(icons) ? "A colori (originali)" : "Monocromatiche", () -> choose("Icone",
+                new String[]{"Monocromatiche", "Invertite", "A colori"},
                 new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons));
-        names.add("Griglia della home: " + TileGrid.COLS + " colonne");
-        acts.add(() -> setColumns(TileGrid.COLS == 5 ? 4 : 5));
+        st.row(SectionIcons.BAG, "Pacchetto di icone", packLabel(), this::pickIconPack);
+        st.row(Draw.PHOTO, "Sfondi", "Sfondi generati, foto a puntini o a strisce",
+                () -> startActivity(new Intent(this, WallpaperActivity.class)));
+        st.toggle(SectionIcons.HOME, "Usa lo sfondo del telefono", "Altrimenti tinta unita del tema",
+                prefs.getBoolean("wall", false), on -> toggle("wall", !on));
+        st.toggle(SectionIcons.CHIP, "Punti spenti sui display", "Si vede la griglia dei puntini spenti",
+                prefs.getBoolean("ghost", true), on -> toggle("ghost", !on));
+        st.toggle(SectionIcons.STAR, "Animazioni a punti", "Cifre che si accendono, onda, ricarica",
+                prefs.getBoolean("anim", true), on -> toggle("anim", !on));
+
+        st.section("Home");
+        st.row(SectionIcons.GRID, "Griglia", TileGrid.COLS + " colonne", () -> Sheet.list(this, th, "Griglia della home",
+                new String[]{"4 colonne", "5 colonne"}, TileGrid.COLS == 5 ? 1 : 0, w -> setColumns(w == 1 ? 5 : 4)));
+        st.toggle(SectionIcons.NEWS, "Nomi delle app", "Mostra il nome sotto le icone della home",
+                prefs.getBoolean("labels", false), on -> toggle("labels", !on));
+        st.toggle(SettingsScreen.CLOCK, "Orologio a 24 ore", h24 ? "14:30" : "2:30",
+                h24, on -> toggle("h24", !on));
+        st.toggle(SectionIcons.HOME, "Pagina a sinistra", "IA, notizie, calendario, attività e note",
+                prefs.getBoolean("panel", true), on -> toggle("panel", !on));
+        st.row(SectionIcons.STAR, "Aggiungi un widget Dot", Widgets.TYPES.length + " widget con anteprima", () -> {
+            closeSettings();
+            pickNothingWidget(pager.getCurrent(), 0, 0);
+        });
+        st.row(SectionIcons.PHONE, "Aggiungi un widget di sistema", "Widget delle app installate", () -> {
+            closeSettings();
+            pickSysWidget(pager.getCurrent(), 0, 0);
+        });
+
+        st.section("Cassetto delle app");
         final boolean free = drawerFree();
-        names.add("Ordine delle app nel cassetto: " + (free ? "libero" : "alfabetico"));
-        acts.add(() -> {
-            if (!free) {
-                sections.sortAll(this);
-                sections.save();
-            }
-            prefs.edit().putString("drawerOrder", free ? "alpha" : "free").apply();
-            refreshDrawer();
-            toast(free ? "Ordine alfabetico" : "Ordine libero: trascina le app per disporle");
-        });
-        final boolean allOn = prefs.getBoolean("drawerAll", true);
-        names.add("Sezione \"Tutte le app\" nel cassetto: " + (allOn ? "sì" : "no"));
-        acts.add(() -> {
-            prefs.edit().putBoolean("drawerAll", !allOn).apply();
-            refreshDrawer();
-        });
-        final boolean panelOn = prefs.getBoolean("panel", true);
-        names.add("Pagina a sinistra (IA, notizie, calendario): " + (panelOn ? "sì" : "no"));
-        acts.add(() -> toggle("panel", panelOn));
-        names.add("Sfondo: " + (wall ? "sfondo di sistema" : "tinta unita"));
-        acts.add(() -> toggle("wall", wall));
-        names.add("Nomi delle app sulla home: " + (labels ? "sì" : "no"));
-        acts.add(() -> toggle("labels", labels));
-        names.add("Orologio: " + (h24 ? "24 ore" : "12 ore"));
-        acts.add(() -> toggle("h24", h24));
-        names.add("Meteo: " + (city.isEmpty() ? "posizione automatica" : city));
-        acts.add(this::askCity);
-        names.add("Pacchetto di icone: " + packLabel());
-        acts.add(this::pickIconPack);
-        names.add("Punti spenti sui display: " + (ghost ? "sì" : "no"));
-        acts.add(() -> toggle("ghost", ghost));
-        names.add("Animazioni a punti: " + (anim ? "sì" : "no"));
-        acts.add(() -> toggle("anim", anim));
-        names.add("App nascoste…");
-        acts.add(this::manageHidden);
-        names.add("Esporta configurazione");
-        acts.add(this::exportBackup);
-        names.add("Importa configurazione");
-        acts.add(this::importBackup);
-        names.add("Versione " + versionName() + " · cerca aggiornamenti");
-        acts.add(() -> checkUpdate(true));
-        Sheet.list(this, th, "Impostazioni", names.toArray(new String[0]), -1, w -> acts.get(w).run());
+        st.row(SectionIcons.CHART, "Ordine delle app", free ? "Libero: le disponi trascinandole" : "Alfabetico", () ->
+                Sheet.list(this, th, "Ordine delle app", new String[]{"Alfabetico", "Libero"}, free ? 1 : 0, w -> {
+                    boolean toFree = w == 1;
+                    if (toFree == free) return;
+                    if (toFree) {
+                        sections.sortAll(this);
+                        sections.save();
+                    }
+                    prefs.edit().putString("drawerOrder", toFree ? "free" : "alpha").apply();
+                    refreshDrawer();
+                    refillSettings();
+                }));
+        st.toggle(SectionIcons.GRID, "Sezione \"Tutte le app\"", "In fondo alle sezioni, in ordine alfabetico",
+                prefs.getBoolean("drawerAll", true), on -> {
+                    prefs.edit().putBoolean("drawerAll", on).apply();
+                    refreshDrawer();
+                });
+        st.row(SectionIcons.LOCK, "App nascoste", hidden().size() + (hidden().size() == 1 ? " app" : " app") + " nascoste",
+                this::manageHidden);
+
+        st.section("Meteo e sensori");
+        st.row(Draw.SUN, "Città per il meteo", city.isEmpty() ? "Posizione automatica" : city, this::askCity);
+        st.row(Draw.STEPS, "Obiettivo di passi", State.stepGoal + " passi al giorno", this::editStepGoal);
+
+        st.section("Backup");
+        st.row(SectionIcons.DOWNLOAD, "Esporta la configurazione", "Home, cassetto, impostazioni (senza chiavi API)",
+                this::exportBackup);
+        st.row(Draw.CLOUD, "Importa una configurazione", "Da un file esportato in precedenza", this::importBackup);
+
+        st.section("Informazioni");
+        st.row(SectionIcons.CHIP, "Versione " + versionName(), "Tocca per cercare aggiornamenti", () -> checkUpdate(true));
+        st.row(SectionIcons.HOME, "Launcher predefinito", "Scegli Dot Launcher come schermata Home",
+                () -> safeStart(new Intent(Settings.ACTION_HOME_SETTINGS)));
+        st.row(SectionIcons.CODE, "Codice sorgente", "github.com/Rex11107/dot-launcher",
+                () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Rex11107/dot-launcher"))));
+        st.note("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. "
+                + "Nessun dato viene inviato a server del launcher.");
     }
 
     private void toggle(String key, boolean cur) {
@@ -3590,7 +3982,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 String url = String.format(Locale.US,
                         "https://api.open-meteo.com/v1/forecast?latitude=%.3f&longitude=%.3f"
                                 + "&current=temperature_2m,weather_code"
-                                + "&daily=weather_code,temperature_2m_max,temperature_2m_min"
+                                + "&daily=weather_code,temperature_2m_max,temperature_2m_min,sunrise,sunset,uv_index_max"
+                                + "&hourly=temperature_2m,weather_code"
                                 + "&forecast_days=6&timezone=auto", lat, lon);
                 String json = http(url);
                 String city = knownCity;
@@ -3598,7 +3991,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 State.parseWeather(json, city);
                 prefs.edit().putString("wjson", json).putString("wcity", city)
                         .putLong("wt", System.currentTimeMillis()).apply();
-                ui.post(() -> refreshTiles("weather"));
+                ui.post(() -> refreshTiles(null));
             } catch (Exception ignored) {
             }
         });

@@ -19,7 +19,10 @@ final class WallpaperGen {
             "Mosaico", "Pieghe", "Anelli chiari", "Puntini chiari",
             "Cerchi blu", "Alba arancio", "Geometrie", "Ovali", "Fiore",
             "Luci glyph", "Matrice", "Griglia", "Sabbia", "Tubi",
-            "Pillole", "Rami", "Monocromo"
+            "Pillole", "Rami", "Monocromo",
+            "Bolla di vetro", "Dune", "Onda di punti", "Aurora", "Mezzatinta", "Notte a punti",
+            "Carta a strati", "Bauhaus", "Nebbia colorata", "Topografia", "Anello neon", "Progetto",
+            "Tramonto a punti"
     };
     static final int RED = 0xFFD71921;
 
@@ -48,7 +51,20 @@ final class WallpaperGen {
             case 17: tubes(c, w, h, r); break;
             case 18: pills(c, w, h, r); break;
             case 19: branches(c, w, h, r); break;
-            default: mono(c, w, h, r); break;
+            case 20: mono(c, w, h, r); break;
+            case 21: bubble(c, w, h, r); break;
+            case 22: dunes(c, w, h, r); break;
+            case 23: dotWave(c, w, h, r); break;
+            case 24: aurora(c, w, h, r); break;
+            case 25: halftone(c, w, h, r); break;
+            case 26: nightDots(c, w, h, r); break;
+            case 27: paperLayers(c, w, h, r); break;
+            case 28: bauhaus(c, w, h, r); break;
+            case 29: mesh(c, w, h, r); break;
+            case 30: topo(c, w, h, r); break;
+            case 31: neonRing(c, w, h, r); break;
+            case 32: blueprint(c, w, h, r); break;
+            default: pixelSunset(c, w, h, r); break;
         }
         return b;
     }
@@ -838,6 +854,484 @@ final class WallpaperGen {
         cross(c, cx, h * 0.145f, w * 0.18f, 0x99FFFFFF);
         cross(c, cx, h * 0.45f, w * 0.18f, 0x99FFFFFF);
         cross(c, cx, h * 0.63f, w * 0.18f, 0x99FFFFFF);
+    }
+
+    // ---------- serie 3 ----------
+
+    private static android.graphics.BlurMaskFilter blur(float r) {
+        return new android.graphics.BlurMaskFilter(Math.max(0.5f, r), android.graphics.BlurMaskFilter.Blur.NORMAL);
+    }
+
+    // Bolla di vetro: sfera traslucida con riflessi su fondo scuro
+    private static void bubble(Canvas c, int w, int h, Random r) {
+        int[] hues = {0xFF3D6BFF, 0xFFFF5A3D, 0xFF3DD9A8, 0xFFB06BFF};
+        int col = hues[r.nextInt(hues.length)];
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, 0, h, 0xFF101114, 0xFF030303, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float cx = w * (0.4f + r.nextFloat() * 0.2f), cy = h * (0.4f + r.nextFloat() * 0.15f), R = w * 0.38f;
+        // alone colorato dietro
+        p.setMaskFilter(blur(R * 0.5f));
+        p.setColor((col & 0x00FFFFFF) | 0x50000000);
+        c.drawCircle(cx + R * 0.2f, cy + R * 0.3f, R * 0.9f, p);
+        p.setMaskFilter(null);
+        // corpo della sfera: bordo più chiaro, centro trasparente
+        p.setShader(new RadialGradient(cx, cy, R, new int[]{0x10FFFFFF, 0x18FFFFFF, (col & 0x00FFFFFF) | 0x70000000,
+                0xB0FFFFFF}, new float[]{0f, 0.6f, 0.92f, 1f}, Shader.TileMode.CLAMP));
+        c.drawCircle(cx, cy, R, p);
+        p.setShader(null);
+        // riflesso principale
+        p.setMaskFilter(blur(R * 0.06f));
+        p.setColor(0xCCFFFFFF);
+        c.drawOval(cx - R * 0.62f, cy - R * 0.72f, cx - R * 0.18f, cy - R * 0.45f, p);
+        p.setColor(0x60FFFFFF);
+        c.drawCircle(cx + R * 0.55f, cy + R * 0.55f, R * 0.06f, p);
+        p.setMaskFilter(null);
+        // bollicine
+        for (int i = 0; i < 6; i++) {
+            float rr = w * (0.015f + r.nextFloat() * 0.04f);
+            float x = w * r.nextFloat(), y = h * r.nextFloat();
+            p.setStyle(Paint.Style.STROKE);
+            p.setStrokeWidth(Math.max(1f, rr * 0.12f));
+            p.setColor(0x50FFFFFF);
+            c.drawCircle(x, y, rr, p);
+            p.setStyle(Paint.Style.FILL);
+        }
+        grain(c, w, h, r, 0.03f);
+    }
+
+    // Dune: strati ondulati caldi con ombre morbide
+    private static void dunes(Canvas c, int w, int h, Random r) {
+        boolean night = r.nextFloat() < 0.35f;
+        int skyA = night ? 0xFF0E1630 : 0xFFF6D9B8, skyB = night ? 0xFF3A2A4A : 0xFFE9A47A;
+        int sandA = night ? 0xFF4A3550 : 0xFFE38B54, sandB = night ? 0xFF120C18 : 0xFF5A2416;
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, 0, h * 0.5f, skyA, skyB, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setColor(night ? 0xFFF2EEDD : 0xFFFFF4DF);
+        c.drawCircle(w * (0.25f + r.nextFloat() * 0.5f), h * 0.2f, w * 0.08f, p);
+        int layers = 6;
+        for (int i = 0; i < layers; i++) {
+            float t = i / (float) (layers - 1);
+            float base = h * (0.38f + 0.12f * i);
+            Path path = new Path();
+            path.moveTo(0, h);
+            float ph = r.nextFloat() * 6.28f, f = 1.2f + r.nextFloat() * 1.5f, amp = h * (0.04f + r.nextFloat() * 0.04f);
+            for (int s = 0; s <= 40; s++) {
+                float x = w * s / 40f;
+                float y = base + (float) Math.sin(x / w * f * Math.PI + ph) * amp;
+                if (s == 0) path.lineTo(0, y);
+                else path.lineTo(x, y);
+            }
+            path.lineTo(w, h);
+            path.close();
+            p.setShader(null);
+            p.setMaskFilter(blur(w * 0.03f));
+            p.setColor(0x55000000);
+            c.save();
+            c.translate(0, -h * 0.01f);
+            c.drawPath(path, p);
+            c.restore();
+            p.setMaskFilter(null);
+            p.setShader(new LinearGradient(0, base - amp, 0, h, lerp(sandA, sandB, t * 0.7f), lerp(sandA, sandB, 0.4f + t * 0.6f),
+                    Shader.TileMode.CLAMP));
+            c.drawPath(path, p);
+        }
+        p.setShader(null);
+        grain(c, w, h, r, 0.05f);
+    }
+
+    // Onda di punti: una superficie di puntini che ondeggia in prospettiva
+    private static void dotWave(Canvas c, int w, int h, Random r) {
+        c.drawColor(0xFF000000);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int cols = 34;
+        float ph = r.nextFloat() * 6.28f, f = 2f + r.nextFloat() * 2f;
+        boolean red = r.nextBoolean();
+        float y = h * 0.28f, gap = h * 0.006f;
+        for (int row = 0; y < h * 1.05f; row++) {
+            float depth = row / 60f;
+            float pitch = w / (float) cols * (0.6f + depth);
+            int n = (int) (w / pitch) + 2;
+            float x0 = (w - (n - 1) * pitch) / 2f;
+            for (int i = 0; i < n; i++) {
+                float x = x0 + i * pitch;
+                double v = Math.sin(x / w * f * Math.PI + ph + row * 0.22) * Math.cos(row * 0.09 + ph);
+                float off = (float) v * h * 0.035f * (0.5f + depth);
+                float rad = pitch * (0.12f + 0.18f * (float) (v * 0.5 + 0.5));
+                int a = (int) (40 + 200 * Math.min(1f, depth + 0.2f) * (0.4f + 0.6f * (v * 0.5 + 0.5)));
+                boolean accent = red && v > 0.85;
+                p.setColor(accent ? (RED & 0x00FFFFFF) | (a << 24) : Color.argb(a, 255, 255, 255));
+                c.drawCircle(x, y + off, rad, p);
+            }
+            gap *= 1.04f;
+            y += gap + pitch * 0.25f;
+        }
+    }
+
+    // Aurora: nastri luminosi sfocati sopra un cielo stellato
+    private static void aurora(Canvas c, int w, int h, Random r) {
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, 0, h, 0xFF02040C, 0xFF0B1426, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        for (int i = 0; i < 160; i++) {
+            p.setColor(Color.argb(60 + r.nextInt(150), 255, 255, 255));
+            c.drawCircle(w * r.nextFloat(), h * r.nextFloat() * 0.7f, w / 900f + r.nextFloat() * w / 500f, p);
+        }
+        int[][] cols = {{0xFF3DFFB0, 0xFF6B4DFF}, {0xFF2EE6D6, 0xFFFF4D9A}, {0xFF9BFF5A, 0xFF2E7BFF}};
+        int[] cc = cols[r.nextInt(cols.length)];
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeCap(Paint.Cap.ROUND);
+        for (int k = 0; k < 3; k++) {
+            Path path = new Path();
+            float y0 = h * (0.2f + k * 0.12f + r.nextFloat() * 0.05f);
+            path.moveTo(-w * 0.2f, y0 + h * 0.1f);
+            path.cubicTo(w * 0.2f, y0 - h * 0.15f, w * 0.6f, y0 + h * 0.2f, w * 1.2f, y0 - h * 0.05f);
+            p.setShader(new LinearGradient(0, y0 - h * 0.1f, 0, y0 + h * 0.15f, cc[0], cc[1], Shader.TileMode.CLAMP));
+            p.setMaskFilter(blur(w * 0.08f));
+            p.setStrokeWidth(w * 0.22f);
+            p.setAlpha(110 - k * 25);
+            c.drawPath(path, p);
+            p.setMaskFilter(blur(w * 0.02f));
+            p.setStrokeWidth(w * 0.04f);
+            p.setAlpha(150 - k * 30);
+            c.drawPath(path, p);
+        }
+        p.setShader(null);
+        p.setMaskFilter(null);
+        p.setStyle(Paint.Style.FILL);
+        // profilo di montagne scuro in basso
+        Path m = new Path();
+        m.moveTo(0, h);
+        for (int s = 0; s <= 12; s++) m.lineTo(w * s / 12f, h * (0.82f + r.nextFloat() * 0.08f));
+        m.lineTo(w, h);
+        m.close();
+        p.setColor(0xFF010205);
+        c.drawPath(m, p);
+        grain(c, w, h, r, 0.02f);
+    }
+
+    // Mezzatinta: puntini che crescono in diagonale, con un cerchio rosso
+    private static void halftone(Canvas c, int w, int h, Random r) {
+        boolean light = r.nextBoolean();
+        c.drawColor(light ? 0xFFEDEDED : 0xFF000000);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float pitch = w / 30f;
+        float rcx = w * (0.3f + r.nextFloat() * 0.4f), rcy = h * (0.3f + r.nextFloat() * 0.3f), rr = w * 0.22f;
+        float ang = r.nextFloat() * 6.28f;
+        float dx = (float) Math.cos(ang), dy = (float) Math.sin(ang);
+        float max = Math.abs(dx) * w + Math.abs(dy) * h;
+        for (float y = pitch / 2; y < h; y += pitch) {
+            for (float x = pitch / 2; x < w; x += pitch) {
+                float t = ((x - w / 2f) * dx + (y - h / 2f) * dy) / max + 0.5f;
+                t = Math.max(0f, Math.min(1f, t));
+                boolean in = Math.hypot(x - rcx, y - rcy) < rr;
+                float rad = pitch * 0.48f * (in ? 1f - t * 0.6f : t);
+                if (rad < pitch * 0.04f) continue;
+                p.setColor(in ? RED : light ? 0xFF111111 : 0xFFEFEFEF);
+                c.drawCircle(x, y, rad, p);
+            }
+        }
+    }
+
+    // Notte a punti: stelle e una luna fatta di puntini
+    private static void nightDots(Canvas c, int w, int h, Random r) {
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, 0, h, 0xFF000000, 0xFF0A1024, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float pitch = w / 40f;
+        for (float y = pitch / 2; y < h * 0.85f; y += pitch) {
+            for (float x = pitch / 2; x < w; x += pitch) {
+                if (r.nextFloat() < 0.05f) {
+                    p.setColor(Color.argb(80 + r.nextInt(175), 255, 255, 255));
+                    c.drawCircle(x, y, pitch * (0.08f + r.nextFloat() * 0.18f), p);
+                }
+            }
+        }
+        float mx = w * 0.68f, my = h * 0.24f, mr = w * 0.2f;
+        float sx = mx + mr * 0.45f, sy = my - mr * 0.2f;
+        float mp = w / 60f;
+        for (float y = my - mr; y <= my + mr; y += mp) {
+            for (float x = mx - mr; x <= mx + mr; x += mp) {
+                if (Math.hypot(x - mx, y - my) > mr) continue;
+                boolean shadow = Math.hypot(x - sx, y - sy) < mr * 0.9f;
+                p.setColor(shadow ? 0x18FFFFFF : 0xFFF2EFE6);
+                c.drawCircle(x, y, mp * 0.38f, p);
+            }
+        }
+        // colline di puntini
+        for (float x = pitch / 2; x < w; x += pitch) {
+            float top = h * (0.86f + 0.04f * (float) Math.sin(x / w * 5 + 1));
+            for (float y = top; y < h; y += pitch) {
+                p.setColor(0xFF1C2338);
+                c.drawCircle(x, y, pitch * 0.4f, p);
+            }
+        }
+    }
+
+    // Carta a strati: forme ondulate impilate con ombre, come carta ritagliata
+    private static void paperLayers(Canvas c, int w, int h, Random r) {
+        int[][] pal = {{0xFFF4EDE6, 0xFFD71921}, {0xFFE8ECEF, 0xFF1F2A44}, {0xFFE6F0EC, 0xFF0F5C4D}, {0xFF1A1A1A, 0xFFBFBFBF}};
+        int[] pc = pal[r.nextInt(pal.length)];
+        c.drawColor(pc[0]);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int layers = 7;
+        for (int i = 0; i < layers; i++) {
+            float t = i / (float) (layers - 1);
+            Path path = new Path();
+            float base = h * (0.25f + 0.1f * i);
+            float ph = r.nextFloat() * 6.28f, amp = h * 0.05f;
+            path.moveTo(0, h);
+            for (int s = 0; s <= 40; s++) {
+                float x = w * s / 40f;
+                path.lineTo(x, base + (float) (Math.sin(x / w * 2.5 * Math.PI + ph) * amp
+                        + Math.sin(x / w * 7 + ph * 2) * amp * 0.3));
+            }
+            path.lineTo(w, h);
+            path.close();
+            p.setMaskFilter(blur(w * 0.025f));
+            p.setColor(0x60000000);
+            c.save();
+            c.translate(0, -w * 0.01f);
+            c.drawPath(path, p);
+            c.restore();
+            p.setMaskFilter(null);
+            p.setColor(lerp(pc[0], pc[1], 0.15f + t * 0.85f));
+            c.drawPath(path, p);
+        }
+        grain(c, w, h, r, 0.03f);
+    }
+
+    // Bauhaus: griglia di forme semplici in nero, rosso e grigio su crema
+    private static void bauhaus(Canvas c, int w, int h, Random r) {
+        c.drawColor(0xFFEFE9DD);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        int cols = 3;
+        float s = w / (float) cols;
+        int rows = (int) Math.ceil(h / s);
+        int[] colors = {0xFF111111, RED, 0xFF8A8A8A, 0xFFD9D2C3, 0xFF111111};
+        android.graphics.RectF rf = new android.graphics.RectF();
+        for (int y = 0; y < rows; y++) {
+            for (int x = 0; x < cols; x++) {
+                float l = x * s, t = y * s;
+                int col = colors[r.nextInt(colors.length)];
+                if (r.nextFloat() < 0.18f) continue;
+                p.setColor(col);
+                int shape = r.nextInt(5);
+                rf.set(l, t, l + s, t + s);
+                switch (shape) {
+                    case 0: c.drawCircle(l + s / 2f, t + s / 2f, s * 0.42f, p); break;
+                    case 1: {
+                        int q = r.nextInt(4);
+                        float cx = q % 2 == 0 ? l : l + s, cy = q < 2 ? t : t + s;
+                        c.save();
+                        c.clipRect(rf);
+                        c.drawCircle(cx, cy, s, p);
+                        c.restore();
+                        break;
+                    }
+                    case 2: {
+                        c.save();
+                        c.clipRect(rf);
+                        boolean top = r.nextBoolean();
+                        c.drawCircle(l + s / 2f, top ? t : t + s, s / 2f, p);
+                        c.restore();
+                        break;
+                    }
+                    case 3: {
+                        Path tri = new Path();
+                        tri.moveTo(l, t + s);
+                        tri.lineTo(l + s, t + s);
+                        tri.lineTo(r.nextBoolean() ? l : l + s, t);
+                        tri.close();
+                        c.drawPath(tri, p);
+                        break;
+                    }
+                    default: {
+                        float in = s * 0.18f;
+                        c.drawRect(l + in, t + in, l + s - in, t + s - in, p);
+                    }
+                }
+            }
+        }
+        grain(c, w, h, r, 0.04f);
+    }
+
+    // Nebbia colorata: sfumature morbide (mesh) con grana
+    private static void mesh(Canvas c, int w, int h, Random r) {
+        int[][] pals = {{0xFFF2E6FF, 0xFFFFB3C7, 0xFF9AD0FF, 0xFFFFE3A3}, {0xFF0F1020, 0xFF5B3CFF, 0xFFFF3D7F, 0xFF00C2B8},
+                {0xFFEDEDED, 0xFFFF6A3D, 0xFF2D2D2D, 0xFFB7C4CF}, {0xFF101C14, 0xFF3DDC84, 0xFF0E6BA8, 0xFFE6F57A}};
+        int[] pal = pals[r.nextInt(pals.length)];
+        c.drawColor(pal[0]);
+        for (int i = 0; i < 6; i++) {
+            int col = pal[1 + r.nextInt(3)];
+            blob(c, w * r.nextFloat(), h * r.nextFloat(), w * (0.5f + r.nextFloat() * 0.6f), (col & 0x00FFFFFF) | 0xD0000000);
+        }
+        grain(c, w, h, r, 0.08f);
+    }
+
+    // Topografia: linee di livello sottili su fondo scuro
+    private static void topo(Canvas c, int w, int h, Random r) {
+        boolean light = r.nextFloat() < 0.3f;
+        c.drawColor(light ? 0xFFE9E6E0 : 0xFF0B0B0C);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.STROKE);
+        p.setStrokeWidth(Math.max(1f, w / 600f));
+        float step = w / 90f;
+        int gx = (int) (w / step) + 2, gy = (int) (h / step) + 2;
+        float[] k = keys(r, w * 0.25f), k2 = keys(r, w * 0.6f);
+        float[][] v = new float[gy][gx];
+        for (int y = 0; y < gy; y++) {
+            for (int x = 0; x < gx; x++) {
+                float px = x * step, py = y * step;
+                v[y][x] = field(px, py, k) * 0.6f + field(px, py, k2) * 0.4f;
+            }
+        }
+        int levels = 16;
+        for (int lv = 1; lv < levels; lv++) {
+            float iso = lv / (float) levels;
+            boolean major = lv % 4 == 0;
+            int base = light ? 0x000000 : 0xFFFFFF;
+            p.setColor(base | ((major ? 150 : 60) << 24));
+            if (lv == levels / 2 && !light) p.setColor(RED);
+            for (int y = 0; y < gy - 1; y++) {
+                for (int x = 0; x < gx - 1; x++) {
+                    float a = v[y][x], b = v[y][x + 1], cc = v[y + 1][x + 1], d = v[y + 1][x];
+                    int idx = (a > iso ? 8 : 0) | (b > iso ? 4 : 0) | (cc > iso ? 2 : 0) | (d > iso ? 1 : 0);
+                    if (idx == 0 || idx == 15) continue;
+                    float x0 = x * step, y0 = y * step;
+                    float top = x0 + step * t(a, b, iso), right = y0 + step * t(b, cc, iso);
+                    float bottom = x0 + step * t(d, cc, iso), left = y0 + step * t(a, d, iso);
+                    float[] seg = segs(idx, top, right, bottom, left, x0, y0, step);
+                    for (int s = 0; s + 3 < seg.length; s += 4) c.drawLine(seg[s], seg[s + 1], seg[s + 2], seg[s + 3], p);
+                }
+            }
+        }
+    }
+
+    private static float t(float a, float b, float iso) {
+        float d = b - a;
+        return Math.abs(d) < 1e-6f ? 0.5f : Math.max(0f, Math.min(1f, (iso - a) / d));
+    }
+
+    /** Segmenti di "marching squares" per il quadrato (punti su lati alto, destra, basso, sinistra). */
+    private static float[] segs(int idx, float top, float right, float bottom, float left, float x0, float y0, float s) {
+        float tX = top, tY = y0, rX = x0 + s, rY = right, bX = bottom, bY = y0 + s, lX = x0, lY = left;
+        switch (idx) {
+            case 1: case 14: return new float[]{lX, lY, bX, bY};
+            case 2: case 13: return new float[]{bX, bY, rX, rY};
+            case 3: case 12: return new float[]{lX, lY, rX, rY};
+            case 4: case 11: return new float[]{tX, tY, rX, rY};
+            case 5: return new float[]{lX, lY, tX, tY, bX, bY, rX, rY};
+            case 6: case 9: return new float[]{tX, tY, bX, bY};
+            case 7: case 8: return new float[]{lX, lY, tX, tY};
+            case 10: return new float[]{tX, tY, rX, rY, lX, lY, bX, bY};
+            default: return new float[0];
+        }
+    }
+
+    // Anello neon: un cerchio rosso luminoso e il suo riflesso
+    private static void neonRing(Canvas c, int w, int h, Random r) {
+        c.drawColor(0xFF050505);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.STROKE);
+        float cx = w / 2f, cy = h * 0.4f, R = w * 0.32f;
+        Path ring = new Path();
+        ring.addCircle(cx, cy, R, Path.Direction.CW);
+        int neonC = r.nextFloat() < 0.75f ? 0xFFFF1A1A : 0xFFF2F2F2;
+        p.setMaskFilter(blur(w * 0.08f));
+        p.setStrokeWidth(w * 0.06f);
+        p.setColor((neonC & 0x00FFFFFF) | 0x40000000);
+        c.drawPath(ring, p);
+        neon(c, p, ring, w, neonC, 1f);
+        // riflesso sul "pavimento"
+        c.save();
+        c.translate(0, cy + R * 1.9f);
+        c.scale(1f, -0.35f);
+        c.translate(0, -cy);
+        neon(c, p, ring, w, neonC, 0.25f);
+        c.restore();
+        p.setMaskFilter(null);
+        p.setStyle(Paint.Style.FILL);
+        Paint fade = new Paint();
+        fade.setShader(new LinearGradient(0, cy + R * 1.2f, 0, h, 0x00050505, 0xFF050505, Shader.TileMode.CLAMP));
+        c.drawRect(0, cy + R * 1.2f, w, h, fade);
+        grain(c, w, h, r, 0.02f);
+    }
+
+    // Progetto: disegno tecnico bianco su blu, con griglia e costruzioni geometriche
+    private static void blueprint(Canvas c, int w, int h, Random r) {
+        Paint bg = new Paint();
+        bg.setShader(new LinearGradient(0, 0, 0, h, 0xFF16386E, 0xFF0B1E40, Shader.TileMode.CLAMP));
+        c.drawRect(0, 0, w, h, bg);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        p.setStyle(Paint.Style.STROKE);
+        float g = w / 24f;
+        for (int i = 0; i * g < Math.max(w, h); i++) {
+            p.setStrokeWidth(i % 4 == 0 ? Math.max(1f, w / 700f) : Math.max(1f, w / 1400f));
+            p.setColor(i % 4 == 0 ? 0x33FFFFFF : 0x14FFFFFF);
+            if (i * g < w) c.drawLine(i * g, 0, i * g, h, p);
+            c.drawLine(0, i * g, w, i * g, p);
+        }
+        p.setStrokeWidth(Math.max(1.2f, w / 500f));
+        p.setColor(0xCCFFFFFF);
+        float cx = w * 0.5f, cy = h * (0.35f + r.nextFloat() * 0.1f);
+        float R = w * 0.3f;
+        c.drawCircle(cx, cy, R, p);
+        c.drawCircle(cx, cy + R, R, p);
+        p.setColor(0x80FFFFFF);
+        c.drawCircle(cx, cy, R * 0.5f, p);
+        c.drawLine(cx - R * 1.3f, cy, cx + R * 1.3f, cy, p);
+        c.drawLine(cx, cy - R * 1.3f, cx, cy + R * 2.3f, p);
+        android.graphics.RectF rf = new android.graphics.RectF(cx - R * 1.6f, cy - R * 1.6f, cx + R * 1.6f, cy + R * 1.6f);
+        c.drawArc(rf, 200, 70, false, p);
+        // tacche di misura
+        for (int i = 0; i <= 10; i++) {
+            float x = cx - R + i * R / 5f;
+            c.drawLine(x, cy + R * 2.45f, x, cy + R * 2.45f + (i % 5 == 0 ? g * 0.6f : g * 0.3f), p);
+        }
+        c.drawLine(cx - R, cy + R * 2.45f, cx + R, cy + R * 2.45f, p);
+        cross(c, cx, cy, g * 1.4f, 0xFFFFFFFF);
+        cross(c, cx, cy + R, g * 1.4f, 0xFFFFFFFF);
+        p.setStyle(Paint.Style.FILL);
+        p.setColor(RED);
+        c.drawCircle(cx + R * 0.71f, cy - R * 0.71f, w / 70f, p);
+        grain(c, w, h, r, 0.02f);
+    }
+
+    // Tramonto a punti: grandi puntini colorati, sole e riflesso sull'acqua
+    private static void pixelSunset(Canvas c, int w, int h, Random r) {
+        c.drawColor(0xFF000000);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        float pitch = w / 22f;
+        int[] sky = {0xFF1B1035, 0xFF5B1F5E, 0xFFC2345A, 0xFFFF7A3D, 0xFFFFC46B};
+        float horizon = h * 0.58f;
+        float sx = w * (0.35f + r.nextFloat() * 0.3f), sy = horizon - w * 0.12f, sr = w * 0.2f;
+        for (float y = pitch / 2; y < h; y += pitch) {
+            for (float x = pitch / 2; x < w; x += pitch) {
+                boolean sea = y > horizon;
+                float t = sea ? (h - y) / (h - horizon) : y / horizon;
+                t = Math.max(0f, Math.min(1f, t));
+                float seg = t * (sky.length - 1);
+                int i = Math.min(sky.length - 2, (int) seg);
+                int col = lerp(sky[i], sky[i + 1], seg - i);
+                float my = sea ? horizon - (y - horizon) * 0.8f : y;
+                boolean sun = Math.hypot(x - sx, my - sy) < sr;
+                if (sun) col = 0xFFFFE3A8;
+                float rad = pitch * 0.42f;
+                if (sea) {
+                    float shimmer = r.nextFloat();
+                    col = lerp(0xFF000000, col, 0.35f + (sun ? 0.55f : 0.3f) * shimmer);
+                    rad *= 0.6f + 0.4f * shimmer;
+                }
+                p.setColor(col);
+                c.drawCircle(x, y, rad, p);
+            }
+        }
     }
 
     /** Foto "a strisce": la foto vista attraverso un vetro rigato (strisce verticali sfalsate). */
