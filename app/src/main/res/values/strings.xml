@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="a11y_label">Gesti di Dot Launcher</string>
+    <string name="a11y_desc">Permette ai gesti della home di bloccare lo schermo, fare uno screenshot, aprire le app recenti o il menu di spegnimento. Dot Launcher non legge il contenuto dello schermo e non raccoglie dati.</string>
+</resources>

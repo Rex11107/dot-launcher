@@ -63,10 +63,8 @@ import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
-import android.widget.BaseAdapter;
 import android.widget.EditText;
 import android.widget.FrameLayout;
-import android.widget.GridView;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -97,7 +95,8 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Source, AppSections.Host {
+public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Source, AppSections.Host,
+        UniversalSearch.Host {
     private static final int REQ_BIND = 1;
     private static final int REQ_CONFIG = 2;
     private static final int REQ_LOC = 3;
@@ -106,6 +105,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_PHOTO = 6;
     private static final int REQ_STEPS = 7;
     private static final int REQ_CAL = 8;
+    private static final int REQ_CONTACTS = 9;
     private static final int HOST_ID = 0x0D07;
     private static final int MAX_DOCK = 5;
 
@@ -129,8 +129,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private LinearLayout drawer;
     private EditText search;
-    private GridView grid;
-    private AppAdapter adapter;
+    private UniversalSearch grid; // risultati della ricerca universale
     private boolean drawerOpen;
     private LinearLayout searchRow;
     private boolean searchMode;
@@ -260,6 +259,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
 
             @Override
+            public boolean onDoubleTap(MotionEvent e) {
+                if (drawerOpen || TileGrid.anyDragging || !emptyHomeAt(e.getRawX(), e.getRawY())) return false;
+                runGesture("g_dbl");
+                return true;
+            }
+
+            @Override
             public boolean onFling(MotionEvent e1, MotionEvent e2, float vx, float vy) {
                 if (e1 == null || TileGrid.anyDragging) return false;
                 // la striscia in basso appartiene alla gesture "home" del sistema
@@ -272,10 +278,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     // un widget con una lista che scorre si tiene il suo gesto
                     if (scrollableWidgetAt(e1.getRawX(), e1.getRawY(), dy)) return false;
                     if (dy < -min) {
-                        openDrawer(false);
+                        runGesture("g_up");
                         flingTook = true;
                     } else if (dy > min) {
-                        expandNotifications();
+                        runGesture("g_down");
                         flingTook = true;
                     }
                 } else if (dy > min && drawerTopOnDown
@@ -387,6 +393,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         appExec.shutdownNow();
         netExec.shutdownNow();
         if (panel != null) panel.shutdown();
+        if (grid != null) grid.shutdown();
     }
 
     private boolean destroyed;
@@ -474,6 +481,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             gestureArmed = false;
         }
         if (gestures != null && gestureArmed) gestures.onTouchEvent(ev);
+        if (gestureArmed && ev.getPointerCount() >= 2) twoFinger(ev);
         if (flingTook && action == MotionEvent.ACTION_UP) {
             // il gesto ha già aperto il cassetto o le notifiche: la tessera sotto il dito non deve anche aprirsi
             MotionEvent c = MotionEvent.obtain(ev);
@@ -643,15 +651,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         search.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int a, int b, int c) {}
             @Override public void onTextChanged(CharSequence s, int a, int b, int c) {}
-            @Override public void afterTextChanged(Editable s) { adapter.setQuery(s.toString()); }
+            @Override public void afterTextChanged(Editable s) { grid.setQuery(s.toString()); }
         });
-        search.setOnEditorActionListener((v, actionId, ev) -> {
-            if (adapter.getCount() > 0) {
-                launch(adapter.getItem(0), null);
-                return true;
-            }
-            return false;
-        });
+        search.setOnEditorActionListener((v, actionId, ev) -> grid.openFirst());
         searchRow = new LinearLayout(this);
         searchRow.setOrientation(LinearLayout.HORIZONTAL);
         searchRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -672,23 +674,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         slp.bottomMargin = px(16);
         drawer.addView(searchRow, slp);
 
-        grid = new GridView(this);
-        grid.setNumColumns(TileGrid.COLS);
-        grid.setVerticalSpacing(px(20));
-        grid.setStretchMode(GridView.STRETCH_COLUMN_WIDTH);
-        grid.setSelector(new ColorDrawable(Color.TRANSPARENT));
-        grid.setVerticalScrollBarEnabled(false);
-        grid.setClipToPadding(false);
+        grid = new UniversalSearch(this, this);
         grid.setPadding(0, 0, 0, px(24));
-        adapter = new AppAdapter();
-        grid.setAdapter(adapter);
-        grid.setOnItemClickListener((p, v, pos, id) -> launch(adapter.getItem(pos), v));
-        grid.setOnItemLongClickListener((p, v, pos, id) -> {
-            AppEntry a = adapter.getItem(pos);
-            View icon = v instanceof ViewGroup && ((ViewGroup) v).getChildCount() > 0 ? ((ViewGroup) v).getChildAt(0) : v;
-            beginDrag(SRC_DRAWER, null, a.key, icon);
-            return true;
-        });
         grid.setVisibility(View.GONE);
         drawer.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -706,7 +693,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     /** Elenco app cambiato (installazioni, app nascoste, icone): riallinea ricerca e sezioni. */
     private void refreshDrawer() {
-        adapter.refresh();
+        if (searchMode) grid.setQuery(search.getText().toString());
         if (sections != null && sections.sync(allApps)) sections.save();
         drawerDirty = true;
         if (drawerOpen) rebuildDrawer();
@@ -738,9 +725,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         grid.setAlpha(0f);
         searchRow.animate().alpha(1f).setDuration(140).start();
         grid.animate().alpha(1f).setDuration(180).start();
+        grid.prepare();
         search.setText("");
-        adapter.setQuery("");
-        grid.setSelection(0);
+        grid.setQuery("");
+        grid.scrollTo(0, 0);
         ui.postDelayed(() -> {
             search.requestFocus();
             InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
@@ -1137,6 +1125,187 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         drawer.setTranslationY(0);
         exitSearch();
         if (!panelOpen && !settingsOpen) restoreHome(false);
+    }
+
+    private void expandQuickSettings() {
+        try {
+            Object sb = getSystemService("statusbar");
+            Class.forName("android.app.StatusBarManager").getMethod("expandSettingsPanel").invoke(sb);
+        } catch (Exception e) {
+            expandNotifications();
+        }
+    }
+
+    // =====================================================================
+    // Gesti configurabili
+    // =====================================================================
+
+    /** {chiave, nome, azione predefinita} */
+    static final String[][] GESTURES = {
+            {"g_up", "Scorri in su", "drawer"},
+            {"g_down", "Scorri in giù", "notif"},
+            {"g_dbl", "Doppio tocco", "lock"},
+            {"g_two_down", "Due dita in giù", "qs"},
+            {"g_two_up", "Due dita in su", "search"},
+            {"g_pinch", "Pizzica (avvicina le dita)", "settings"},
+    };
+
+    /** {azione, nome} */
+    static final String[][] ACTIONS = {
+            {"none", "Niente"},
+            {"drawer", "Apri il cassetto delle app"},
+            {"search", "Cerca"},
+            {"notif", "Notifiche"},
+            {"qs", "Impostazioni rapide"},
+            {"lock", "Blocca lo schermo"},
+            {"screenshot", "Screenshot"},
+            {"recents", "App recenti"},
+            {"power", "Menu di spegnimento"},
+            {"panel", "Pagina a sinistra"},
+            {"settings", "Impostazioni del launcher"},
+            {"torch", "Torcia"},
+            {"app", "Apri un'app…"},
+    };
+
+    private String gestureAction(String g) {
+        for (String[] x : GESTURES) if (x[0].equals(g)) return prefs.getString(g, x[2]);
+        return "none";
+    }
+
+    static String actionName(String a) {
+        if (a.startsWith("app:")) return "Apri un'app";
+        for (String[] x : ACTIONS) if (x[0].equals(a)) return x[1];
+        return "Niente";
+    }
+
+    private String actionLabel(String a) {
+        if (a.startsWith("app:")) return "Apri " + labelFor(a.substring(4));
+        return actionName(a);
+    }
+
+    private void runGesture(String g) {
+        String a = gestureAction(g);
+        if (a.startsWith("app:")) {
+            AppEntry e = appsByKey.get(a.substring(4));
+            if (e != null) launch(e, null);
+            else toast("L'app di questo gesto non è più installata");
+            return;
+        }
+        switch (a) {
+            case "drawer": openDrawer(false); break;
+            case "search": openDrawer(true); break;
+            case "notif": expandNotifications(); break;
+            case "qs": expandQuickSettings(); break;
+            case "panel": openPanel(); break;
+            case "settings": showSettings(); break;
+            case "torch": toggleTorch(); break;
+            case "lock":
+                if (Build.VERSION.SDK_INT >= 28) globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN);
+                else toast("Bloccare lo schermo richiede Android 9 o successivo");
+                break;
+            case "screenshot":
+                if (Build.VERSION.SDK_INT >= 28) globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT);
+                else toast("Lo screenshot richiede Android 9 o successivo");
+                break;
+            case "recents": globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS); break;
+            case "power": globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_POWER_DIALOG); break;
+            default: break;
+        }
+    }
+
+    /** Azioni che passano dal servizio di accessibilità: se non è attivo si spiega come attivarlo. */
+    private void globalAction(int action) {
+        if (DotAccessibility.perform(action)) return;
+        Sheet.confirm(this, th, "Attiva i gesti di sistema",
+                "Per bloccare lo schermo, fare screenshot o aprire le app recenti serve il servizio "
+                        + "\"Gesti di Dot Launcher\" in Accessibilità. Non legge lo schermo e non raccoglie dati.\n\n"
+                        + "Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → "
+                        + "menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova.",
+                "Apri Accessibilità", () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+    }
+
+    /** Il punto è su uno spazio vuoto della home (non su un'app, un widget, il dock)? */
+    private boolean emptyHomeAt(float rx, float ry) {
+        if (panelOpen || settingsOpen || resizer != null) return false;
+        int page = pager.getCurrent();
+        if (page >= grids.size()) return false;
+        int[] dl = new int[2];
+        dock.getLocationOnScreen(dl);
+        if (ry >= dl[1]) return false;
+        TileGrid g = grids.get(page);
+        for (int i = 0; i < g.getChildCount(); i++) {
+            View v = g.getChildAt(i);
+            int[] l = new int[2];
+            v.getLocationOnScreen(l);
+            if (rx >= l[0] && rx < l[0] + v.getWidth() && ry >= l[1] && ry < l[1] + v.getHeight()) return false;
+        }
+        return true;
+    }
+
+    private void chooseGesture(String g, String title) {
+        String[] names = new String[ACTIONS.length];
+        String cur = gestureAction(g);
+        int sel = -1;
+        for (int i = 0; i < ACTIONS.length; i++) {
+            names[i] = ACTIONS[i][1];
+            if (ACTIONS[i][0].equals(cur) || (cur.startsWith("app:") && "app".equals(ACTIONS[i][0]))) sel = i;
+        }
+        Sheet.list(this, th, title, names, sel, w -> {
+            String a = ACTIONS[w][0];
+            if ("app".equals(a)) {
+                String[] labels = new String[allApps.size()];
+                for (int i = 0; i < labels.length; i++) labels[i] = allApps.get(i).label;
+                Sheet.list(this, th, "Quale app?", labels, -1, k -> {
+                    prefs.edit().putString(g, "app:" + allApps.get(k).key).apply();
+                    refillSettings();
+                });
+                return;
+            }
+            prefs.edit().putString(g, a).apply();
+            refillSettings();
+            if (("lock".equals(a) || "screenshot".equals(a) || "recents".equals(a) || "power".equals(a))
+                    && !DotAccessibility.active()) {
+                globalAction(-1);
+            }
+        });
+    }
+
+    // ---------- gesti a due dita (scorrimento e pizzico) ----------
+
+    private float twoStartY, pinchStartDist;
+    private boolean twoDone;
+
+    private void twoFinger(MotionEvent ev) {
+        if (drawerOpen || panelOpen || settingsOpen || resizer != null || dragSrc >= 0) return;
+        int a = ev.getActionMasked();
+        if (a == MotionEvent.ACTION_POINTER_DOWN && ev.getPointerCount() == 2) {
+            twoStartY = (ev.getY(0) + ev.getY(1)) / 2f;
+            pinchStartDist = dist(ev);
+            twoDone = false;
+        } else if (a == MotionEvent.ACTION_MOVE && ev.getPointerCount() == 2 && !twoDone) {
+            float y = (ev.getY(0) + ev.getY(1)) / 2f;
+            float d = dist(ev);
+            if (pinchStartDist > 0 && d < pinchStartDist * 0.6f) {
+                twoDone = true;
+                flingTook = true;
+                runGesture("g_pinch");
+            } else if (Math.abs(d - pinchStartDist) < pinchStartDist * 0.25f) {
+                if (y - twoStartY > 110 * dp) {
+                    twoDone = true;
+                    flingTook = true;
+                    runGesture("g_two_down");
+                } else if (twoStartY - y > 110 * dp) {
+                    twoDone = true;
+                    flingTook = true;
+                    runGesture("g_two_up");
+                }
+            }
+        }
+    }
+
+    private static float dist(MotionEvent ev) {
+        if (ev.getPointerCount() < 2) return 0;
+        return (float) Math.hypot(ev.getX(0) - ev.getX(1), ev.getY(0) - ev.getY(1));
     }
 
     private void expandNotifications() {
@@ -2626,63 +2795,6 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         return showMenuWithShortcuts(a.label, a, labels, acts);
     }
 
-    private class AppAdapter extends BaseAdapter {
-        private final List<AppEntry> shown = new ArrayList<>();
-        private String query = "";
-
-        void setQuery(String q) {
-            query = DotTextView.normalize(q.trim());
-            refresh();
-        }
-
-        void refresh() {
-            shown.clear();
-            Set<String> h = hidden();
-            for (AppEntry a : allApps) {
-                if (h.contains(a.key)) continue;
-                if (!query.isEmpty() && !DotTextView.normalize(a.label).contains(query)) continue;
-                shown.add(a);
-            }
-            notifyDataSetChanged();
-        }
-
-        @Override public int getCount() { return shown.size(); }
-        @Override public AppEntry getItem(int i) { return shown.get(i); }
-        @Override public long getItemId(int i) { return i; }
-
-        @Override
-        public View getView(int pos, View convert, ViewGroup parent) {
-            LinearLayout cell;
-            ImageView iv;
-            TextView tv;
-            if (convert instanceof LinearLayout) {
-                cell = (LinearLayout) convert;
-                iv = (ImageView) cell.getChildAt(0);
-                tv = (TextView) cell.getChildAt(1);
-            } else {
-                cell = new LinearLayout(HomeActivity.this);
-                cell.setOrientation(LinearLayout.VERTICAL);
-                cell.setGravity(Gravity.CENTER_HORIZONTAL);
-                iv = new ImageView(HomeActivity.this);
-                cell.addView(iv, new LinearLayout.LayoutParams(px(54), px(54)));
-                tv = new TextView(HomeActivity.this);
-                tv.setTextColor(th.onTile);
-                tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
-                tv.setTypeface(th.bodyFace);
-                tv.setSingleLine(true);
-                tv.setEllipsize(TextUtils.TruncateAt.END);
-                tv.setGravity(Gravity.CENTER);
-                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-                lp.topMargin = px(6);
-                cell.addView(tv, lp);
-            }
-            AppEntry a = shown.get(pos);
-            iv.setImageBitmap(iconFor(a.key, px(54)));
-            tv.setText(a.label);
-            return cell;
-        }
-    }
 
     // =====================================================================
     // Trascinamento: dal cassetto, dalla home e dal dock verso home, dock, cartelle e barra in alto
@@ -3934,6 +4046,32 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.row(SectionIcons.LOCK, "App nascoste", nHidden == 0 ? "Nessuna" : nHidden + (nHidden == 1 ? " app nascosta" : " app nascoste"),
                 this::manageHidden);
 
+        st.section("Gesti");
+        for (String[] g : GESTURES) {
+            final String key = g[0], name = g[1];
+            st.row(SectionIcons.STAR, name, actionLabel(gestureAction(key)), () -> chooseGesture(key, name));
+        }
+        st.row(SectionIcons.LOCK, "Servizio per i gesti di sistema", DotAccessibility.active()
+                        ? "Attivo: blocco schermo, screenshot, recenti" : "Spento: serve per bloccare lo schermo e altro",
+                () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+
+        st.section("Ricerca");
+        st.row(SectionIcons.GLOBE, "Motore di ricerca web", UniversalSearch.engineName(searchEngine()), () -> {
+            String[] names = new String[UniversalSearch.ENGINES.length];
+            int sel = 0;
+            for (int i = 0; i < names.length; i++) {
+                names[i] = UniversalSearch.ENGINES[i][1];
+                if (UniversalSearch.ENGINES[i][0].equals(searchEngine())) sel = i;
+            }
+            Sheet.list(this, th, "Motore di ricerca", names, sel, w -> {
+                prefs.edit().putString("engine", UniversalSearch.ENGINES[w][0]).apply();
+                refillSettings();
+            });
+        });
+        st.row(SectionIcons.PEOPLE, "Contatti nella ricerca",
+                checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                        ? "Attivi" : "Tocca per consentire l'accesso", this::requestContacts);
+
         st.section("Meteo e sensori");
         st.row(Draw.SUN, "Città per il meteo", city.isEmpty() ? "Posizione automatica" : city, this::askCity);
         st.row(Draw.STEPS, "Obiettivo di passi", State.stepGoal + " passi al giorno", this::editStepGoal);
@@ -4109,8 +4247,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
         super.onRequestPermissionsResult(req, perms, results);
-        if (req == REQ_CAL) {
+        if (req == REQ_CAL || req == REQ_CONTACTS) {
             if (panel != null) panel.refreshCalendar();
+            if (searchMode) grid.setQuery(search.getText().toString());
             return;
         }
         if (req == REQ_STEPS) {
@@ -4246,6 +4385,26 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     // ---------- utilità ----------
 
+    @Override
+    public void startSafe(Intent i) {
+        safeStart(i);
+    }
+
+    @Override
+    public void requestContacts() {
+        requestPermissions(new String[]{Manifest.permission.READ_CONTACTS}, REQ_CONTACTS);
+    }
+
+    @Override
+    public void requestCalendar() {
+        requestPermissions(new String[]{Manifest.permission.READ_CALENDAR}, REQ_CAL);
+    }
+
+    @Override
+    public String searchEngine() {
+        return prefs.getString("engine", "ddg");
+    }
+
     private void safeStart(Intent i) {
         try {
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
@@ -4255,7 +4414,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
     }
 
-    private void toast(String s) {
+    public void toast(String s) {
         Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
     }
 }
