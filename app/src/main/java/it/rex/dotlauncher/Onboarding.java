@@ -132,7 +132,7 @@ class Onboarding extends FrameLayout {
         }
         body.setAlpha(0f);
         body.setTranslationX(px(24));
-        body.animate().alpha(1f).translationX(0).setDuration(240).start();
+        body.animate().alpha(1f).translationX(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
     }
 
     private void welcome() {
@@ -157,7 +157,7 @@ class Onboarding extends FrameLayout {
             style = "classic";
             show(page);
         });
-        option(T.t("Nuovo (5.0)"), T.t("Nuovo (5.0): numeri sottili, vetro"), "nuovo".equals(style), () -> {
+        option(T.t("Moderno"), T.t("Moderno: numeri sottili, vetro"), "nuovo".equals(style), () -> {
             style = "nuovo";
             show(page);
         });

@@ -13,8 +13,8 @@ final class Draw {
             "....#....", ".#.....#.", "...###...", "..#####..", "#.##R##.#",
             "..#####..", "...###...", ".#.....#.", "....#...."};
     static final String[] PARTLY = {
-            ".R.......", "...RR....", "R.RRRR...", "..RR.##..", "..R#####.",
-            ".########", "#########", ".#######.", "........."};
+            ".....R...", "..R.....R", "....RRR..", "...RRRRR.", "..##RRR..", ".####.##.", ".########", "#########", ".#######."
+    };
     static final String[] CLOUD = {
             ".........", "..##.....", ".####.##.", ".########", "#########",
             "#########", ".#######.", ".........", "........."};
@@ -34,8 +34,8 @@ final class Draw {
             "....#....", "...###...", "..#####..", "..#####..", "..#####..",
             ".#######.", "#########", ".........", "....R...."};
     static final String[] BOLT = {
-            "....###..", "...###...", "..###....", ".#######.", "....###..",
-            "...###...", "..##.....", ".#.......", "........."};
+            "....###..", "...###...", "..###....", ".######..", "...####..", "...###...", "..##.....", ".#.......", "........."
+    };
     static final String[] SEARCH = {
             "..###....", ".#...#...", "#.....#..", "#.....#..", "#.....#..",
             ".#...#...", "..###.#..", ".......#.", "........#"};
@@ -132,7 +132,7 @@ final class Draw {
     }
 
     /**
-     * Numeri e titoli grandi: a puntini nello stile Classico, sottili nello stile Nuovo.
+     * Numeri e titoli grandi: a puntini nello stile Classico, sottili nello stile Moderno.
      * align: -1 sinistra, 0 centro, 1 destra. (ax, cy) = ancoraggio orizzontale e centro verticale.
      */
     static float big(Canvas cv, Theme th, String text, float ax, float cy, float h, float maxW,
@@ -172,7 +172,7 @@ final class Draw {
         return w;
     }
 
-    /** Etichetta piccola: monospaziata maiuscola (Classico) o sans-serif (Nuovo). */
+    /** Etichetta piccola: monospaziata maiuscola (Classico) o sans-serif (Moderno). */
     static float label(Canvas cv, Theme th, String s, float ax, float baseline, float size,
                        int color, int align, Paint p, float maxW) {
         p.setStyle(Paint.Style.FILL);

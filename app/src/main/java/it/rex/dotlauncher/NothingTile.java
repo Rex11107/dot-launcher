@@ -580,7 +580,7 @@ class NothingTile extends View {
         }
         int d = WData.daysTo(target);
         String num = d == 0 ? T.t("OGGI") : String.valueOf(Math.abs(d));
-        String unit = d == 0 ? title : (Math.abs(d) == 1 ? T.t("giorno") : T.t("giorni")) + (d < 0 ? T.t(" fa") : "");
+        String unit = d == 0 ? title : T.n(Math.abs(d), "giorno", "giorni") + (d < 0 ? T.t(" fa") : "");
         int numColor = d == 0 ? acc() : fg();
         if (isCircle()) {
             Draw.big(cv, th, num, W / 2f, H * 0.44f, H * 0.24f, W * 0.62f, numColor, "", acc(), 0, p, true);
@@ -1339,7 +1339,7 @@ class NothingTile extends View {
         Draw.label(cv, th, T.t("Tempo di utilizzo"), pad, pad + m * 0.06f, m * 0.07f, sub(), -1, p, leftW);
         Draw.big(cv, th, total, pad, pad + m * 0.27f, m * 0.17f, leftW, fg(), "hmHM", acc(), -1, p, false);
         if (wide) {
-            Draw.label(cv, th, Usage.unlocks + T.t(" sblocchi"), pad, H - pad, m * 0.065f, sub(), -1, p, leftW);
+            Draw.label(cv, th, Usage.unlocks + T.n(Usage.unlocks, " sblocco", " sblocchi"), pad, H - pad, m * 0.065f, sub(), -1, p, leftW);
         }
         float x0 = wide ? W * 0.5f : pad, x1 = W - pad;
         float y0 = wide ? pad : pad + m * 0.48f, y1 = H - pad * 0.8f;

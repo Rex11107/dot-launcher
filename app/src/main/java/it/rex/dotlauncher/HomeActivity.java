@@ -60,6 +60,7 @@ import android.view.HapticFeedbackConstants;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
@@ -231,7 +232,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         IconFactory.shape = Math.max(0, Math.min(3, prefs.getInt("iconShape", 0)));
         AppTile.SCALE = Math.max(0.7f, Math.min(1.25f, prefs.getFloat("iconScale", 1f)));
         Draw.ghost = prefs.getBoolean("ghost", true);
-        Draw.anim = prefs.getBoolean("anim", true);
+        // le animazioni a punti seguono anche la "Scala animazione" di sistema (spente = niente animazioni)
+        Draw.anim = prefs.getBoolean("anim", true) && Motion.systemOn();
         th = Theme.build(this, prefs);
         themeSig = Theme.signature(prefs);
         h24 = prefs.getBoolean("h24", DateFormat.is24HourFormat(this));
@@ -360,6 +362,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             receiversOn = true;
         }
         started = true;
+        Draw.anim = prefs.getBoolean("anim", true) && Motion.systemOn();
         DotNotifications.setListener(this);
         onNotificationsChanged();
         startSensors();
@@ -507,6 +510,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         lastRawX = ev.getRawX();
         lastRawY = ev.getRawY();
+        // cassetto che segue il dito: scorrendo in su dalla home si tira fuori un po' alla volta
+        if (pulling) {
+            onPull(ev);
+            return true;
+        }
+        if (action == MotionEvent.ACTION_DOWN) {
+            pullDownX = ev.getRawX();
+            pullDownY = ev.getRawY();
+        } else if (action == MotionEvent.ACTION_MOVE && canPull(ev)) {
+            beginPull(ev);
+            return true;
+        }
         if (gestureArmed && (resizer != null || panelOpen || settingsOpen)) {
             // si è aperto qualcosa a metà gesto: il riconoscitore riparte da zero
             MotionEvent c = MotionEvent.obtain(ev);
@@ -529,6 +544,93 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private boolean fingerDown, flingTook, gestureArmed, drawerTopOnDown;
+    private boolean pulling;
+    private float pullDownX, pullDownY, pullStartY, pullLastY, pullSpeed;
+    private long pullLastT;
+
+    private boolean canPull(MotionEvent ev) {
+        if (!gestureArmed || drawerOpen || panelOpen || settingsOpen || resizer != null || onboarding != null) return false;
+        if (ev.getPointerCount() != 1 || TileGrid.anyDragging || !"drawer".equals(gestureAction("g_up"))) return false;
+        float dx = ev.getRawX() - pullDownX, dy = ev.getRawY() - pullDownY;
+        int slop = ViewConfiguration.get(this).getScaledTouchSlop();
+        if (dy > -slop * 1.5f || Math.abs(dy) < Math.abs(dx) * 1.3f) return false;
+        int[] rl = new int[2];
+        root.getLocationOnScreen(rl);
+        // la striscia in basso appartiene alla gesture "home" del sistema
+        if (pullDownY - rl[1] > root.getHeight() - gestureBottom - px(12)) return false;
+        return !scrollableWidgetAt(pullDownX, pullDownY, dy);
+    }
+
+    private void beginPull(MotionEvent ev) {
+        pulling = true;
+        flingTook = true;
+        pullStartY = pullLastY = ev.getRawY();
+        pullLastT = ev.getEventTime();
+        pullSpeed = 0;
+        // la tessera sotto il dito e il riconoscitore dei gesti lasciano perdere questo tocco
+        MotionEvent c = MotionEvent.obtain(ev);
+        c.setAction(MotionEvent.ACTION_CANCEL);
+        super.dispatchTouchEvent(c);
+        if (gestures != null) gestures.onTouchEvent(c);
+        c.recycle();
+        if (drawerDirty) rebuildDrawer();
+        exitSearch();
+        drawer.animate().cancel();
+        homeBox.animate().cancel();
+        drawer.setAlpha(0f);
+        drawer.setTranslationY(pullRange());
+        drawer.setVisibility(View.VISIBLE);
+    }
+
+    private float pullRange() {
+        return Math.max(px(120), root.getHeight() * 0.32f);
+    }
+
+    private void onPull(MotionEvent ev) {
+        int a = ev.getActionMasked();
+        if (a == MotionEvent.ACTION_POINTER_DOWN) {
+            // è arrivato un secondo dito: era un gesto a due dita, non il cassetto
+            pulling = false;
+            pullSpeed = 0;
+            drawer.animate().cancel();
+            drawer.setVisibility(View.GONE);
+            drawer.setAlpha(1f);
+            drawer.setTranslationY(0);
+            restoreHome(false);
+            if (gestureArmed) twoFinger(ev);
+            return;
+        }
+        if (a == MotionEvent.ACTION_MOVE) {
+            long dt = ev.getEventTime() - pullLastT;
+            if (dt > 0) pullSpeed = pullSpeed * 0.4f + (ev.getRawY() - pullLastY) / dt * 0.6f;
+            pullLastY = ev.getRawY();
+            pullLastT = ev.getEventTime();
+            float range = pullRange();
+            float dist = Math.max(0, Math.min(range, pullStartY - ev.getRawY()));
+            float p = dist / range;
+            drawer.setTranslationY(range - dist);
+            drawer.setAlpha(Math.min(1f, p * 1.3f));
+            homeBox.setAlpha(1f - 0.6f * p);
+            homeBox.setScaleX(1f - 0.06f * p);
+            homeBox.setScaleY(1f - 0.06f * p);
+        } else if (a == MotionEvent.ACTION_UP || a == MotionEvent.ACTION_CANCEL) {
+            pulling = false;
+            float p = 1f - drawer.getTranslationY() / pullRange();
+            float fast = 0.5f * getResources().getDisplayMetrics().density; // px/ms
+            boolean open = a == MotionEvent.ACTION_UP && pullSpeed < fast && (p > 0.4f || pullSpeed < -fast);
+            pullSpeed = 0;
+            if (open) {
+                openDrawer(false);
+            } else {
+                drawer.animate().cancel();
+                drawer.animate().alpha(0f).translationY(pullRange()).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN)
+                        .withEndAction(() -> {
+                            if (!drawerOpen) drawer.setVisibility(View.GONE);
+                        }).start();
+                restoreHome(true);
+            }
+        }
+    }
     private int insTop, insBottom;
     private Onboarding onboarding;
 
@@ -777,8 +879,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         grid.setVisibility(View.VISIBLE);
         searchRow.setAlpha(0f);
         grid.setAlpha(0f);
-        searchRow.animate().alpha(1f).setDuration(140).start();
-        grid.animate().alpha(1f).setDuration(180).start();
+        searchRow.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
+        grid.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
         grid.prepare();
         search.setText("");
         grid.setQuery("");
@@ -801,7 +903,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         secView.setVisibility(View.VISIBLE);
         if (was && drawerOpen) {
             secView.setAlpha(0f);
-            secView.animate().alpha(1f).setDuration(160).start();
+            secView.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
         } else secView.setAlpha(1f);
     }
 
@@ -1109,7 +1211,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             panel.setTranslationX(-Math.max(1, root.getWidth()));
             panel.setVisibility(View.VISIBLE);
         }
-        panel.animate().translationX(0).setDuration(260).setInterpolator(EASE_OUT).start();
+        panel.animate().translationX(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
         recedeHome(0.97f, root.getWidth() * 0.18f);
         panel.onShown();
     }
@@ -1120,7 +1222,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(panel.getWindowToken(), 0);
         panel.animate().cancel();
-        panel.animate().translationX(-Math.max(1, root.getWidth())).setDuration(200).setInterpolator(EASE_IN)
+        panel.animate().translationX(-Math.max(1, root.getWidth())).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN)
                 .withEndAction(() -> {
                     if (!panelOpen) panel.setVisibility(View.GONE);
                 }).start();
@@ -1150,23 +1252,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             drawer.setTranslationY(px(60));
             drawer.setVisibility(View.VISIBLE);
         }
-        drawer.animate().alpha(1f).translationY(0).setDuration(220).setInterpolator(EASE_OUT).start();
+        drawer.animate().alpha(1f).translationY(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
         recedeHome(0.94f, 0);
         playWave();
     }
 
     // ---------- la home arretra dietro cassetto, pagina a sinistra e impostazioni ----------
 
-    static final android.view.animation.Interpolator EASE_OUT =
-            new android.view.animation.PathInterpolator(0.2f, 0f, 0f, 1f);
-    static final android.view.animation.Interpolator EASE_IN =
-            new android.view.animation.PathInterpolator(0.4f, 0f, 1f, 1f);
 
     private void recedeHome(float scale, float dx) {
         homeBox.animate().cancel();
         homeBox.setVisibility(View.VISIBLE);
-        homeBox.animate().alpha(0.4f).scaleX(scale).scaleY(scale).translationX(dx).setDuration(240)
-                .setInterpolator(EASE_OUT).withEndAction(() -> {
+        homeBox.animate().alpha(0.4f).scaleX(scale).scaleY(scale).translationX(dx).setDuration(Motion.ENTER)
+                .setInterpolator(Motion.EASE_OUT).withEndAction(() -> {
                     // coperta del tutto: smette di disegnare (anche le animazioni dei widget)
                     if (drawerOpen || panelOpen || settingsOpen) homeBox.setVisibility(View.INVISIBLE);
                 }).start();
@@ -1176,8 +1274,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         homeBox.animate().cancel();
         homeBox.setVisibility(View.VISIBLE);
         if (animated) {
-            homeBox.animate().alpha(1f).scaleX(1f).scaleY(1f).translationX(0).setDuration(200)
-                    .setInterpolator(EASE_OUT).start();
+            homeBox.animate().alpha(1f).scaleX(1f).scaleY(1f).translationX(0).setDuration(Motion.ENTER)
+                    .setInterpolator(Motion.EASE_OUT).start();
         } else {
             homeBox.setAlpha(1f);
             homeBox.setScaleX(1f);
@@ -1194,7 +1292,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (imm != null) imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
         search.clearFocus();
         drawer.animate().cancel();
-        drawer.animate().alpha(0f).translationY(px(60)).setDuration(170).setInterpolator(EASE_IN)
+        drawer.animate().alpha(0f).translationY(px(60)).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN)
                 .withEndAction(() -> {
                     if (drawerOpen) return;
                     drawer.setVisibility(View.GONE);
@@ -1832,7 +1930,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "moon": {
                 double age = NothingTile.moonAge();
                 int next = (int) Math.round((NothingTile.SYNODIC / 2 - age + NothingTile.SYNODIC) % NothingTile.SYNODIC);
-                toast(NothingTile.moonName(age) + " · luna piena tra " + next + (next == 1 ? " giorno" : " giorni"));
+                toast(NothingTile.moonName(age) + T.t(" · luna piena tra ") + next + T.n(next, " giorno", " giorni"));
                 break;
             }
             case "counter":
@@ -2963,7 +3061,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 } else {
                     int dropped = Backup.restore(this, prefs, uri);
                     toast(dropped > 0
-                            ? T.t("Configurazione importata. ") + dropped + T.t(" widget di sistema vanno riaggiunti")
+                            ? T.t("Configurazione importata. ") + dropped + T.n(dropped, " widget di sistema va riaggiunto", " widget di sistema vanno riaggiunti")
                             : T.t("Configurazione importata"));
                     recreate();
                 }
@@ -3378,7 +3476,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Usage.GRACE.clear();
         DotAccessibility.reset();
         int n = Usage.focusApps(prefs).size();
-        toast(T.t("Focus attivo: ") + n + T.t(" app in pausa"));
+        toast(T.t("Focus attivo: ") + n + T.n(n, " app in pausa", " app in pausa"));
         updateWellbeing();
         if (settingsOpen) refillSettings();
     }
@@ -3507,7 +3605,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     public void askUsageAccess() {
         Sheet.confirm(this, th, T.t("Tempo di utilizzo"),
-                T.t("Per sapere quanto usi ogni app, Android deve darti l'accesso ai dati di utilizzo. ")
+                T.t("Per sapere quanto usi ogni app, Dot Launcher ha bisogno dell'accesso ai dati di utilizzo. ")
                         + T.t("I dati vengono letti solo sul telefono, quando servono, e non vengono salvati né inviati.\n\n")
                         + T.t("Nell'elenco che si apre scegli Dot Launcher e attiva \"Consenti accesso\"."),
                 T.t("Apri le impostazioni"), () -> {
@@ -3540,7 +3638,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     if (a == null) continue;
                     entries.add(a);
                     int lim = Usage.limit(prefs, u.pkg);
-                    labels.add(a.label + "\n" + Usage.fmt(u.ms) + " · " + u.opens + (u.opens == 1 ? T.t(" apertura") : T.t(" aperture"))
+                    labels.add(a.label + "\n" + Usage.fmt(u.ms) + " · " + u.opens + T.n(u.opens, " apertura", " aperture")
                             + (lim > 0 ? T.t(" · limite ") + Usage.fmt(lim * 60000L) : ""));
                     icons.add(iconFor(a.key, px(36)));
                 }
@@ -3610,7 +3708,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     final long fms = ms;
                     final int fo = opens;
                     ui.post(() -> {
-                        if (!destroyed) toast(a.label + T.t(" oggi: ") + Usage.fmt(fms) + ", " + fo + (fo == 1 ? T.t(" apertura") : T.t(" aperture")));
+                        if (!destroyed) toast(a.label + T.t(" oggi: ") + Usage.fmt(fms) + ", " + fo + T.n(fo, " apertura", " aperture"));
                     });
                 });
             }
@@ -3623,7 +3721,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             askUsageAccess();
             return;
         }
-        String[] o = {T.t("Nessun limite"), T.t("15 minuti"), T.t("30 minuti"), T.t("45 minuti"), T.t("1 ora"), T.t("1 ora e 30"), T.t("2 ore"), T.t("3 ore")};
+        String[] o = {T.t("Nessun limite"), T.t("15 minuti"), T.t("30 minuti"), T.t("45 minuti"), T.t("1 ora"), T.t("1 ora e mezza"), T.t("2 ore"), T.t("3 ore")};
         int[] m = {0, 15, 30, 45, 60, 90, 120, 180};
         int cur = Usage.limit(prefs, pkg), sel = 0;
         for (int i = 0; i < m.length; i++) if (m[i] == cur) sel = i;
@@ -3672,18 +3770,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 this::focusMenu);
         int nf = Usage.focusApps(prefs).size();
         st.row(SectionIcons.STAR, T.t("App che distraggono"), nf == 0 ? T.t("Nessuna: scegli quali mettere in pausa nel focus")
-                : nf + (nf == 1 ? T.t(" app in pausa durante il focus") : T.t(" app in pausa durante il focus")), () -> pickFocusApps(null));
+                : nf + T.n(nf, " app in pausa durante il focus", " app in pausa durante il focus"), () -> pickFocusApps(null));
         st.toggle(Draw.BELL, T.t("Non disturbare durante il focus"), T.t("Silenzia le notifiche (serve l'accesso alle notifiche)"),
                 prefs.getBoolean("focusDnd", false), on -> {
                     prefs.edit().putBoolean("focusDnd", on).apply();
                     if (on && !DotNotifications.active()) askNotificationAccess();
                 });
         int nl = Usage.limited(prefs).size();
-        st.row(NothingTile.HOURGLASS, T.t("Limiti giornalieri"), nl == 0 ? T.t("Nessuno") : nl + (nl == 1 ? T.t(" app con limite") : T.t(" app con limite")),
+        st.row(NothingTile.HOURGLASS, T.t("Limiti giornalieri"), nl == 0 ? T.t("Nessuno") : nl + T.n(nl, " app con limite", " app con limite"),
                 this::limitsMenu);
         int nm = Usage.mindful(prefs).size();
         st.row(SectionIcons.STAR, T.t("Pausa prima di aprire"), nm == 0 ? T.t("Un respiro di 5 secondi prima delle app che scegli")
-                : nm + (nm == 1 ? T.t(" app") : T.t(" app")) + T.t(" con un respiro prima di aprirsi"),
+                : nm + T.n(nm, " app", " app") + T.t(" con un respiro prima di aprirsi"),
                 () -> pickApps(T.t("Pausa prima di aprire"), Usage.mindful(prefs), sel -> {
                     prefs.edit().putStringSet("mindful", sel).apply();
                     if (settingsOpen) refillSettings();
@@ -3727,7 +3825,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (onboarding != null) {
             Onboarding o = onboarding;
             onboarding = null;
-            o.animate().alpha(0f).setDuration(220).withEndAction(() -> root.removeView(o)).start();
+            o.animate().alpha(0f).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN).withEndAction(() -> root.removeView(o)).start();
         }
         if ("free".equals(prefs.getString("drawerOrder", "alpha"))) {
             sections.sortAll(this);
@@ -3902,7 +4000,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         acts.add(() -> {
             if (inDock) dk.remove(a.key);
             else if (dk.size() >= dockMax()) {
-                toast(T.t("Il dock contiene al massimo ") + dockMax() + T.t(" app"));
+                toast(T.t("Il dock contiene al massimo ") + dockMax() + T.n(dockMax(), " app", " app"));
                 return;
             } else dk.add(a.key);
             prefs.edit().putBoolean("dockInit", true).apply();
@@ -4082,7 +4180,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dragShadow.setVisibility(src == SRC_DRAWER || src == SRC_DFOLDER ? View.INVISIBLE : View.VISIBLE);
         root.addView(dragShadow, new FrameLayout.LayoutParams(shadowW, shadowH));
         positionShadow();
-        dragShadow.animate().scaleX(1.06f).scaleY(1.06f).setDuration(120).start();
+        dragShadow.animate().scaleX(1.06f).scaleY(1.06f).setDuration(Motion.QUICK).setInterpolator(Motion.STANDARD).start();
         if (src != SRC_DRAWER && src != SRC_DFOLDER) v.setAlpha(0.25f);
 
         TileGrid.anyDragging = true;
@@ -4134,7 +4232,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         // la home si rimpicciolisce verso il basso per fare spazio alla barra in alto
                         pager.setPivotX(pager.getWidth() / 2f);
                         pager.setPivotY(pager.getHeight());
-                        pager.animate().scaleX(0.88f).scaleY(0.88f).setDuration(180).start();
+                        pager.animate().scaleX(0.88f).scaleY(0.88f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
                     }
                 }
                 if (dragMoved) {
@@ -4164,7 +4262,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dropBar.animate().cancel();
         dropBar.setAlpha(0f);
         dropBar.setVisibility(View.VISIBLE);
-        dropBar.animate().alpha(1f).setDuration(150).start();
+        dropBar.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
     }
 
     private void clearTargets() {
@@ -4387,7 +4485,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         showDropBar();
         pager.setPivotX(pager.getWidth() / 2f);
         pager.setPivotY(pager.getHeight());
-        pager.animate().scaleX(0.88f).scaleY(0.88f).setDuration(180).start();
+        pager.animate().scaleX(0.88f).scaleY(0.88f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
         root.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
         updateTarget();
     }
@@ -4457,11 +4555,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         clearTargets();
         if (dropBar.getVisibility() == View.VISIBLE) {
             dropBar.animate().cancel();
-            dropBar.animate().alpha(0f).setDuration(120).withEndAction(() -> {
+            dropBar.animate().alpha(0f).setDuration(Motion.QUICK).setInterpolator(Motion.STANDARD).withEndAction(() -> {
                 if (dragSrc < 0) dropBar.setVisibility(View.GONE);
             }).start();
         }
-        pager.animate().scaleX(1f).scaleY(1f).setDuration(180).start();
+        pager.animate().scaleX(1f).scaleY(1f).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
         if (dragShadow != null) root.removeView(dragShadow);
         dragShadow = null;
         if (dragSourceView != null) {
@@ -4591,7 +4689,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 int idx = tDockIndex;
                 int old = dk.indexOf(key);
                 if (old < 0 && dk.size() >= dockMax()) {
-                    toast(T.t("Il dock contiene al massimo ") + dockMax() + T.t(" app"));
+                    toast(T.t("Il dock contiene al massimo ") + dockMax() + T.n(dockMax(), " app", " app"));
                     return;
                 }
                 if (old >= 0) {
@@ -4692,7 +4790,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void popIn(View v) {
         v.setScaleX(0.9f);
         v.setScaleY(0.9f);
-        v.animate().scaleX(1f).scaleY(1f).setDuration(220).setInterpolator(new android.view.animation.OvershootInterpolator(2f)).start();
+        v.animate().scaleX(1f).scaleY(1f).setDuration(Motion.POP).setInterpolator(Motion.pop()).start();
     }
 
     private void removeFromDock(String key) {
@@ -5158,7 +5256,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             settings.setTranslationY(px(40));
             settings.setVisibility(View.VISIBLE);
         }
-        settings.animate().alpha(1f).translationY(0).setDuration(240).setInterpolator(EASE_OUT).start();
+        settings.animate().alpha(1f).translationY(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
         recedeHome(0.95f, 0);
     }
 
@@ -5166,7 +5264,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (settings == null || !settingsOpen) return;
         settingsOpen = false;
         settings.animate().cancel();
-        settings.animate().alpha(0f).translationY(px(40)).setDuration(180).setInterpolator(EASE_IN)
+        settings.animate().alpha(0f).translationY(px(40)).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN)
                 .withEndAction(() -> {
                     if (!settingsOpen) settings.setVisibility(View.GONE);
                 }).start();
@@ -5201,9 +5299,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         RestartActivity.restart(this);
                     });
         });
-        st.row(SectionIcons.PALETTE, T.t("Stile"), "nuovo".equals(style) ? T.t("Nuovo (5.0): numeri sottili, vetro")
+        st.row(SectionIcons.PALETTE, T.t("Stile"), "nuovo".equals(style) ? T.t("Moderno: numeri sottili, vetro")
                 : T.t("Classico: puntini e caratteri a matrice"), () -> choose(T.t("Stile"),
-                new String[]{T.t("Classico"), T.t("Nuovo (5.0)")}, new String[]{"classic", "nuovo"}, "style", style));
+                new String[]{T.t("Classico"), T.t("Moderno")}, new String[]{"classic", "nuovo"}, "style", style));
         st.row(SectionIcons.MOON, T.t("Tema"), "light".equals(mode) ? T.t("Chiaro") : "auto".equals(mode) ? T.t("Automatico (segue il sistema)")
                 : "grey".equals(mode) ? T.t("Scuro (grigio)") : T.t("Extra scuro (nero)"), () -> choose(T.t("Tema"),
                 new String[]{T.t("Extra scuro (nero)"), T.t("Scuro (grigio)"), T.t("Chiaro"), T.t("Automatico")},
@@ -5311,7 +5409,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     refreshDrawer();
                 });
         final int nHidden = hidden().size();
-        st.row(SectionIcons.LOCK, T.t("App nascoste"), nHidden == 0 ? T.t("Nessuna") : nHidden + (nHidden == 1 ? T.t(" app nascosta") : T.t(" app nascoste")),
+        st.row(SectionIcons.LOCK, T.t("App nascoste"), nHidden == 0 ? T.t("Nessuna") : nHidden + T.n(nHidden, " app nascosta", " app nascoste"),
                 this::manageHidden);
 
         st.section(T.t("Notifiche e musica"));
@@ -5372,7 +5470,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.row(SectionIcons.CODE, T.t("Codice sorgente"), "github.com/Rex11107/dot-launcher",
                 () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Rex11107/dot-launcher"))));
         st.note(T.t("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. ")
-                + T.t("Nessun dato viene inviato a server del launcher."));
+                + T.t("Il launcher non ha server: nessun dato viene raccolto."));
     }
 
     static final int[] ACCENTS = {0, 0xFFD71921, 0xFFFF6A13, 0xFFF5A623, 0xFF2EBD59, 0xFF14B8A6, 0xFF2F6BFF,
@@ -5399,7 +5497,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (ACCENTS[i] == cur) sel = i;
         }
         String[] names = ACCENT_NAMES.clone();
-        names[0] = T.t("Predefinito (rosso, o dallo sfondo nello stile 5.0)");
+        names[0] = T.t("Predefinito (rosso, o dallo sfondo nello stile Moderno)");
         final int s0 = sel;
         Sheet.list(this, th, T.t("Colore d'accento"), names, dots, s0, w -> {
             if (ACCENTS[w] == 0) prefs.edit().remove("accentC").apply();

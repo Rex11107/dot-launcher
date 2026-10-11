@@ -11,7 +11,7 @@ import java.io.FileOutputStream;
 
 /**
  * Vetro smerigliato: quando lo sfondo viene applicato dal launcher se ne salva una copia sfocata,
- * che le tessere dello stile Nuovo disegnano sotto il loro colore semitrasparente.
+ * che le tessere dello stile Moderno disegnano sotto il loro colore semitrasparente.
  * Se lo sfondo viene cambiato da un'altra app, la copia non vale più e l'effetto si spegne da solo.
  */
 final class Glass {

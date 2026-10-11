@@ -8,7 +8,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 
-/** Colori e caratteri del launcher: stile Classico (predefinito) o Nuovo (ispirato a 5.0), scuro o chiaro. */
+/** Colori e caratteri del launcher: stile Classico (predefinito) o Moderno, scuro o chiaro. */
 final class Theme {
     static final int RED = 0xFFD71921;
 

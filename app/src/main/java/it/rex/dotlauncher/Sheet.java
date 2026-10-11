@@ -298,7 +298,7 @@ final class Sheet {
                         else {
                             later[i].setText(base[i]);
                             later[i].setEnabled(true);
-                            later[i].animate().alpha(1f).setDuration(200).start();
+                            later[i].animate().alpha(1f).setDuration(Motion.FADE).start();
                         }
                     }
                     if (left[0]-- > 0) box.postDelayed(this, 1000);
@@ -324,7 +324,8 @@ final class Sheet {
         @Override
         protected void onDraw(android.graphics.Canvas cv) {
             float W = getWidth(), H = getHeight();
-            float t = ((android.os.SystemClock.uptimeMillis() - t0) % 8000) / 8000f;
+            // con le animazioni spente il cerchio resta fermo a metà respiro
+            float t = Draw.anim ? ((android.os.SystemClock.uptimeMillis() - t0) % 8000) / 8000f : 0.25f;
             float k = (float) (0.5 - 0.5 * Math.cos(t * Math.PI * 2)); // 0..1..0
             float R = Math.min(W, H) * (0.15f + 0.2f * k);
             float cx = W / 2f, cy = H / 2f;
@@ -345,8 +346,8 @@ final class Sheet {
             p.setTextAlign(android.graphics.Paint.Align.CENTER);
             p.setTextSize(Math.min(W, H) * 0.075f);
             p.setTypeface(Fonts.regular);
-            if (H > 0) cv.drawText(t < 0.5f ? T.t("inspira") : T.t("espira"), cx, H - p.getTextSize() * 0.3f, p);
-            if (isShown()) postInvalidateOnAnimation();
+            if (H > 0 && Draw.anim) cv.drawText(t < 0.5f ? T.t("inspira") : T.t("espira"), cx, H - p.getTextSize() * 0.3f, p);
+            if (Draw.anim && isShown()) postInvalidateOnAnimation();
         }
     }
 

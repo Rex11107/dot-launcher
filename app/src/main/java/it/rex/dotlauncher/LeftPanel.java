@@ -1092,6 +1092,9 @@ class LeftPanel extends FrameLayout {
                 float dx = ev.getRawX() - downX, dy = ev.getRawY() - downY;
                 if (dx < -slop * 2 && Math.abs(dx) > Math.abs(dy) * 1.5f) {
                     swiping = true;
+                    lastX = ev.getRawX();
+                    lastT = ev.getEventTime();
+                    speed = 0;
                     animate().cancel();
                     return true;
                 }
@@ -1117,19 +1120,30 @@ class LeftPanel extends FrameLayout {
         return false;
     }
 
+    private float lastX, speed;
+    private long lastT;
+
     @Override
     public boolean onTouchEvent(MotionEvent ev) {
         if (!swiping) return super.onTouchEvent(ev);
         float dx = Math.min(0, ev.getRawX() - downX);
         switch (ev.getActionMasked()) {
             case MotionEvent.ACTION_MOVE:
+                // velocità del dito (px/ms) per riconoscere anche uno scorrimento breve ma rapido
+                long dt = ev.getEventTime() - lastT;
+                if (dt > 0) speed = speed * 0.4f + (ev.getRawX() - lastX) / dt * 0.6f;
+                lastX = ev.getRawX();
+                lastT = ev.getEventTime();
                 setTranslationX(dx);
                 return true;
             case MotionEvent.ACTION_UP:
             case MotionEvent.ACTION_CANCEL:
                 swiping = false;
-                if (-dx > getWidth() * 0.25f) host.closePanel();
-                else animate().translationX(0).setDuration(160).start();
+                boolean fling = ev.getActionMasked() == MotionEvent.ACTION_UP
+                        && speed < -0.9f * getResources().getDisplayMetrics().density && dx < -slop;
+                speed = 0;
+                if (fling || -dx > getWidth() * 0.25f) host.closePanel();
+                else animate().translationX(0).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
                 return true;
         }
         return true;

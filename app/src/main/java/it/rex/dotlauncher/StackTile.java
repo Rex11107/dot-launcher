@@ -1,14 +1,11 @@
 package it.rex.dotlauncher;
 
-import android.animation.Animator;
-import android.animation.AnimatorListenerAdapter;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewConfiguration;
-import android.view.animation.DecelerateInterpolator;
 import android.widget.FrameLayout;
 
 import java.util.List;
@@ -110,7 +107,7 @@ class StackTile extends FrameLayout {
                 if (ev.getActionMasked() == MotionEvent.ACTION_UP && Math.abs(dy) > getHeight() * 0.18f) {
                     go(dy < 0 ? 1 : -1);
                 } else if (cur != null) {
-                    cur.animate().translationY(0).alpha(1f).setDuration(160).start();
+                    cur.animate().translationY(0).alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
                 }
                 return true;
         }
@@ -134,28 +131,29 @@ class StackTile extends FrameLayout {
         float h = Math.max(1, getHeight());
         if (dir == 0 || !Draw.anim) {
             if (a != null) {
+                a.animate().cancel();
                 a.setVisibility(GONE);
                 a.setTranslationY(0);
                 a.setAlpha(1f);
             }
+            b.animate().cancel();
             b.setTranslationY(0);
             b.setAlpha(1f);
             b.setVisibility(VISIBLE);
         } else {
+            // si annulla ciò che era in corso, così una nuova animazione parte sempre dai valori giusti
+            b.animate().cancel();
             b.setVisibility(VISIBLE);
-            b.setTranslationY(dir * h * 0.6f);
+            b.setTranslationY(dir * h * 0.5f);
             b.setAlpha(0f);
-            b.animate().translationY(0).alpha(1f).setDuration(240).setInterpolator(new DecelerateInterpolator()).start();
+            b.animate().translationY(0).alpha(1f).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
             if (a != null) {
-                a.animate().translationY(-dir * h * 0.6f).alpha(0f).setDuration(200)
-                        .setListener(new AnimatorListenerAdapter() {
-                            @Override
-                            public void onAnimationEnd(Animator an) {
-                                a.animate().setListener(null);
-                                if (a != getChildAt(stack.current)) a.setVisibility(GONE);
-                                a.setTranslationY(0);
-                                a.setAlpha(1f);
-                            }
+                a.animate().cancel();
+                a.animate().translationY(-dir * h * 0.5f).alpha(0f).setDuration(Motion.EXIT)
+                        .setInterpolator(Motion.EASE_IN).withEndAction(() -> {
+                            if (a != getChildAt(stack.current)) a.setVisibility(GONE);
+                            a.setTranslationY(0);
+                            a.setAlpha(1f);
                         }).start();
             }
             performHapticFeedback(android.view.HapticFeedbackConstants.CLOCK_TICK);
