@@ -38,7 +38,14 @@ jobs:
       - name: Compila
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: gradle assembleRelease --stacktrace
+        run: |
+          set -o pipefail
+          if ! gradle assembleRelease --stacktrace 2>&1 | tee build.log; then
+            # il motivo dell'errore diventa un'annotazione leggibile senza scaricare i log
+            msg=$(grep -E "error:|What went wrong|^e: |Lint found|Error:|\.xml:[0-9]+|FAILED" -A4 build.log | grep -v "^\s*at " | head -60 | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')
+            echo "::error title=Build fallita::$msg"
+            exit 1
+          fi
 
       - name: Rinomina APK
         run: cp app/build/outputs/apk/release/app-release.apk DotLauncher.apk
