@@ -134,5 +134,13 @@ class FolderTile extends View {
             rf.set(cx - icon / 2f, cy - icon / 2f, cx + icon / 2f, cy + icon / 2f);
             cv.drawBitmap(b, null, rf, p);
         }
+        // un pallino sulla cartella se almeno un'app dentro ha notifiche
+        for (String k : a) {
+            if (src.badge(k) > 0) {
+                float cs = circle ? m : m * 0.9f;
+                BadgeDrawable.draw(cv, p, W / 2f, H / 2f, cs, th.accent, th.bg);
+                break;
+            }
+        }
     }
 }

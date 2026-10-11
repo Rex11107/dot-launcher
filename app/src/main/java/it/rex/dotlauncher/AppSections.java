@@ -368,6 +368,7 @@ class AppSections extends LinearLayout {
         } else {
             ImageView iv = new ImageView(getContext());
             iv.setImageBitmap(host.iconFor(e.app, s));
+            if (host.badge(e.app) > 0) iv.setForeground(badge());
             icon = iv;
             c.setOnClickListener(v -> host.launchKey(e.app, iv));
             c.setOnLongClickListener(v -> {
@@ -391,6 +392,21 @@ class AppSections extends LinearLayout {
         lp.rightMargin = px(2);
         c.addView(tv, lp);
         return c;
+    }
+
+    private BadgeDrawable badge() {
+        return new BadgeDrawable(th.accent, th.drawerBg | 0xFF000000);
+    }
+
+    /** Aggiorna solo i pallini di notifica, senza ricostruire le pagine. */
+    void updateBadges() {
+        for (List<Cell> page : cells) {
+            for (Cell c : page) {
+                if (c.icon instanceof ImageView && c.entry.app != null) {
+                    c.icon.setForeground(host.badge(c.entry.app) > 0 ? badge() : null);
+                } else if (c.icon != null) c.icon.invalidate();
+            }
+        }
     }
 
     // =====================================================================

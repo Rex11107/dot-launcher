@@ -96,7 +96,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Source, AppSections.Host,
-        UniversalSearch.Host {
+        UniversalSearch.Host, DotNotifications.Listener {
     private static final int REQ_BIND = 1;
     private static final int REQ_CONFIG = 2;
     private static final int REQ_LOC = 3;
@@ -341,6 +341,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             receiversOn = true;
         }
         started = true;
+        DotNotifications.setListener(this);
+        onNotificationsChanged();
         startSensors();
         watchTorch(true);
         updateAlarm();
@@ -375,6 +377,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             receiversOn = false;
         }
         started = false;
+        DotNotifications.setListener(null);
         if (sensors != null) sensors.stop();
         watchTorch(false);
         if (dragSrc >= 0) finishDrag(false);
@@ -754,6 +757,26 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public Theme theme() {
         return th;
+    }
+
+    @Override
+    public int badge(String key) {
+        if (key == null || !prefs.getBoolean("badges", true) || !DotNotifications.active()) return 0;
+        AppEntry a = appsByKey.get(key);
+        return a == null ? 0 : DotNotifications.count(a.component.getPackageName());
+    }
+
+    @Override
+    public void onNotificationsChanged() {
+        if (destroyed) return;
+        refreshAppViews();
+        buildDock();
+        if (secView != null) secView.updateBadges();
+    }
+
+    @Override
+    public void onMediaChanged() {
+        if (!destroyed) refreshTiles("media");
     }
 
     @Override
@@ -1626,6 +1649,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "torch":
                 toggleTorch();
                 break;
+            case "media": {
+                if (!DotNotifications.active()) {
+                    askNotificationAccess();
+                    break;
+                }
+                int hit = it.view instanceof NothingTile ? ((NothingTile) it.view).mediaHit() : 0;
+                if (hit > 0 && DotNotifications.mActive) {
+                    DotNotifications.control(hit);
+                    if (it.view != null) it.view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                } else if (!DotNotifications.mPkg.isEmpty()) {
+                    Intent li = getPackageManager().getLaunchIntentForPackage(DotNotifications.mPkg);
+                    if (li != null) safeStart(li);
+                } else toast("Nessuna musica in riproduzione");
+                break;
+            }
         }
     }
 
@@ -1634,6 +1672,28 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Uri.Builder b = CalendarContract.CONTENT_URI.buildUpon().appendPath("time");
         ContentUris.appendId(b, System.currentTimeMillis());
         return new Intent(Intent.ACTION_VIEW).setData(b.build());
+    }
+
+    private void askNotificationAccess() {
+        Sheet.confirm(this, th, "Accesso alle notifiche",
+                "Serve per i pallini sulle icone, l'anteprima delle notifiche nel menu delle app e il widget "
+                        + "della musica. Le notifiche restano sul telefono: non vengono salvate né inviate.\n\n"
+                        + "Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → "
+                        + "menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova.",
+                "Apri le impostazioni", () -> {
+                    Intent i = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
+                    if (Build.VERSION.SDK_INT >= 30) {
+                        Intent d = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS);
+                        d.putExtra(Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                                new ComponentName(this, DotNotifications.class).flattenToString());
+                        try {
+                            startActivity(d);
+                            return;
+                        } catch (Exception ignored) {
+                        }
+                    }
+                    safeStart(i);
+                });
     }
 
     private void editNote(Item it) {
@@ -1719,6 +1779,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 break;
             case "note": editNote(it); break;
             case "torch": watchTorch(true); break;
+            case "media": if (!DotNotifications.active()) askNotificationAccess(); break;
             case "world_clock":
                 if (it.data == null || it.data.isEmpty()) {
                     WData.put(it, "z", WData.DEFAULT_ZONES);
@@ -2727,6 +2788,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (a == null) continue;
             ImageView iv = new ImageView(this);
             iv.setImageBitmap(iconFor(a.key, size));
+            if (badge(a.key) > 0) iv.setForeground(new BadgeDrawable(th.accent, th.bg));
             iv.setContentDescription(a.label);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
             lp.leftMargin = px(9);
@@ -3846,6 +3908,34 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     /** Mostra il menu di un'app con le azioni rapide in cima. */
     private Dialog showMenuWithShortcuts(String title, AppEntry a, List<String> labels, List<Runnable> acts) {
+        // notifiche dell'app in cima al menu (se l'accesso alle notifiche è attivo)
+        if (a != null && DotNotifications.active()) {
+            final String pkg = a.component.getPackageName();
+            List<android.service.notification.StatusBarNotification> ns = DotNotifications.of(pkg);
+            int i = 0;
+            for (android.service.notification.StatusBarNotification n : ns) {
+                if (i >= 3) break;
+                android.os.Bundle ex = n.getNotification().extras;
+                CharSequence t = ex.getCharSequence(android.app.Notification.EXTRA_TITLE);
+                CharSequence x = ex.getCharSequence(android.app.Notification.EXTRA_TEXT);
+                String line = "●  " + (t == null ? a.label : t) + (x == null ? "" : ": " + x);
+                if (line.length() > 90) line = line.substring(0, 88) + "…";
+                labels.add(i, line);
+                acts.add(i, () -> {
+                    try {
+                        if (n.getNotification().contentIntent != null) n.getNotification().contentIntent.send();
+                        else launch(a, null);
+                    } catch (Exception e) {
+                        launch(a, null);
+                    }
+                });
+                i++;
+            }
+            if (!ns.isEmpty()) {
+                labels.add(i, "Cancella le notifiche (" + ns.size() + ")");
+                acts.add(i, () -> DotNotifications.dismissAll(pkg));
+            }
+        }
         List<ShortcutInfo> scs = a == null ? new ArrayList<>() : appShortcuts(a);
         int n = scs.size();
         String[] all = new String[n + labels.size()];
@@ -4045,6 +4135,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         final int nHidden = hidden().size();
         st.row(SectionIcons.LOCK, "App nascoste", nHidden == 0 ? "Nessuna" : nHidden + (nHidden == 1 ? " app nascosta" : " app nascoste"),
                 this::manageHidden);
+
+        st.section("Notifiche e musica");
+        st.row(SectionIcons.BELL, "Accesso alle notifiche", DotNotifications.active()
+                ? "Attivo: pallini, anteprime e musica" : "Spento: tocca per attivarlo", this::askNotificationAccess);
+        st.toggle(Draw.BELL, "Pallini di notifica", "Un punto sulle icone delle app con notifiche",
+                prefs.getBoolean("badges", true), on -> {
+                    prefs.edit().putBoolean("badges", on).apply();
+                    onNotificationsChanged();
+                });
 
         st.section("Gesti");
         for (String[] g : GESTURES) {

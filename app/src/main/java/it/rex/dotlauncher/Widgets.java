@@ -7,7 +7,7 @@ final class Widgets {
             "weather", "weather_week", "battery_ring", "battery_pill", "battery_dots", "alarm", "search",
             "world_clock", "countdown", "photo", "compass", "steps",
             "year", "day", "clock_ring", "moon", "sun", "weather_hours", "counter", "proverb", "dice", "week",
-            "storage", "note", "torch"
+            "storage", "note", "torch", "media"
     };
 
     /** Categorie per la scelta dei widget: {titolo, tipi…}. */
@@ -16,7 +16,7 @@ final class Widgets {
             {"Data e tempo", "date_big", "date_dot", "calendar", "week", "year", "day", "countdown"},
             {"Meteo e cielo", "weather", "weather_week", "weather_hours", "sun", "moon"},
             {"Batteria e sistema", "battery_ring", "battery_pill", "battery_dots", "storage", "torch"},
-            {"Strumenti", "search", "compass", "steps", "counter", "dice"},
+            {"Musica e strumenti", "media", "search", "compass", "steps", "counter", "dice"},
             {"Foto e testi", "photo", "note", "proverb"}
     };
 
@@ -53,6 +53,7 @@ final class Widgets {
             case "storage": return "Memoria";
             case "note": return "Nota";
             case "torch": return "Torcia";
+            case "media": return "Musica";
             case "app": return "App";
             case "folder": return "Cartella";
             case "shortcut": return "Scorciatoia";
@@ -95,6 +96,7 @@ final class Widgets {
             case "storage": return new int[][]{{2, 2}, {2, 1}};
             case "note": return new int[][]{{2, 2}, {2, 1}, {F, 2}};
             case "torch": return new int[][]{{1, 1}};
+            case "media": return new int[][]{{F, 1}, {2, 2}, {F, 2}};
             case "app": return new int[][]{{1, 1}, {2, 2}};
             case "folder": return new int[][]{{1, 1}, {2, 2}};
             case "shortcut": return new int[][]{{1, 1}};

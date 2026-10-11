@@ -147,6 +147,7 @@ class NothingTile extends View {
             case "storage": storage(cv, W, H); break;
             case "note": note(cv, W, H); break;
             case "torch": torch(cv, W, H); break;
+            case "media": media(cv, W, H); break;
         }
         if (animating) postInvalidateOnAnimation();
         // l'animazione di ricarica continua solo se si vede davvero (pagina corrente, home non coperta)
@@ -1162,6 +1163,142 @@ class NothingTile extends View {
         }
         Draw.icon(cv, BULB, W / 2f, H / 2f, Math.min(W, H) * 0.42f, p, on ? acc() : Theme.alpha(fg(), 0.55f),
                 on ? fg() : sub());
+    }
+
+    // ---------- musica ----------
+
+    private float touchX = -1, touchY = -1;
+
+    @Override
+    public boolean onTouchEvent(android.view.MotionEvent ev) {
+        if (ev.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) {
+            touchX = ev.getX();
+            touchY = ev.getY();
+        }
+        return super.onTouchEvent(ev);
+    }
+
+    /** Pulsante della musica sotto l'ultimo tocco: 1 indietro, 2 play/pausa, 3 avanti, 0 nessuno. */
+    int mediaHit() {
+        RectF[] b = mediaButtons(getWidth(), getHeight());
+        for (int i = 0; i < 3; i++) {
+            RectF r = new RectF(b[i]);
+            r.inset(-r.width() * 0.15f, -r.height() * 0.2f);
+            if (r.contains(touchX, touchY)) return i + 1;
+        }
+        return 0;
+    }
+
+    private RectF[] mediaButtons(float W, float H) {
+        RectF[] out = new RectF[3];
+        boolean tall = item.h >= 2;
+        float bs = tall ? Math.min(W, H) * 0.2f : H * 0.42f;
+        float gap = bs * 0.35f;
+        float total = bs * 3 + gap * 2;
+        float x0 = tall ? (W - total) / 2f : W - H * 0.2f - total;
+        float cy = tall ? H - Math.min(W, H) * 0.12f - bs / 2f : H / 2f;
+        for (int i = 0; i < 3; i++) {
+            float x = x0 + i * (bs + gap);
+            out[i] = new RectF(x, cy - bs / 2f, x + bs, cy + bs / 2f);
+        }
+        return out;
+    }
+
+    static final String[] NOTE = {
+            "....#####", "....#...#", "....#...#", "....#...#", "....#...#",
+            ".###..###", "####.####", ".##...##.", "........."};
+
+    private void media(Canvas cv, float W, float H) {
+        float m = Math.min(W, H);
+        if (!DotNotifications.active()) {
+            Draw.icon(cv, NOTE, W / 2f, H * 0.4f, m * 0.3f, p, fg(), acc());
+            Draw.label(cv, th, "Tocca per attivare", W / 2f, H * 0.82f, m * 0.08f, sub(), 0, p, W * 0.9f);
+            return;
+        }
+        boolean tall = item.h >= 2;
+        float pad = tall ? m * 0.12f : H * 0.16f;
+        float artS = tall ? Math.min(H * 0.42f, W * 0.4f) : H - pad * 2;
+        RectF art = new RectF(pad, pad, pad + artS, pad + artS);
+        float rad = artS * 0.22f;
+        if (DotNotifications.mArt != null) {
+            cv.save();
+            Path pa = new Path();
+            pa.addRoundRect(art, rad, rad, Path.Direction.CW);
+            cv.clipPath(pa);
+            Bitmap a = DotNotifications.mArt;
+            float sc = Math.max(artS / a.getWidth(), artS / a.getHeight());
+            float cw = artS / sc, ch = artS / sc;
+            src.set(Math.round((a.getWidth() - cw) / 2f), Math.round((a.getHeight() - ch) / 2f),
+                    Math.round((a.getWidth() + cw) / 2f), Math.round((a.getHeight() + ch) / 2f));
+            cv.drawBitmap(a, src, art, bp);
+            cv.restore();
+        } else {
+            p.setColor(Theme.alpha(fg(), 0.1f));
+            cv.drawRoundRect(art, rad, rad, p);
+            Draw.icon(cv, NOTE, art.centerX(), art.centerY(), artS * 0.5f, p, fg(), acc());
+        }
+        String title = DotNotifications.mActive && !DotNotifications.mTitle.isEmpty() ? DotNotifications.mTitle
+                : "Niente in riproduzione";
+        String artist = DotNotifications.mArtist;
+        RectF[] b = mediaButtons(W, H);
+        float tx, tw, ty;
+        if (tall) {
+            tx = tall && W >= H * 1.5f ? art.right + pad : pad;
+            ty = tall && W >= H * 1.5f ? pad + artS * 0.35f : art.bottom + m * 0.12f;
+            tw = W - tx - pad;
+        } else {
+            tx = art.right + pad * 0.8f;
+            ty = H * 0.45f;
+            tw = b[0].left - tx - pad * 0.5f;
+        }
+        android.text.TextPaint tp = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
+        tp.setColor(fg());
+        tp.setTypeface(Fonts.medium);
+        tp.setTextSize(tall ? m * 0.095f : H * 0.2f);
+        if (tw > 10) {
+            cv.drawText(android.text.TextUtils.ellipsize(title, tp, tw, android.text.TextUtils.TruncateAt.END).toString(),
+                    tx, ty, tp);
+            if (!artist.isEmpty()) {
+                tp.setColor(sub());
+                tp.setTypeface(th.bodyFace);
+                tp.setTextSize(tall ? m * 0.075f : H * 0.16f);
+                cv.drawText(android.text.TextUtils.ellipsize(artist, tp, tw, android.text.TextUtils.TruncateAt.END)
+                        .toString(), tx, ty + tp.getTextSize() * 1.35f, tp);
+            }
+        }
+        // pulsanti: indietro, play/pausa, avanti
+        for (int i = 0; i < 3; i++) {
+            RectF r = b[i];
+            float cx = r.centerX(), cy = r.centerY(), s = r.width();
+            if (i == 1) {
+                p.setColor(acc());
+                cv.drawCircle(cx, cy, s / 2f, p);
+                p.setColor(item.tone == 2 ? th.accent : th.onAccent);
+                if (DotNotifications.mPlaying) {
+                    float bw = s * 0.1f, bh = s * 0.34f;
+                    cv.drawRoundRect(cx - bw * 1.8f, cy - bh, cx - bw * 0.6f, cy + bh, bw / 2, bw / 2, p);
+                    cv.drawRoundRect(cx + bw * 0.6f, cy - bh, cx + bw * 1.8f, cy + bh, bw / 2, bw / 2, p);
+                } else {
+                    Path t = new Path();
+                    t.moveTo(cx - s * 0.13f, cy - s * 0.2f);
+                    t.lineTo(cx + s * 0.22f, cy);
+                    t.lineTo(cx - s * 0.13f, cy + s * 0.2f);
+                    t.close();
+                    cv.drawPath(t, p);
+                }
+            } else {
+                p.setColor(fg());
+                float dir = i == 0 ? -1 : 1;
+                Path t = new Path();
+                t.moveTo(cx - dir * s * 0.16f, cy - s * 0.18f);
+                t.lineTo(cx + dir * s * 0.12f, cy);
+                t.lineTo(cx - dir * s * 0.16f, cy + s * 0.18f);
+                t.close();
+                cv.drawPath(t, p);
+                float bx = cx + dir * s * 0.16f;
+                cv.drawRect(bx - s * 0.035f, cy - s * 0.18f, bx + s * 0.035f, cy + s * 0.18f, p);
+            }
+        }
     }
 
     // ---------- sveglia e ricerca ----------

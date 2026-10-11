@@ -13,6 +13,9 @@ class AppTile extends View {
     interface Source {
         Bitmap iconFor(String key, int size);
         String labelFor(String key);
+
+        /** Numero di notifiche dell'app (0 = nessun pallino). */
+        int badge(String key);
     }
 
     final Item item;
@@ -44,6 +47,7 @@ class AppTile extends View {
         if (b != null) {
             rf.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f);
             cv.drawBitmap(b, null, rf, p);
+            if (src.badge(item.data) > 0) BadgeDrawable.draw(cv, p, cx, cy, size, th.accent, th.bg);
         } else {
             p.setColor(th.tile);
             cv.drawCircle(cx, cy, size / 2f, p);
