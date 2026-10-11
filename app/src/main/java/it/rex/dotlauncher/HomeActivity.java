@@ -4137,7 +4137,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 this::manageHidden);
 
         st.section("Notifiche e musica");
-        st.row(SectionIcons.BELL, "Accesso alle notifiche", DotNotifications.active()
+        st.row(Draw.BELL, "Accesso alle notifiche", DotNotifications.active()
                 ? "Attivo: pallini, anteprime e musica" : "Spento: tocca per attivarlo", this::askNotificationAccess);
         st.toggle(Draw.BELL, "Pallini di notifica", "Un punto sulle icone delle app con notifiche",
                 prefs.getBoolean("badges", true), on -> {
