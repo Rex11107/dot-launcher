@@ -172,7 +172,7 @@ class AppSections extends LinearLayout {
             Sections.Section s = model.list.get(i);
             List<Sections.Entry> vis = Sections.visible(s, hidden, alpha, host);
             final int idx = i;
-            addPage(s.name, vis, s, () -> host.sectionMenu(idx));
+            addPage(T.t(s.name), vis, s, () -> host.sectionMenu(idx));
         }
         if (showAll) {
             List<Sections.Entry> all = new ArrayList<>();
@@ -182,7 +182,7 @@ class AppSections extends LinearLayout {
                 e.app = a.key;
                 all.add(e);
             }
-            addPage("Tutte le app", all, null, host::allMenu);
+            addPage(T.t("Tutte le app"), all, null, host::allMenu);
         }
         addPlusPage();
         buildBar();
@@ -240,7 +240,7 @@ class AppSections extends LinearLayout {
         }
         if (entries.isEmpty()) {
             TextView empty = new TextView(getContext());
-            empty.setText(sec == null ? "Nessuna app" : "Sezione vuota: trascina un'app sull'icona di questa sezione nella barra in basso");
+            empty.setText(sec == null ? T.t("Nessuna app") : T.t("Sezione vuota: trascina un'app sull'icona di questa sezione nella barra in basso"));
             empty.setTextColor(th.sub);
             empty.setTypeface(th.bodyFace);
             empty.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
@@ -263,7 +263,7 @@ class AppSections extends LinearLayout {
         plus.setOnClickListener(v -> host.newSection());
         col.addView(plus, new LayoutParams(px(96), px(96)));
         TextView t = new TextView(getContext());
-        t.setText("Nuova sezione");
+        t.setText(T.t("Nuova sezione"));
         t.setTextColor(th.onTile);
         t.setTypeface(th.titleFace);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
@@ -327,13 +327,13 @@ class AppSections extends LinearLayout {
         search.setImageBitmap(SectionIcons.bitmap(SectionIcons.SEARCH, s, th.onTile, th.accent, 0));
         search.setPadding(px(9), px(9), px(9), px(9));
         search.setOnClickListener(v -> host.search());
-        search.setContentDescription("Cerca");
+        search.setContentDescription(T.t("Cerca"));
         r.addView(search, new LayoutParams(s, s));
         ImageView more = new ImageView(getContext());
         more.setImageBitmap(SectionIcons.bitmap(SectionIcons.MORE, s, th.onTile, th.accent, 0));
         more.setPadding(px(9), px(9), px(9), px(9));
         more.setOnClickListener(v -> menu.run());
-        more.setContentDescription("Menu della sezione");
+        more.setContentDescription(T.t("Menu della sezione"));
         LayoutParams ml = new LayoutParams(s, s);
         ml.leftMargin = px(4);
         r.addView(more, ml);
@@ -353,7 +353,7 @@ class AppSections extends LinearLayout {
             Set<String> hidden = host.hiddenKeys();
             for (String k : e.apps) if (!hidden.contains(k)) vis.add(k);
             if (alpha) {
-                final Collator col = Collator.getInstance(Locale.ITALIAN);
+                final Collator col = Collator.getInstance(T.loc());
                 Collections.sort(vis, (x, y) -> col.compare(host.labelFor(x), host.labelFor(y)));
             }
             FolderTile.set(fake, e.name, vis);
@@ -381,7 +381,7 @@ class AppSections extends LinearLayout {
         c.icon = icon;
         c.addView(icon, new LayoutParams(s, s));
         TextView tv = new TextView(getContext());
-        tv.setText(e.isFolder() ? e.name : host.labelFor(e.app));
+        tv.setText(e.isFolder() ? T.t(e.name) : host.labelFor(e.app));
         tv.setTextColor(th.onTile);
         tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
         tv.setTypeface(th.bodyFace);
@@ -438,7 +438,7 @@ class AppSections extends LinearLayout {
                     pager.animate().alpha(1f).setDuration(160).start();
                 } else pager.snapTo(page);
             });
-            t.setContentDescription(i < sectionCount() ? model.list.get(i).name : "Tutte le app");
+            t.setContentDescription(i < sectionCount() ? T.t(model.list.get(i).name) : T.t("Tutte le app"));
             bar.addView(t, new LayoutParams(w, px(60)));
         }
         updateTabs();

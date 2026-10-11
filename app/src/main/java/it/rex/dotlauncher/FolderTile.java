@@ -38,9 +38,9 @@ class FolderTile extends View {
 
     static String name(Item it) {
         try {
-            return new JSONObject(it.data).optString("n", "Cartella");
+            return T.t(new JSONObject(it.data).optString("n", "Cartella"));
         } catch (Exception e) {
-            return "Cartella";
+            return T.t("Cartella");
         }
     }
 

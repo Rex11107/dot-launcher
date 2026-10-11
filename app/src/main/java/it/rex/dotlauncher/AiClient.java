@@ -20,13 +20,13 @@ import java.util.List;
 final class AiClient {
     static final String[] PROVIDERS = {"claude", "chatgpt", "gemini", "openrouter", "custom"};
 
-    static final String SYSTEM = "Rispondi in italiano nel modo più breve possibile: al massimo due frasi, "
-            + "senza introduzioni né conclusioni. Se la domanda è un calcolo o un problema di matematica, "
-            + "scrivi solo i passaggi matematici essenziali e il risultato, senza parole.";
+    static final String SYSTEM = T.t("Rispondi in italiano nel modo più breve possibile: al massimo due frasi, ")
+            + T.t("senza introduzioni né conclusioni. Se la domanda è un calcolo o un problema di matematica, ")
+            + T.t("scrivi solo i passaggi matematici essenziali e il risultato, senza parole.");
 
     /** Premessa aggiunta alla domanda quando la si passa all'app (lì non si può impostare un prompt di sistema). */
-    static final String PREFIX = "(Rispondi in poche parole. Se è un calcolo mostra solo i passaggi e il risultato, "
-            + "senza parole.) ";
+    static final String PREFIX = T.t("(Rispondi in poche parole. Se è un calcolo mostra solo i passaggi e il risultato, ")
+            + T.t("senza parole.) ");
 
     static String label(String p) {
         switch (p) {
@@ -34,7 +34,7 @@ final class AiClient {
             case "chatgpt": return "ChatGPT";
             case "gemini": return "Gemini";
             case "openrouter": return "OpenRouter";
-            default: return "Personalizzato";
+            default: return T.t("Personalizzato");
         }
     }
 
@@ -93,7 +93,7 @@ final class AiClient {
         if ("claude".equals(p)) return anthropic(key, model, history);
         if ("gemini".equals(p)) return gemini(key, model, history);
         String b = base == null || base.trim().isEmpty() ? defaultBase(p) : base.trim();
-        if (b.isEmpty()) throw new Exception("Manca l'indirizzo del servizio");
+        if (b.isEmpty()) throw new Exception(T.t("Manca l'indirizzo del servizio"));
         if (b.endsWith("/")) b = b.substring(0, b.length() - 1);
         return openAiCompatible(b + "/chat/completions", key, model, history, !"chatgpt".equals(p));
     }
@@ -180,7 +180,7 @@ final class AiClient {
         }
         c.disconnect();
         if (code >= 400) {
-            String msg = "Errore " + code;
+            String msg = T.t("Errore ") + code;
             try {
                 JSONObject e = new JSONObject(sb.toString());
                 Object err = e.opt("error");
@@ -188,7 +188,7 @@ final class AiClient {
                 else if (err != null) msg += ": " + err;
             } catch (Exception ignored) {
             }
-            if (code == 401 || code == 403) msg = "Chiave API non valida o senza permessi (" + code + ")";
+            if (code == 401 || code == 403) msg = T.t("Chiave API non valida o senza permessi (") + code + ")";
             throw new Exception(msg);
         }
         return new JSONObject(sb.toString());

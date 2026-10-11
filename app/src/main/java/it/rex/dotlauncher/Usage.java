@@ -188,10 +188,10 @@ final class Usage {
 
     static String fmt(long ms) {
         long min = ms / 60000;
-        if (min < 1) return ms > 0 ? "<1 min" : "0 min";
-        if (min < 60) return min + " min";
+        if (min < 1) return ms > 0 ? T.t("<1 min") : "0 min";
+        if (min < 60) return min + T.t(" min");
         long h = min / 60, m = min % 60;
-        return m == 0 ? h + " h" : h + " h " + m + " min";
+        return m == 0 ? h + " h" : h + " h " + m + T.t(" min");
     }
 
     /** Forma corta per i widget: "2h14", "45m". */

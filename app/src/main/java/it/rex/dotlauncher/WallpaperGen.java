@@ -15,14 +15,14 @@ import java.util.Random;
 /** Sfondi originali generati al volo, nello spirito dell'estetica Nothing. */
 final class WallpaperGen {
     static final String[] NAMES = {
-            "Puntini", "Onde scure", "Sfere", "Rosso e nero",
-            "Mosaico", "Pieghe", "Anelli chiari", "Puntini chiari",
-            "Cerchi blu", "Alba arancio", "Geometrie", "Ovali", "Fiore",
-            "Luci glyph", "Matrice", "Griglia", "Sabbia", "Tubi",
-            "Pillole", "Rami", "Monocromo",
-            "Bolla di vetro", "Dune", "Onda di punti", "Aurora", "Mezzatinta", "Notte a punti",
-            "Carta a strati", "Bauhaus", "Nebbia colorata", "Topografia", "Anello neon", "Progetto",
-            "Tramonto a punti"
+            T.t("Puntini"), T.t("Onde scure"), T.t("Sfere"), T.t("Rosso e nero"),
+            T.t("Mosaico"), T.t("Pieghe"), T.t("Anelli chiari"), T.t("Puntini chiari"),
+            T.t("Cerchi blu"), T.t("Alba arancio"), T.t("Geometrie"), T.t("Ovali"), T.t("Fiore"),
+            T.t("Luci glyph"), T.t("Matrice"), T.t("Griglia"), T.t("Sabbia"), T.t("Tubi"),
+            T.t("Pillole"), T.t("Rami"), T.t("Monocromo"),
+            T.t("Bolla di vetro"), "Dune", T.t("Onda di punti"), "Aurora", T.t("Mezzatinta"), T.t("Notte a punti"),
+            T.t("Carta a strati"), "Bauhaus", T.t("Nebbia colorata"), T.t("Topografia"), T.t("Anello neon"), T.t("Progetto"),
+            T.t("Tramonto a punti")
     };
     static final int RED = 0xFFD71921;
 

@@ -56,7 +56,7 @@ final class Sheet {
                 row.addView(iv, il);
             }
             TextView tv = new TextView(a);
-            tv.setText(items[i]);
+            tv.setText(T.t(items[i]));
             tv.setTypeface(Fonts.regular);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
             tv.setTextColor(th.onTile);
@@ -102,7 +102,7 @@ final class Sheet {
                        java.util.function.IntConsumer click,
                        java.util.function.IntConsumer longClick) {
         return grid(a, th, title, count, icon, label, click, longClick,
-                "Tieni premuta un'app per toglierla dalla cartella");
+                T.t("Tieni premuta un'app per toglierla dalla cartella"));
     }
 
     static Dialog grid(Activity a, Theme th, String title, int count,
@@ -184,7 +184,7 @@ final class Sheet {
         Dialog d = base(a);
         LinearLayout box = panel(a, th, title);
         TextView msg = new TextView(a);
-        msg.setText(message);
+        msg.setText(T.t(message));
         msg.setTypeface(Fonts.regular);
         msg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         msg.setTextColor(th.sub);
@@ -209,7 +209,7 @@ final class Sheet {
         LinearLayout box = panel(a, th, title);
         EditText et = new EditText(a);
         et.setText(value);
-        et.setHint(hint);
+        et.setHint(T.t(hint));
         if (multi) {
             et.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE
                     | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
@@ -255,7 +255,7 @@ final class Sheet {
         LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(dp, 150));
         box.addView(br, bl);
         TextView msg = new TextView(a);
-        msg.setText(message);
+        msg.setText(T.t(message));
         msg.setTypeface(Fonts.regular);
         msg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         msg.setTextColor(th.sub);
@@ -345,7 +345,7 @@ final class Sheet {
             p.setTextAlign(android.graphics.Paint.Align.CENTER);
             p.setTextSize(Math.min(W, H) * 0.075f);
             p.setTypeface(Fonts.regular);
-            if (H > 0) cv.drawText(t < 0.5f ? "inspira" : "espira", cx, H - p.getTextSize() * 0.3f, p);
+            if (H > 0) cv.drawText(t < 0.5f ? T.t("inspira") : T.t("espira"), cx, H - p.getTextSize() * 0.3f, p);
             if (isShown()) postInvalidateOnAnimation();
         }
     }
@@ -379,6 +379,7 @@ final class Sheet {
     }
 
     private static LinearLayout panel(Activity a, Theme th, String title) {
+        title = T.t(title);
         float dp = a.getResources().getDisplayMetrics().density;
         LinearLayout box = new LinearLayout(a);
         box.setOrientation(LinearLayout.VERTICAL);
@@ -422,7 +423,7 @@ final class Sheet {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.END);
         row.setPadding(0, px(dp, 14), px(dp, 4), 0);
-        row.addView(pill(a, th, dp, "Annulla", false, v -> d.dismiss()));
+        row.addView(pill(a, th, dp, T.t("Annulla"), false, v -> d.dismiss()));
         View okv = pill(a, th, dp, ok, true, v -> onOk.run());
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -433,7 +434,7 @@ final class Sheet {
 
     private static TextView pill(Activity a, Theme th, float dp, String text, boolean primary, View.OnClickListener l) {
         TextView b = new TextView(a);
-        b.setText(text);
+        b.setText(T.t(text));
         b.setTypeface(Fonts.medium);
         b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
         b.setTextColor(primary ? th.onAccent : th.onTile);

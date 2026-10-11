@@ -97,7 +97,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Source, AppSections.Host,
-        UniversalSearch.Host, DotNotifications.Listener, StackTile.Host {
+        UniversalSearch.Host, DotNotifications.Listener, StackTile.Host, Onboarding.Host {
     private static final int REQ_BIND = 1;
     private static final int REQ_CONFIG = 2;
     private static final int REQ_LOC = 3;
@@ -109,6 +109,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_CONTACTS = 9;
     private static final int REQ_ICON = 10;
     private static final int REQ_FONT = 11;
+    private static final int REQ_ROLE = 12;
     private static final int HOST_ID = 0x0D07;
 
     private SharedPreferences prefs;
@@ -246,6 +247,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         host = new WidgetHost(getApplicationContext(), HOST_ID);
 
         State.parseWeather(prefs.getString("wjson", ""), prefs.getString("wcity", ""));
+        // prima installazione (nessuna home salvata): si mostra la configurazione guidata
+        boolean firstRun = !prefs.contains("layout");
+        if (!prefs.getBoolean("onboarded", false) && !firstRun && !prefs.contains("onboardPage")) {
+            prefs.edit().putBoolean("onboarded", true).apply(); // chi aggiorna da una versione precedente
+        }
         loadLayout();
         if (saved != null) {
             int pi = saved.getInt("pph", -1);
@@ -257,6 +263,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         buildUi();
         setContentView(root);
         applyWindow();
+        if (!prefs.getBoolean("onboarded", false)) showOnboarding(prefs.getInt("onboardPage", 0));
 
         gestures = new GestureDetector(this, new GestureDetector.SimpleOnGestureListener() {
             @Override
@@ -375,6 +382,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     protected void onResume() {
         super.onResume();
         consumePendingShortcuts();
+        if (onboarding != null) onboarding.refresh();
     }
 
     @Override
@@ -468,6 +476,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     @Override
     public void onBackPressed() {
+        if (onboarding != null) return; // la configurazione guidata si chiude con "Salta" o "Inizia"
         if (resizer != null) exitResize();
         else if (settingsOpen) closeSettings();
         else if (panelOpen) closePanel();
@@ -484,7 +493,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             fingerDown = true;
             flingTook = false;
             // il riconoscitore dei gesti segue solo i tocchi iniziati senza pannelli aperti sopra la home
-            gestureArmed = resizer == null && !panelOpen && !settingsOpen;
+            gestureArmed = resizer == null && !panelOpen && !settingsOpen && onboarding == null;
         } else if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
             fingerDown = false;
         }
@@ -520,6 +529,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private boolean fingerDown, flingTook, gestureArmed, drawerTopOnDown;
+    private int insTop, insBottom;
+    private Onboarding onboarding;
 
     /** C'è un widget di sistema sotto il dito che può ancora scorrere in quella direzione? */
     private boolean scrollableWidgetAt(float rx, float ry, float dy) {
@@ -648,6 +659,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (panel != null) panel.setInsets(r[1], Math.max(r[3], r[7]));
             if (settings != null) settings.setInsets(r[1], r[3]);
             gestureBottom = r[6];
+            insTop = r[1];
+            insBottom = Math.max(r[3], r[7]);
+            if (onboarding != null) onboarding.setInsets(insTop, insBottom);
             dropBar.setPadding(0, r[1] + px(8), 0, px(8));
             pager.setEdgeGuard(r[4], r[5]);
             return in;
@@ -674,7 +688,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         drawer.setClickable(true);
 
         search = new EditText(this);
-        search.setHint("Cerca");
+        search.setHint(T.t("Cerca"));
         search.setHintTextColor(th.sub);
         search.setTextColor(th.onTile);
         search.setTypeface(th.bodyFace);
@@ -702,7 +716,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         closeSearch.setImageBitmap(SectionIcons.bitmap(SectionIcons.CLOSE, px(44), th.onTile, th.accent,
                 Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f)));
         closeSearch.setPadding(px(4), px(4), px(4), px(4));
-        closeSearch.setContentDescription("Chiudi la ricerca");
+        closeSearch.setContentDescription(T.t("Chiudi la ricerca"));
         closeSearch.setOnClickListener(v -> exitSearch());
         LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(px(48), px(48));
         cl.leftMargin = px(8);
@@ -879,7 +893,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void openStore(boolean fdroid) {
         AppEntry a = storeApp(fdroid);
-        if (a == null) toast(fdroid ? "F-Droid non è installato" : "Play Store non disponibile");
+        if (a == null) toast(fdroid ? T.t("F-Droid non è installato") : T.t("Play Store non disponibile"));
         else launch(a, null);
     }
 
@@ -893,11 +907,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     public void sectionMenu(int idx) {
         if (idx < 0 || idx >= sections.list.size()) return;
         Sections.Section s = sections.list.get(idx);
-        String[] opts = {"Rinomina", "Cambia icona", "Sposta a sinistra", "Sposta a destra", "Nuova sezione", "Elimina sezione"};
+        String[] opts = {T.t("Rinomina"), T.t("Cambia icona"), T.t("Sposta a sinistra"), T.t("Sposta a destra"), T.t("Nuova sezione"), T.t("Elimina sezione")};
         Sheet.list(this, th, s.name, opts, -1, w -> {
             switch (w) {
                 case 0:
-                    Sheet.input(this, th, "Nome della sezione", "es. Lavoro", s.name, n -> {
+                    Sheet.input(this, th, T.t("Nome della sezione"), T.t("es. Lavoro"), s.name, n -> {
                         if (n.isEmpty()) return;
                         s.name = n;
                         saveSections(idx);
@@ -925,11 +939,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     newSection();
                     break;
                 default:
-                    Sheet.confirm(this, th, "Elimina sezione",
-                            "Le app di \"" + s.name + "\" passano nella sezione Varie (o nell'ultima rimasta).",
-                            "Elimina", () -> {
+                    Sheet.confirm(this, th, T.t("Elimina sezione"),
+                            T.t("Le app di \"") + s.name + T.t("\" passano nella sezione Varie (o nell'ultima rimasta)."),
+                            T.t("Elimina"), () -> {
                                 if (sections.remove(s)) saveSections(Math.max(0, idx - 1));
-                                else toast("Serve almeno una sezione");
+                                else toast(T.t("Serve almeno una sezione"));
                             });
             }
         });
@@ -937,24 +951,24 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     @Override
     public void allMenu() {
-        String[] opts = {"Nascondi \"Tutte le app\"", "Nuova sezione"};
-        Sheet.list(this, th, "Tutte le app", opts, -1, w -> {
+        String[] opts = {T.t("Nascondi \"Tutte le app\""), T.t("Nuova sezione")};
+        Sheet.list(this, th, T.t("Tutte le app"), opts, -1, w -> {
             if (w == 0) {
                 prefs.edit().putBoolean("drawerAll", false).apply();
                 refreshDrawer();
-                toast("Si riattiva dalle impostazioni");
+                toast(T.t("Si riattiva dalle impostazioni"));
             } else newSection();
         });
     }
 
     @Override
     public void newSection() {
-        Sheet.input(this, th, "Nuova sezione", "es. Lavoro", "", n -> {
+        Sheet.input(this, th, T.t("Nuova sezione"), T.t("es. Lavoro"), "", n -> {
             if (n.isEmpty()) return;
             pickSectionIcon(ic -> {
                 sections.add(n, ic);
                 saveSections(sections.list.size() - 1);
-                toast("Trascina le app sull'icona della nuova sezione");
+                toast(T.t("Trascina le app sull'icona della nuova sezione"));
             });
         });
     }
@@ -967,7 +981,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         FolderTile.set(it, f.name, new ArrayList<>(f.apps));
         closeDrawer();
         addItem(it, page, 0, 0);
-        toast("\"" + f.name + "\" copiato sulla home");
+        toast("\"" + f.name + T.t("\" copiato sulla home"));
     }
 
     /** Passa all'ordine libero tenendo l'ordine alfabetico attuale come punto di partenza. */
@@ -975,17 +989,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (drawerFree()) return;
         sections.sortAll(this);
         prefs.edit().putString("drawerOrder", "free").apply();
-        toast("Ordine libero attivato: ora puoi disporre app e contenitori");
+        toast(T.t("Ordine libero attivato: ora puoi disporre app e contenitori"));
     }
 
     private void pickSectionIcon(java.util.function.Consumer<String> cb) {
         final String[][] ch = SectionIcons.CHOICES;
         final int s = px(54);
         final int circle = Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f);
-        Sheet.grid(this, th, "Icona", ch.length,
+        Sheet.grid(this, th, T.t("Icona"), ch.length,
                 i -> SectionIcons.bitmap(SectionIcons.get(ch[i][0]), s, th.onTile, th.accent, circle),
                 i -> ch[i][1], i -> cb.accept(ch[i][0]), i -> cb.accept(ch[i][0]),
-                "Scegli l'icona della sezione");
+                T.t("Scegli l'icona della sezione"));
     }
 
     private void pickSection(String title, java.util.function.Consumer<Sections.Section> cb) {
@@ -1001,7 +1015,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void moveAppToSection(AppEntry a) {
-        pickSection("Sposta in sezione", s -> {
+        pickSection(T.t("Sposta in sezione"), s -> {
             sections.moveTo(a.key, s, null, false);
             saveSections(secView.current());
             toast(a.label + " → " + s.name);
@@ -1017,18 +1031,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (a != null && !h.contains(k)) apps.add(a);
         }
         if (!drawerFree()) {
-            final Collator col = Collator.getInstance(Locale.ITALIAN);
+            final Collator col = Collator.getInstance(T.loc());
             Collections.sort(apps, (x, y) -> col.compare(x.label, y.label));
         }
         Sheet.grid(this, th, f.name, apps.size(),
                 i -> iconFor(apps.get(i).key, px(54)), i -> apps.get(i).label,
                 i -> launch(apps.get(i), null),
                 i -> folderAppMenu(s, f, apps.get(i)),
-                "Tocca per aprire · tieni premuto per altre opzioni");
+                T.t("Tocca per aprire · tieni premuto per altre opzioni"));
     }
 
     private void folderAppMenu(Sections.Section s, Sections.Entry f, AppEntry a) {
-        String[] opts = {"Togli dal contenitore", "Sposta in sezione…", "Aggiungi alla home", "Info app", "Disinstalla"};
+        String[] opts = {T.t("Togli dal contenitore"), T.t("Sposta in sezione…"), T.t("Aggiungi alla home"), T.t("Info app"), T.t("Disinstalla")};
         Sheet.list(this, th, a.label, opts, -1, w -> {
             switch (w) {
                 case 0:
@@ -1059,17 +1073,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private Dialog folderMenu(Sections.Section s, Sections.Entry f) {
-        String[] opts = {"Rinomina", "Sposta in sezione…", "Copia sulla home", "Sciogli contenitore"};
+        String[] opts = {T.t("Rinomina"), T.t("Sposta in sezione…"), T.t("Copia sulla home"), T.t("Sciogli contenitore")};
         return Sheet.list(this, th, f.name, opts, -1, w -> {
             switch (w) {
                 case 0:
-                    Sheet.input(this, th, "Nome del contenitore", "es. Social", f.name, n -> {
-                        f.name = n.isEmpty() ? "Contenitore" : n;
+                    Sheet.input(this, th, T.t("Nome del contenitore"), T.t("es. Social"), f.name, n -> {
+                        f.name = n.isEmpty() ? T.t("Contenitore") : n;
                         saveSections(secView.current());
                     });
                     break;
                 case 1:
-                    pickSection("Sposta in sezione", to -> {
+                    pickSection(T.t("Sposta in sezione"), to -> {
                         Sections.Section from = sections.sectionOfEntry(f);
                         if (from != null) sections.moveEntry(f, from, to);
                         saveSections(secView.current());
@@ -1217,31 +1231,31 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     /** {chiave, nome, azione predefinita} */
     static final String[][] GESTURES = {
-            {"g_up", "Scorri in su", "drawer"},
-            {"g_down", "Scorri in giù", "notif"},
-            {"g_dbl", "Doppio tocco", "lock"},
-            {"g_two_down", "Due dita in giù", "qs"},
-            {"g_two_up", "Due dita in su", "search"},
-            {"g_pinch", "Pizzica (avvicina le dita)", "settings"},
+            {"g_up", T.t("Scorri in su"), "drawer"},
+            {"g_down", T.t("Scorri in giù"), "notif"},
+            {"g_dbl", T.t("Doppio tocco"), "lock"},
+            {"g_two_down", T.t("Due dita in giù"), "qs"},
+            {"g_two_up", T.t("Due dita in su"), "search"},
+            {"g_pinch", T.t("Pizzica (avvicina le dita)"), "settings"},
     };
 
     /** {azione, nome} */
     static final String[][] ACTIONS = {
-            {"none", "Niente"},
-            {"drawer", "Apri il cassetto delle app"},
-            {"search", "Cerca"},
-            {"notif", "Notifiche"},
-            {"qs", "Impostazioni rapide"},
-            {"lock", "Blocca lo schermo"},
+            {"none", T.t("Niente")},
+            {"drawer", T.t("Apri il cassetto delle app")},
+            {"search", T.t("Cerca")},
+            {"notif", T.t("Notifiche")},
+            {"qs", T.t("Impostazioni rapide")},
+            {"lock", T.t("Blocca lo schermo")},
             {"screenshot", "Screenshot"},
-            {"recents", "App recenti"},
-            {"power", "Menu di spegnimento"},
-            {"panel", "Pagina a sinistra"},
-            {"settings", "Impostazioni del launcher"},
-            {"torch", "Torcia"},
-            {"focus", "Modalità focus"},
-            {"usage", "Tempo di utilizzo"},
-            {"app", "Apri un'app…"},
+            {"recents", T.t("App recenti")},
+            {"power", T.t("Menu di spegnimento")},
+            {"panel", T.t("Pagina a sinistra")},
+            {"settings", T.t("Impostazioni del launcher")},
+            {"torch", T.t("Torcia")},
+            {"focus", T.t("Modalità focus")},
+            {"usage", T.t("Tempo di utilizzo")},
+            {"app", T.t("Apri un'app…")},
     };
 
     private String gestureAction(String g) {
@@ -1250,13 +1264,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     static String actionName(String a) {
-        if (a.startsWith("app:")) return "Apri un'app";
+        if (a.startsWith("app:")) return T.t("Apri un'app");
         for (String[] x : ACTIONS) if (x[0].equals(a)) return x[1];
-        return "Niente";
+        return T.t("Niente");
     }
 
     private String actionLabel(String a) {
-        if (a.startsWith("app:")) return "Apri " + labelFor(a.substring(4));
+        if (a.startsWith("app:")) return T.t("Apri ") + labelFor(a.substring(4));
         return actionName(a);
     }
 
@@ -1265,7 +1279,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (a.startsWith("app:")) {
             AppEntry e = appsByKey.get(a.substring(4));
             if (e != null) launch(e, null);
-            else toast("L'app di questo gesto non è più installata");
+            else toast(T.t("L'app di questo gesto non è più installata"));
             return;
         }
         switch (a) {
@@ -1279,17 +1293,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "focus":
                 if (Usage.focusOn(prefs)) {
                     stopFocus();
-                    toast("Focus terminato");
+                    toast(T.t("Focus terminato"));
                 } else focusMenu();
                 break;
             case "usage": showUsage(); break;
             case "lock":
                 if (Build.VERSION.SDK_INT >= 28) globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN);
-                else toast("Bloccare lo schermo richiede Android 9 o successivo");
+                else toast(T.t("Bloccare lo schermo richiede Android 9 o successivo"));
                 break;
             case "screenshot":
                 if (Build.VERSION.SDK_INT >= 28) globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_TAKE_SCREENSHOT);
-                else toast("Lo screenshot richiede Android 9 o successivo");
+                else toast(T.t("Lo screenshot richiede Android 9 o successivo"));
                 break;
             case "recents": globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_RECENTS); break;
             case "power": globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_POWER_DIALOG); break;
@@ -1300,12 +1314,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     /** Azioni che passano dal servizio di accessibilità: se non è attivo si spiega come attivarlo. */
     private void globalAction(int action) {
         if (DotAccessibility.perform(action)) return;
-        Sheet.confirm(this, th, "Attiva i gesti di sistema",
-                "Per bloccare lo schermo, fare screenshot o aprire le app recenti serve il servizio "
-                        + "\"Gesti di Dot Launcher\" in Accessibilità. Non legge lo schermo e non raccoglie dati.\n\n"
-                        + "Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → "
-                        + "menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova.",
-                "Apri Accessibilità", () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        Sheet.confirm(this, th, T.t("Attiva i gesti di sistema"),
+                T.t("Per bloccare lo schermo, fare screenshot o aprire le app recenti serve il servizio ")
+                        + T.t("\"Gesti di Dot Launcher\" in Accessibilità. Non legge lo schermo e non raccoglie dati.\n\n")
+                        + T.t("Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → ")
+                        + T.t("menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova."),
+                T.t("Apri Accessibilità"), () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
     }
 
     /** Il punto è su uno spazio vuoto della home (non su un'app, un widget, il dock)? */
@@ -1339,7 +1353,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if ("app".equals(a)) {
                 String[] labels = new String[allApps.size()];
                 for (int i = 0; i < labels.length; i++) labels[i] = allApps.get(i).label;
-                Sheet.list(this, th, "Quale app?", labels, -1, k -> {
+                Sheet.list(this, th, T.t("Quale app?"), labels, -1, k -> {
                     prefs.edit().putString(g, "app:" + allApps.get(k).key).apply();
                     refillSettings();
                 });
@@ -1603,7 +1617,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private View missingWidget() {
         TextView t = new TextView(this);
-        t.setText("Widget non disponibile\ntieni premuto per toglierlo");
+        t.setText(T.t("Widget non disponibile\ntieni premuto per toglierlo"));
         t.setGravity(Gravity.CENTER);
         t.setTextColor(th.sub);
         t.setTypeface(th.bodyFace);
@@ -1681,7 +1695,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (idx >= 0) items.add(idx, stack);
             else items.add(stack);
             stack.kids().add(target);
-            toast("Pila creata: scorri in verticale per cambiare widget");
+            toast(T.t("Pila creata: scorri in verticale per cambiare widget"));
         }
         List<Item> kids = stack.kids();
         if (add.isStack()) kids.addAll(add.kids());
@@ -1717,7 +1731,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             k.col = spot[1];
             k.row = spot[2];
             items.add(k);
-            if (k.page != stack.page) toast("Messo in un'altra pagina: qui non c'era posto");
+            if (k.page != stack.page) toast(T.t("Messo in un'altra pagina: qui non c'era posto"));
         }
         saveLayout();
         buildPages();
@@ -1727,24 +1741,24 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         List<Item> kids = stack.kids();
         String[] names = new String[kids.size()];
         for (int i = 0; i < kids.size(); i++) names[i] = (i + 1) + ". " + Widgets.name(kids.get(i).type);
-        Sheet.list(this, th, "Widget nella pila", names, stack.current, w -> {
+        Sheet.list(this, th, T.t("Widget nella pila"), names, stack.current, w -> {
             List<String> l = new ArrayList<>();
             List<Runnable> a = new ArrayList<>();
-            l.add("Mostra");
+            l.add(T.t("Mostra"));
             a.add(() -> {
                 if (stack.view instanceof StackTile) ((StackTile) stack.view).show(w, 1);
             });
             if (w > 0) {
-                l.add("Sposta su");
+                l.add(T.t("Sposta su"));
                 a.add(() -> moveKid(stack, w, w - 1));
             }
             if (w < kids.size() - 1) {
-                l.add("Sposta giù");
+                l.add(T.t("Sposta giù"));
                 a.add(() -> moveKid(stack, w, w + 1));
             }
-            l.add("Togli dalla pila e mettilo sulla home");
+            l.add(T.t("Togli dalla pila e mettilo sulla home"));
             a.add(() -> takeOutOfStack(stack, w, true));
-            l.add("Elimina dalla pila");
+            l.add(T.t("Elimina dalla pila"));
             a.add(() -> takeOutOfStack(stack, w, false));
             Sheet.list(this, th, Widgets.name(kids.get(w).type), l.toArray(new String[0]), -1, x -> a.get(x).run());
         });
@@ -1782,7 +1796,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "sun":
             case "weather_hours":
                 refreshWeather(true);
-                toast("Aggiorno il meteo…");
+                toast(T.t("Aggiorno il meteo…"));
                 break;
             case "battery_ring":
             case "battery_pill":
@@ -1794,8 +1808,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 break;
             case "compass":
                 toast(State.compassAccuracy <= 1
-                        ? "Bussola imprecisa: muovi il telefono disegnando un 8"
-                        : "Se la bussola sbaglia, muovi il telefono disegnando un 8");
+                        ? T.t("Bussola imprecisa: muovi il telefono disegnando un 8")
+                        : T.t("Se la bussola sbaglia, muovi il telefono disegnando un 8"));
                 break;
             case "countdown":
                 editCountdown(it);
@@ -1879,13 +1893,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         return new Intent(Intent.ACTION_VIEW).setData(b.build());
     }
 
-    private void askNotificationAccess() {
-        Sheet.confirm(this, th, "Accesso alle notifiche",
-                "Serve per i pallini sulle icone, l'anteprima delle notifiche nel menu delle app e il widget "
-                        + "della musica. Le notifiche restano sul telefono: non vengono salvate né inviate.\n\n"
-                        + "Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → "
-                        + "menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova.",
-                "Apri le impostazioni", () -> {
+    public void askNotificationAccess() {
+        Sheet.confirm(this, th, T.t("Accesso alle notifiche"),
+                T.t("Serve per i pallini sulle icone, l'anteprima delle notifiche nel menu delle app e il widget ")
+                        + T.t("della musica. Le notifiche restano sul telefono: non vengono salvate né inviate.\n\n")
+                        + T.t("Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → ")
+                        + T.t("menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova."),
+                T.t("Apri le impostazioni"), () -> {
                     Intent i = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS);
                     if (Build.VERSION.SDK_INT >= 30) {
                         Intent d = new Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS);
@@ -1905,17 +1919,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void renameApp(AppEntry a) {
         String orig = a.origLabel != null ? a.origLabel : a.label;
-        Sheet.input(this, th, "Nome dell'app", orig, a.label, n -> {
+        Sheet.input(this, th, T.t("Nome dell'app"), orig, a.label, n -> {
             String v = n.trim();
             putJson("customLabels", a.key, v.isEmpty() || v.equals(orig) ? null : v);
-            toast(v.isEmpty() || v.equals(orig) ? "Nome originale ripristinato" : "Rinominata in " + v);
+            toast(v.isEmpty() || v.equals(orig) ? T.t("Nome originale ripristinato") : T.t("Rinominata in ") + v);
             loadApps();
         });
     }
 
     private void changeIcon(AppEntry a) {
-        String[] opts = {"Immagine dalla galleria", "Icona di un'altra app", "Ripristina l'icona"};
-        Sheet.list(this, th, "Icona di " + a.label, opts, -1, w -> {
+        String[] opts = {T.t("Immagine dalla galleria"), T.t("Icona di un'altra app"), T.t("Ripristina l'icona")};
+        Sheet.list(this, th, T.t("Icona di ") + a.label, opts, -1, w -> {
             if (w == 0) {
                 prefs.edit().putString("pendIcon", a.key).apply();
                 Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
@@ -2138,7 +2152,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void editCountdown(Item it) {
-        Sheet.input(this, th, "Nome dell'evento", "es. Vacanze", WData.get(it, "t", ""), t -> {
+        Sheet.input(this, th, T.t("Nome dell'evento"), T.t("es. Vacanze"), WData.get(it, "t", ""), t -> {
             Calendar c = Calendar.getInstance();
             long cur = WData.getLong(it, "d", 0);
             if (cur > 0) c.setTimeInMillis(cur);
@@ -2149,12 +2163,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         Calendar sel = Calendar.getInstance();
                         sel.set(y, m, d, 12, 0, 0);
                         sel.set(Calendar.MILLISECOND, 0);
-                        WData.put(it, "t", t.isEmpty() ? "Evento" : t);
+                        WData.put(it, "t", t.isEmpty() ? T.t("Evento") : t);
                         WData.put(it, "d", String.valueOf(sel.getTimeInMillis()));
                         saveLayout();
                         if (it.view != null) it.view.invalidate();
                     }, c.get(Calendar.YEAR), c.get(Calendar.MONTH), c.get(Calendar.DAY_OF_MONTH));
-            picker.setTitle("Data dell'evento");
+            picker.setTitle(T.t("Data dell'evento"));
             picker.show();
         });
     }
@@ -2224,7 +2238,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         try {
             AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
             AlarmManager.AlarmClockInfo info = am == null ? null : am.getNextAlarmClock();
-            State.nextAlarm = info == null ? "" : new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.ITALIAN)
+            State.nextAlarm = info == null ? "" : new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc())
                     .format(new Date(info.getTriggerTime()));
         } catch (Exception e) {
             State.nextAlarm = "";
@@ -2307,13 +2321,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     out.data = apps.get(i).key;
                     saveLayout();
                     addItem(out, folder.page, 0, 0);
-                    toast(apps.get(i).label + " tolta dalla cartella");
+                    toast(apps.get(i).label + T.t(" tolta dalla cartella"));
                 });
     }
 
     private void renameFolder(Item folder) {
-        Sheet.input(this, th, "Nome della cartella", "es. Social", FolderTile.name(folder), n -> {
-            FolderTile.set(folder, n.isEmpty() ? "Cartella" : n, FolderTile.apps(folder));
+        Sheet.input(this, th, T.t("Nome della cartella"), T.t("es. Social"), FolderTile.name(folder), n -> {
+            FolderTile.set(folder, n.isEmpty() ? T.t("Cartella") : n, FolderTile.apps(folder));
             saveLayout();
             if (folder.view != null) folder.view.invalidate();
         });
@@ -2323,12 +2337,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         final List<Item> folders = new ArrayList<>();
         for (Item it : items) if ("folder".equals(it.type)) folders.add(it);
         if (folders.isEmpty()) {
-            toast("Nessuna cartella: trascina un'app sopra un'altra per crearne una");
+            toast(T.t("Nessuna cartella: trascina un'app sopra un'altra per crearne una"));
             return;
         }
         String[] names = new String[folders.size()];
         for (int i = 0; i < names.length; i++) names[i] = FolderTile.name(folders.get(i));
-        Sheet.list(this, th, "Aggiungi a una cartella", names, -1, w -> {
+        Sheet.list(this, th, T.t("Aggiungi a una cartella"), names, -1, w -> {
             Item f = folders.get(w);
             List<String> apps = FolderTile.apps(f);
             if (!apps.contains(a.key)) apps.add(a.key);
@@ -2345,29 +2359,29 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         int[][] sizes = sizesOf(it);
         final boolean lk = locked();
         if (sizes.length > 1 && !lk) {
-            labels.add("Ridimensiona");
+            labels.add(T.t("Ridimensiona"));
             acts.add(() -> startResize(it));
         }
         final Item cur = it.isStack() ? (it.view instanceof StackTile ? ((StackTile) it.view).currentKid() : null) : it;
         if (!it.isSys() && !it.isApp() && cur != null) {
-            labels.add(it.isStack() ? "Colore di questo widget" : "Colore");
+            labels.add(it.isStack() ? T.t("Colore di questo widget") : T.t("Colore"));
             acts.add(() -> chooseTone(cur));
         }
         if (cur != null) widgetActions(cur, labels, acts);
         if (it.isStack()) {
-            labels.add("Widget nella pila…");
+            labels.add(T.t("Widget nella pila…"));
             acts.add(() -> manageStack(it));
             if (!lk) {
-                labels.add("Aggiungi un widget alla pila");
-                acts.add(() -> widgetPicker("Aggiungi alla pila", new int[]{it.w, it.h}, (type, sz) -> {
+                labels.add(T.t("Aggiungi un widget alla pila"));
+                acts.add(() -> widgetPicker(T.t("Aggiungi alla pila"), new int[]{it.w, it.h}, (type, sz) -> {
                     Item n = new Item(type, it.col, it.row, sz[0], sz[1], 0, it.page);
                     mergeIntoStack(it, n);
                     configureNew(n);
                 }));
             }
         } else if (stackable(it) && !lk) {
-            labels.add("Crea una pila con un altro widget");
-            acts.add(() -> widgetPicker("Aggiungi alla pila", new int[]{it.w, it.h}, (type, sz) -> {
+            labels.add(T.t("Crea una pila con un altro widget"));
+            acts.add(() -> widgetPicker(T.t("Aggiungi alla pila"), new int[]{it.w, it.h}, (type, sz) -> {
                 Item n = new Item(type, it.col, it.row, sz[0], sz[1], 0, it.page);
                 mergeIntoStack(it, n);
                 configureNew(n);
@@ -2376,38 +2390,38 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (it.isApp()) {
             AppEntry a = appsByKey.get(it.data);
             if (a != null) {
-                labels.add("Rinomina");
+                labels.add(T.t("Rinomina"));
                 acts.add(() -> renameApp(a));
-                labels.add("Cambia icona");
+                labels.add(T.t("Cambia icona"));
                 acts.add(() -> changeIcon(a));
-                labels.add("Stile icona");
+                labels.add(T.t("Stile icona"));
                 acts.add(() -> chooseIconMode(a));
-                labels.add("Benessere digitale…");
+                labels.add(T.t("Benessere digitale…"));
                 acts.add(() -> appWellbeing(a));
-                labels.add("Info app");
+                labels.add(T.t("Info app"));
                 acts.add(() -> appInfo(a));
             }
         }
         if (lk) {
-            labels.add("Sblocca la home");
+            labels.add(T.t("Sblocca la home"));
             acts.add(() -> setLocked(false));
             String title = itemTitle(it);
             showMenuWithShortcuts(title, it.isApp() ? appsByKey.get(it.data) : null, labels, acts);
             return;
         }
         if (it.page < pages - 1) {
-            labels.add("Sposta alla pagina successiva");
+            labels.add(T.t("Sposta alla pagina successiva"));
             acts.add(() -> moveToPage(it, it.page + 1));
         }
         if (it.page > 0) {
-            labels.add("Sposta alla pagina precedente");
+            labels.add(T.t("Sposta alla pagina precedente"));
             acts.add(() -> moveToPage(it, it.page - 1));
         }
         if ("folder".equals(it.type)) {
-            labels.add("Rinomina");
+            labels.add(T.t("Rinomina"));
             acts.add(() -> renameFolder(it));
         }
-        labels.add("Rimuovi");
+        labels.add(T.t("Rimuovi"));
         acts.add(() -> removeItem(it));
         String title = itemTitle(it);
         showMenuWithShortcuts(title, it.isApp() ? appsByKey.get(it.data) : null, labels, acts);
@@ -2419,7 +2433,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if ("folder".equals(it.type)) return FolderTile.name(it);
         if (it.isStack() && it.view instanceof StackTile) {
             Item k = ((StackTile) it.view).currentKid();
-            if (k != null) return "Pila · " + Widgets.name(k.type);
+            if (k != null) return T.t("Pila · ") + Widgets.name(k.type);
         }
         return Widgets.name(it.type);
     }
@@ -2429,9 +2443,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         switch (it.type) {
             case "photo": {
                 boolean dots = "dots".equals(WData.get(it, "s", ""));
-                labels.add("Cambia foto");
+                labels.add(T.t("Cambia foto"));
                 acts.add(() -> pickPhoto(it));
-                labels.add(dots ? "Effetto: foto normale" : "Effetto: foto a puntini");
+                labels.add(dots ? T.t("Effetto: foto normale") : T.t("Effetto: foto a puntini"));
                 acts.add(() -> {
                     WData.put(it, "s", dots ? "" : "dots");
                     saveLayout();
@@ -2440,47 +2454,47 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 break;
             }
             case "countdown":
-                labels.add("Modifica evento");
+                labels.add(T.t("Modifica evento"));
                 acts.add(() -> editCountdown(it));
                 break;
             case "world_clock":
-                labels.add("Scegli le città");
+                labels.add(T.t("Scegli le città"));
                 acts.add(() -> chooseCities(it));
                 break;
             case "steps":
-                labels.add("Obiettivo di passi");
+                labels.add(T.t("Obiettivo di passi"));
                 acts.add(this::editStepGoal);
                 break;
             case "counter":
-                labels.add("Togli uno (−1)");
+                labels.add(T.t("Togli uno (−1)"));
                 acts.add(() -> {
                     WData.put(it, "n", String.valueOf(Math.max(0, WData.getLong(it, "n", 0) - 1)));
                     saveLayout();
                     if (it.view != null) it.view.invalidate();
                 });
-                labels.add("Azzera");
+                labels.add(T.t("Azzera"));
                 acts.add(() -> {
                     WData.put(it, "n", "0");
                     saveLayout();
                     if (it.view != null) it.view.invalidate();
                 });
-                labels.add("Dai un nome");
-                acts.add(() -> Sheet.input(this, th, "Nome del contatore", "es. Caffè", WData.get(it, "t", ""), t -> {
+                labels.add(T.t("Dai un nome"));
+                acts.add(() -> Sheet.input(this, th, T.t("Nome del contatore"), T.t("es. Caffè"), WData.get(it, "t", ""), t -> {
                     WData.put(it, "t", t);
                     saveLayout();
                     if (it.view != null) it.view.invalidate();
                 }));
                 break;
             case "note":
-                labels.add("Modifica la nota");
+                labels.add(T.t("Modifica la nota"));
                 acts.add(() -> editNote(it));
                 break;
             case "proverb":
-                labels.add("Copia il proverbio");
+                labels.add(T.t("Copia il proverbio"));
                 acts.add(() -> {
                     android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
                     if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("proverbio", NothingTile.proverb(it)));
-                    toast("Copiato");
+                    toast(T.t("Copiato"));
                 });
                 break;
         }
@@ -2489,15 +2503,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onEmptyLongPress(int page, int col, int row) {
         if (locked()) {
-            Sheet.list(this, th, "Home bloccata", new String[]{"Sblocca la home", "Impostazioni", "Sfondi"}, -1, w -> {
+            Sheet.list(this, th, T.t("Home bloccata"), new String[]{T.t("Sblocca la home"), T.t("Impostazioni"), T.t("Sfondi")}, -1, w -> {
                 if (w == 0) setLocked(false);
                 else if (w == 1) showSettings();
                 else startActivity(new Intent(this, WallpaperActivity.class));
             });
             return;
         }
-        String[] opts = {"Widget Dot", "Widget di sistema", "Aggiungi app", "Sfondi", "Impostazioni",
-                "Aggiungi pagina", "Rimuovi questa pagina", "Launcher predefinito"};
+        String[] opts = {T.t("Widget Dot"), T.t("Widget di sistema"), T.t("Aggiungi app"), T.t("Sfondi"), T.t("Impostazioni"),
+                T.t("Aggiungi pagina"), T.t("Rimuovi questa pagina"), T.t("Launcher predefinito")};
         Sheet.list(this, th, "Home", opts, -1, w -> {
             switch (w) {
                 case 0: pickNothingWidget(page, col, row); break;
@@ -2518,8 +2532,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void chooseTone(Item it) {
-        String[] labels = {"Standard", "Contrasto", "Colore d'accento"};
-        Sheet.list(this, th, "Colore", labels, it.tone, w -> {
+        String[] labels = {"Standard", T.t("Contrasto"), T.t("Colore d'accento")};
+        Sheet.list(this, th, T.t("Colore"), labels, it.tone, w -> {
             it.tone = w;
             saveLayout();
             if (it.view != null) it.view.invalidate();
@@ -2537,7 +2551,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
         }
         if (spot == null) {
-            toast("La pagina è piena");
+            toast(T.t("La pagina è piena"));
             return;
         }
         it.page = page;
@@ -2569,11 +2583,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void removePage(int page) {
         if (pages <= 1) {
-            toast("Serve almeno una pagina");
+            toast(T.t("Serve almeno una pagina"));
             return;
         }
-        Sheet.confirm(this, th, "Rimuovere la pagina?",
-                "Gli elementi presenti su questa pagina verranno tolti dalla home.", "Rimuovi", () -> {
+        Sheet.confirm(this, th, T.t("Rimuovere la pagina?"),
+                T.t("Gli elementi presenti su questa pagina verranno tolti dalla home."), T.t("Rimuovi"), () -> {
                     for (Item it : new ArrayList<>(items)) {
                         if (it.page == page) {
                             items.remove(it);
@@ -2598,7 +2612,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void pickNothingWidget(int page, int col, int row) {
-        widgetPicker("Widget Dot", null, (type, sz) -> addDotWidget(type, sz, page, col, row));
+        widgetPicker(T.t("Widget Dot"), null, (type, sz) -> addDotWidget(type, sz, page, col, row));
     }
 
     /** Scelta di un widget Dot; con {@code only} si mostrano solo quelli disponibili in quella misura. */
@@ -2610,8 +2624,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         int maxW = getResources().getDisplayMetrics().widthPixels - px(72);
         if (only == null) {
             TextView tip = new TextView(this);
-            tip.setText("Suggerimento: trascina un widget sopra un altro della stessa misura per creare una pila "
-                    + "da scorrere in verticale.");
+            tip.setText(T.t("Suggerimento: trascina un widget sopra un altro della stessa misura per creare una pila ")
+                    + T.t("da scorrere in verticale."));
             tip.setTextColor(th.sub);
             tip.setTypeface(th.bodyFace);
             tip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -2695,7 +2709,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private TextView pickerHeader(String title) {
         TextView t = new TextView(this);
-        t.setText(th.upperLabels ? title.toUpperCase(Locale.ITALIAN) : title);
+        t.setText(th.upperLabels ? title.toUpperCase(T.loc()) : title);
         t.setTypeface(th.labelFace);
         t.setTextColor(th.sub);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -2729,13 +2743,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Item it = new Item(type, 0, 0, size[0], size[1], "alarm".equals(type) ? 2 : 0, 0);
         switch (type) {
             case "countdown":
-                WData.put(it, "t", "Vacanze");
+                WData.put(it, "t", T.t("Vacanze"));
                 WData.put(it, "d", String.valueOf(System.currentTimeMillis() + 12L * 86400000L));
                 break;
-            case "note": WData.put(it, "t", "Comprare il pane e ritirare il pacco"); break;
+            case "note": WData.put(it, "t", T.t("Comprare il pane e ritirare il pacco")); break;
             case "counter":
                 WData.put(it, "n", "3");
-                WData.put(it, "t", "Caffè");
+                WData.put(it, "t", T.t("Caffè"));
                 break;
             case "world_clock": WData.put(it, "z", WData.DEFAULT_ZONES); break;
         }
@@ -2758,7 +2772,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (allApps.isEmpty()) return;
         String[] labels = new String[allApps.size()];
         for (int i = 0; i < labels.length; i++) labels[i] = allApps.get(i).label;
-        Sheet.list(this, th, "Aggiungi app", labels, -1, w -> addAppToHome(allApps.get(w), page, col, row));
+        Sheet.list(this, th, T.t("Aggiungi app"), labels, -1, w -> addAppToHome(allApps.get(w), page, col, row));
     }
 
     private void addAppToHome(AppEntry a, int page, int col, int row) {
@@ -2772,7 +2786,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void pickSysWidget(int page, int col, int row) {
         final List<AppWidgetProviderInfo> providers = new ArrayList<>(awm.getInstalledProviders());
         if (providers.isEmpty()) {
-            toast("Nessun widget disponibile");
+            toast(T.t("Nessun widget disponibile"));
             return;
         }
         final PackageManager pm = getPackageManager();
@@ -2788,7 +2802,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             appNames.put(pkg, app);
         }
-        final Collator col2 = Collator.getInstance(Locale.ITALIAN);
+        final Collator col2 = Collator.getInstance(T.loc());
         Collections.sort(providers, (a, b) -> {
             int c = col2.compare(appNames.get(a.provider.getPackageName()), appNames.get(b.provider.getPackageName()));
             return c != 0 ? c : col2.compare(String.valueOf(a.loadLabel(pm)), String.valueOf(b.loadLabel(pm)));
@@ -2842,7 +2856,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             });
             list.addView(card);
         }
-        dlg[0] = Sheet.custom(this, th, "Widget di sistema", list);
+        dlg[0] = Sheet.custom(this, th, T.t("Widget di sistema"), list);
     }
 
     private void bindWidget(AppWidgetProviderInfo info) {
@@ -2866,7 +2880,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 startActivityForResult(i, REQ_BIND);
             } catch (Exception e) {
                 cancelPending();
-                toast("Impossibile aggiungere il widget");
+                toast(T.t("Impossibile aggiungere il widget"));
             }
         }
     }
@@ -2945,16 +2959,16 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             try {
                 if (req == REQ_EXPORT) {
                     Backup.export(this, prefs, uri);
-                    toast("Configurazione esportata");
+                    toast(T.t("Configurazione esportata"));
                 } else {
                     int dropped = Backup.restore(this, prefs, uri);
                     toast(dropped > 0
-                            ? "Configurazione importata. " + dropped + " widget di sistema vanno riaggiunti"
-                            : "Configurazione importata");
+                            ? T.t("Configurazione importata. ") + dropped + T.t(" widget di sistema vanno riaggiunti")
+                            : T.t("Configurazione importata"));
                     recreate();
                 }
             } catch (Exception e) {
-                toast(req == REQ_EXPORT ? "Esportazione non riuscita" : "File di configurazione non valido");
+                toast(req == REQ_EXPORT ? T.t("Esportazione non riuscita") : T.t("File di configurazione non valido"));
             }
             return;
         }
@@ -3050,7 +3064,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 String n = names.get(a.key);
                 if (n != null && !n.isEmpty()) a.label = n;
             }
-            final Collator col = Collator.getInstance(Locale.ITALIAN);
+            final Collator col = Collator.getInstance(T.loc());
             Collections.sort(list, (x, y) -> col.compare(x.label, y.label));
             Map<String, AppEntry> lookup = new HashMap<>();
             for (AppEntry a : list) lookup.put(a.key, a);
@@ -3154,9 +3168,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     /** Scelta per singola app: automatica, sempre originale, sempre a simbolo, simbolo nel colore d'accento. */
     private void chooseIconMode(AppEntry a) {
-        String[] labels = {"Automatica", "Originale (non modificata)", "Simbolo (forzato)", "Simbolo nel colore d'accento"};
+        String[] labels = {T.t("Automatica"), T.t("Originale (non modificata)"), T.t("Simbolo (forzato)"), T.t("Simbolo nel colore d'accento")};
         int cur = isRed(a.key) ? 3 : iconMode(a.key);
-        Sheet.list(this, th, "Stile icona", labels, cur, w -> {
+        Sheet.list(this, th, T.t("Stile icona"), labels, cur, w -> {
             Set<String> o = new HashSet<>(prefs.getStringSet("origApps", new HashSet<>()));
             Set<String> g = new HashSet<>(prefs.getStringSet("glyphApps", new HashSet<>()));
             Set<String> r = new HashSet<>(prefs.getStringSet("redApps", new HashSet<>()));
@@ -3249,7 +3263,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             launcherApps.startMainActivity(a.component, a.user, r, opts);
         } catch (Exception e) {
-            toast("Impossibile aprire " + a.label);
+            toast(T.t("Impossibile aprire ") + a.label);
         }
     }
 
@@ -3263,8 +3277,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             launchNow(a, v);
             return;
         }
-        String msg = "Stai per aprire " + a.label + ". Prenditi qualche secondo: ti serve davvero adesso?";
-        Sheet.pause(this, th, "Un respiro", msg, 5, new String[]{"Lascia stare", "Apri " + a.label}, w -> {
+        String msg = T.t("Stai per aprire ") + a.label + T.t(". Prenditi qualche secondo: ti serve davvero adesso?");
+        Sheet.pause(this, th, T.t("Un respiro"), msg, 5, new String[]{T.t("Lascia stare"), T.t("Apri ") + a.label}, w -> {
             Usage.grant(pkg, 3);
             launchNow(a, v);
         });
@@ -3273,10 +3287,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void focusSheet(AppEntry a, View v) {
         String pkg = a.component.getPackageName();
         long until = prefs.getLong("focusUntil", 0);
-        String when = until == Long.MAX_VALUE ? "finché non lo spegni" : "fino alle " + hhmm(until);
-        Sheet.pause(this, th, "Focus attivo",
-                a.label + " è in pausa " + when + ". L'hai scelta tu come distrazione da tenere lontana.", 10,
-                new String[]{"Torna a concentrarti", "Apri per 5 minuti", "Termina il focus"}, w -> {
+        String when = until == Long.MAX_VALUE ? T.t("finché non lo spegni") : T.t("fino alle ") + hhmm(until);
+        Sheet.pause(this, th, T.t("Focus attivo"),
+                a.label + T.t(" è in pausa ") + when + T.t(". L'hai scelta tu come distrazione da tenere lontana."), 10,
+                new String[]{T.t("Torna a concentrarti"), T.t("Apri per 5 minuti"), T.t("Termina il focus")}, w -> {
                     if (w == 1) Usage.grant(pkg, 5);
                     else stopFocus();
                     DotAccessibility.reset();
@@ -3286,10 +3300,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void limitSheet(AppEntry a, View v, long ms, int lim) {
         String pkg = a.component.getPackageName();
-        Sheet.pause(this, th, "Limite raggiunto",
-                "Oggi hai usato " + a.label + " per " + Usage.fmt(ms) + ". Il limite che hai scelto è "
+        Sheet.pause(this, th, T.t("Limite raggiunto"),
+                T.t("Oggi hai usato ") + a.label + T.t(" per ") + Usage.fmt(ms) + T.t(". Il limite che hai scelto è ")
                         + Usage.fmt(lim * 60000L) + ".", 10,
-                new String[]{"Va bene, basta così", "Ancora 5 minuti", "Ancora 15 minuti", "Ignora il limite per oggi"},
+                new String[]{T.t("Va bene, basta così"), T.t("Ancora 5 minuti"), T.t("Ancora 15 minuti"), T.t("Ignora il limite per oggi")},
                 w -> {
                     long mins = w == 1 ? 5 : w == 2 ? 15 : (Usage.startOfToday() + 86400000L - System.currentTimeMillis()) / 60000 + 1;
                     Usage.grant(pkg, mins);
@@ -3327,7 +3341,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private String hhmm(long t) {
-        return new java.text.SimpleDateFormat(h24 ? "HH:mm" : "h:mm a", Locale.ITALIAN).format(new java.util.Date(t));
+        return new java.text.SimpleDateFormat(h24 ? "HH:mm" : "h:mm a", T.loc()).format(new java.util.Date(t));
     }
 
     // ---------- focus ----------
@@ -3335,8 +3349,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void focusMenu() {
         if (Usage.focusOn(prefs)) {
             long until = prefs.getLong("focusUntil", 0);
-            String[] o = {"Termina il focus", "Aggiungi 30 minuti", "Scegli le app che distraggono"};
-            Sheet.list(this, th, "Focus " + (until == Long.MAX_VALUE ? "attivo" : "fino alle " + hhmm(until)), o, -1, w -> {
+            String[] o = {T.t("Termina il focus"), T.t("Aggiungi 30 minuti"), T.t("Scegli le app che distraggono")};
+            Sheet.list(this, th, T.t("Focus ") + (until == Long.MAX_VALUE ? T.t("attivo") : T.t("fino alle ") + hhmm(until)), o, -1, w -> {
                 if (w == 0) stopFocus();
                 else if (w == 1) startFocus(until == Long.MAX_VALUE ? Long.MAX_VALUE : until + 30 * 60000L);
                 else pickFocusApps(null);
@@ -3347,9 +3361,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             pickFocusApps(this::focusMenu);
             return;
         }
-        String[] o = {"25 minuti", "50 minuti", "1 ora", "2 ore", "Finché non lo spengo", "Scegli le app che distraggono"};
+        String[] o = {T.t("25 minuti"), T.t("50 minuti"), T.t("1 ora"), T.t("2 ore"), T.t("Finché non lo spengo"), T.t("Scegli le app che distraggono")};
         long[] mins = {25, 50, 60, 120, -1};
-        Sheet.list(this, th, "Inizia il focus", o, -1, w -> {
+        Sheet.list(this, th, T.t("Inizia il focus"), o, -1, w -> {
             if (w == 5) pickFocusApps(null);
             else startFocus(mins[w] < 0 ? Long.MAX_VALUE : System.currentTimeMillis() + mins[w] * 60000L);
         });
@@ -3359,12 +3373,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         prefs.edit().putLong("focusUntil", until).apply();
         if (prefs.getBoolean("focusDnd", false)) {
             if (DotNotifications.setDnd(true)) prefs.edit().putBoolean("focusDndSet", true).apply();
-            else toast("Per attivare Non disturbare serve l'accesso alle notifiche");
+            else toast(T.t("Per attivare Non disturbare serve l'accesso alle notifiche"));
         }
         Usage.GRACE.clear();
         DotAccessibility.reset();
         int n = Usage.focusApps(prefs).size();
-        toast("Focus attivo: " + n + " app in pausa");
+        toast(T.t("Focus attivo: ") + n + T.t(" app in pausa"));
         updateWellbeing();
         if (settingsOpen) refillSettings();
     }
@@ -3421,7 +3435,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void pickFocusApps(Runnable after) {
-        pickApps("App che distraggono", Usage.focusApps(prefs), sel -> {
+        pickApps(T.t("App che distraggono"), Usage.focusApps(prefs), sel -> {
             prefs.edit().putStringSet("focusApps", sel).apply();
             DotAccessibility.reset();
             if (Usage.focusActive) {
@@ -3444,7 +3458,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         LinearLayout list = new LinearLayout(this);
         list.setOrientation(LinearLayout.VERTICAL);
         TextView hint = new TextView(this);
-        hint.setText("Tocca le app per sceglierle, poi chiudi il pannello.");
+        hint.setText(T.t("Tocca le app per sceglierle, poi chiudi il pannello."));
         hint.setTextColor(th.sub);
         hint.setTypeface(th.bodyFace);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -3491,12 +3505,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     // ---------- tempo di utilizzo e limiti ----------
 
-    private void askUsageAccess() {
-        Sheet.confirm(this, th, "Tempo di utilizzo",
-                "Per sapere quanto usi ogni app, Android deve darti l'accesso ai dati di utilizzo. "
-                        + "I dati vengono letti solo sul telefono, quando servono, e non vengono salvati né inviati.\n\n"
-                        + "Nell'elenco che si apre scegli Dot Launcher e attiva \"Consenti accesso\".",
-                "Apri le impostazioni", () -> {
+    public void askUsageAccess() {
+        Sheet.confirm(this, th, T.t("Tempo di utilizzo"),
+                T.t("Per sapere quanto usi ogni app, Android deve darti l'accesso ai dati di utilizzo. ")
+                        + T.t("I dati vengono letti solo sul telefono, quando servono, e non vengono salvati né inviati.\n\n")
+                        + T.t("Nell'elenco che si apre scegli Dot Launcher e attiva \"Consenti accesso\"."),
+                T.t("Apri le impostazioni"), () -> {
                     Intent i = new Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS);
                     if (Build.VERSION.SDK_INT >= 29) i.setData(Uri.fromParts("package", getPackageName(), null));
                     try {
@@ -3526,15 +3540,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     if (a == null) continue;
                     entries.add(a);
                     int lim = Usage.limit(prefs, u.pkg);
-                    labels.add(a.label + "\n" + Usage.fmt(u.ms) + " · " + u.opens + (u.opens == 1 ? " apertura" : " aperture")
-                            + (lim > 0 ? " · limite " + Usage.fmt(lim * 60000L) : ""));
+                    labels.add(a.label + "\n" + Usage.fmt(u.ms) + " · " + u.opens + (u.opens == 1 ? T.t(" apertura") : T.t(" aperture"))
+                            + (lim > 0 ? T.t(" · limite ") + Usage.fmt(lim * 60000L) : ""));
                     icons.add(iconFor(a.key, px(36)));
                 }
                 if (entries.isEmpty()) {
-                    toast("Oggi non hai ancora usato nessuna app");
+                    toast(T.t("Oggi non hai ancora usato nessuna app"));
                     return;
                 }
-                Sheet.list(this, th, "Oggi · " + Usage.fmt(Usage.total), labels.toArray(new String[0]),
+                Sheet.list(this, th, T.t("Oggi · ") + Usage.fmt(Usage.total), labels.toArray(new String[0]),
                         icons.toArray(new Bitmap[0]), -1, w -> appWellbeing(entries.get(w)), null);
             });
         });
@@ -3556,10 +3570,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         boolean mind = Usage.mindful(prefs).contains(pkg);
         boolean dist = Usage.focusApps(prefs).contains(pkg);
         String[] o = {
-                lim > 0 ? "Limite giornaliero: " + Usage.fmt(lim * 60000L) : "Imposta un limite giornaliero",
-                mind ? "Pausa prima di aprire: attiva" : "Pausa prima di aprire: spenta",
-                dist ? "Distrae (in pausa durante il focus): sì" : "Distrae (in pausa durante il focus): no",
-                "Tempo di utilizzo di oggi"
+                lim > 0 ? T.t("Limite giornaliero: ") + Usage.fmt(lim * 60000L) : T.t("Imposta un limite giornaliero"),
+                mind ? T.t("Pausa prima di aprire: attiva") : T.t("Pausa prima di aprire: spenta"),
+                dist ? T.t("Distrae (in pausa durante il focus): sì") : T.t("Distrae (in pausa durante il focus): no"),
+                T.t("Tempo di utilizzo di oggi")
         };
         Sheet.list(this, th, a.label, o, -1, w -> {
             if (w == 0) chooseLimit(a);
@@ -3568,7 +3582,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 if (mind) s.remove(pkg);
                 else s.add(pkg);
                 prefs.edit().putStringSet("mindful", s).apply();
-                toast(mind ? "Pausa tolta" : "Prima di aprire " + a.label + " ci sarà un respiro di 5 secondi");
+                toast(mind ? T.t("Pausa tolta") : T.t("Prima di aprire ") + a.label + T.t(" ci sarà un respiro di 5 secondi"));
                 if (settingsOpen) refillSettings();
             } else if (w == 2) {
                 Set<String> s = Usage.focusApps(prefs);
@@ -3596,7 +3610,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     final long fms = ms;
                     final int fo = opens;
                     ui.post(() -> {
-                        if (!destroyed) toast(a.label + " oggi: " + Usage.fmt(fms) + ", " + fo + (fo == 1 ? " apertura" : " aperture"));
+                        if (!destroyed) toast(a.label + T.t(" oggi: ") + Usage.fmt(fms) + ", " + fo + (fo == 1 ? T.t(" apertura") : T.t(" aperture")));
                     });
                 });
             }
@@ -3609,15 +3623,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             askUsageAccess();
             return;
         }
-        String[] o = {"Nessun limite", "15 minuti", "30 minuti", "45 minuti", "1 ora", "1 ora e 30", "2 ore", "3 ore"};
+        String[] o = {T.t("Nessun limite"), T.t("15 minuti"), T.t("30 minuti"), T.t("45 minuti"), T.t("1 ora"), T.t("1 ora e 30"), T.t("2 ore"), T.t("3 ore")};
         int[] m = {0, 15, 30, 45, 60, 90, 120, 180};
         int cur = Usage.limit(prefs, pkg), sel = 0;
         for (int i = 0; i < m.length; i++) if (m[i] == cur) sel = i;
-        Sheet.list(this, th, "Limite per " + a.label, o, sel, w -> {
+        Sheet.list(this, th, T.t("Limite per ") + a.label, o, sel, w -> {
             Usage.setLimit(prefs, pkg, m[w]);
             Usage.GRACE.remove(pkg);
             DotAccessibility.reset();
-            toast(m[w] == 0 ? "Limite tolto" : "Limite: " + o[w] + " al giorno");
+            toast(m[w] == 0 ? T.t("Limite tolto") : T.t("Limite: ") + o[w] + T.t(" al giorno"));
             if (settingsOpen) refillSettings();
         });
     }
@@ -3635,66 +3649,147 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             with.add(a);
             labels.add(a.label + " · " + Usage.fmt(Usage.limit(prefs, pkg) * 60000L));
         }
-        labels.add("+ Aggiungi un limite");
-        Sheet.list(this, th, "Limiti giornalieri", labels.toArray(new String[0]), -1, w -> {
+        labels.add(T.t("+ Aggiungi un limite"));
+        Sheet.list(this, th, T.t("Limiti giornalieri"), labels.toArray(new String[0]), -1, w -> {
             if (w < with.size()) chooseLimit(with.get(w));
             else {
                 String[] names = new String[allApps.size()];
                 for (int i = 0; i < names.length; i++) names[i] = allApps.get(i).label;
-                Sheet.list(this, th, "Scegli l'app", names, -1, x -> chooseLimit(allApps.get(x)));
+                Sheet.list(this, th, T.t("Scegli l'app"), names, -1, x -> chooseLimit(allApps.get(x)));
             }
         });
     }
 
     private void wellbeingSettings(SettingsScreen st) {
-        st.section("Benessere digitale");
+        st.section(T.t("Benessere digitale"));
         boolean granted = Usage.granted(this);
-        st.row(NothingTile.HOURGLASS, "Tempo di utilizzo", granted
-                ? (Usage.computedAt > 0 ? "Oggi: " + Usage.fmt(Usage.total) : "Tocca per vedere le app di oggi")
-                : "Tocca per consentire l'accesso ai dati di utilizzo", this::showUsage);
+        st.row(NothingTile.HOURGLASS, T.t("Tempo di utilizzo"), granted
+                ? (Usage.computedAt > 0 ? T.t("Oggi: ") + Usage.fmt(Usage.total) : T.t("Tocca per vedere le app di oggi"))
+                : T.t("Tocca per consentire l'accesso ai dati di utilizzo"), this::showUsage);
         long until = prefs.getLong("focusUntil", 0);
-        st.row(NothingTile.TARGET, "Modalità focus", Usage.focusOn(prefs)
-                ? (until == Long.MAX_VALUE ? "Attiva" : "Attiva fino alle " + hhmm(until)) : "Spenta: tocca per iniziare",
+        st.row(NothingTile.TARGET, T.t("Modalità focus"), Usage.focusOn(prefs)
+                ? (until == Long.MAX_VALUE ? T.t("Attiva") : T.t("Attiva fino alle ") + hhmm(until)) : T.t("Spenta: tocca per iniziare"),
                 this::focusMenu);
         int nf = Usage.focusApps(prefs).size();
-        st.row(SectionIcons.STAR, "App che distraggono", nf == 0 ? "Nessuna: scegli quali mettere in pausa nel focus"
-                : nf + (nf == 1 ? " app in pausa durante il focus" : " app in pausa durante il focus"), () -> pickFocusApps(null));
-        st.toggle(Draw.BELL, "Non disturbare durante il focus", "Silenzia le notifiche (serve l'accesso alle notifiche)",
+        st.row(SectionIcons.STAR, T.t("App che distraggono"), nf == 0 ? T.t("Nessuna: scegli quali mettere in pausa nel focus")
+                : nf + (nf == 1 ? T.t(" app in pausa durante il focus") : T.t(" app in pausa durante il focus")), () -> pickFocusApps(null));
+        st.toggle(Draw.BELL, T.t("Non disturbare durante il focus"), T.t("Silenzia le notifiche (serve l'accesso alle notifiche)"),
                 prefs.getBoolean("focusDnd", false), on -> {
                     prefs.edit().putBoolean("focusDnd", on).apply();
                     if (on && !DotNotifications.active()) askNotificationAccess();
                 });
         int nl = Usage.limited(prefs).size();
-        st.row(NothingTile.HOURGLASS, "Limiti giornalieri", nl == 0 ? "Nessuno" : nl + (nl == 1 ? " app con limite" : " app con limite"),
+        st.row(NothingTile.HOURGLASS, T.t("Limiti giornalieri"), nl == 0 ? T.t("Nessuno") : nl + (nl == 1 ? T.t(" app con limite") : T.t(" app con limite")),
                 this::limitsMenu);
         int nm = Usage.mindful(prefs).size();
-        st.row(SectionIcons.STAR, "Pausa prima di aprire", nm == 0 ? "Un respiro di 5 secondi prima delle app che scegli"
-                : nm + (nm == 1 ? " app" : " app") + " con un respiro prima di aprirsi",
-                () -> pickApps("Pausa prima di aprire", Usage.mindful(prefs), sel -> {
+        st.row(SectionIcons.STAR, T.t("Pausa prima di aprire"), nm == 0 ? T.t("Un respiro di 5 secondi prima delle app che scegli")
+                : nm + (nm == 1 ? T.t(" app") : T.t(" app")) + T.t(" con un respiro prima di aprirsi"),
+                () -> pickApps(T.t("Pausa prima di aprire"), Usage.mindful(prefs), sel -> {
                     prefs.edit().putStringSet("mindful", sel).apply();
                     if (settingsOpen) refillSettings();
                 }));
-        st.toggle(SectionIcons.LOCK, "Blocco rigido",
-                "Riporta alla home anche se apri l'app dalle notifiche o dalle recenti (usa il servizio di accessibilità)",
+        st.toggle(SectionIcons.LOCK, T.t("Blocco rigido"),
+                T.t("Riporta alla home anche se apri l'app dalle notifiche o dalle recenti (usa il servizio di accessibilità)"),
                 prefs.getBoolean("hardBlock", false), on -> {
                     prefs.edit().putBoolean("hardBlock", on).apply();
                     DotAccessibility.reset();
                     if (on && !DotAccessibility.active()) {
-                        Sheet.confirm(this, th, "Attiva il servizio",
-                                "Il blocco rigido usa il servizio \"Gesti di Dot Launcher\" in Accessibilità: guarda solo "
-                                        + "quale app è in primo piano, mai il contenuto dello schermo.\n\n"
-                                        + "Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → "
-                                        + "menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova.",
-                                "Apri Accessibilità", () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+                        Sheet.confirm(this, th, T.t("Attiva il servizio"),
+                                T.t("Il blocco rigido usa il servizio \"Gesti di Dot Launcher\" in Accessibilità: guarda solo ")
+                                        + T.t("quale app è in primo piano, mai il contenuto dello schermo.\n\n")
+                                        + T.t("Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → ")
+                                        + T.t("menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova."),
+                                T.t("Apri Accessibilità"), () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
                     }
                 });
+    }
+
+    // =====================================================================
+    // Configurazione guidata
+    // =====================================================================
+
+    private void showOnboarding(int page) {
+        if (onboarding != null) return;
+        onboarding = new Onboarding(this, th, prefs, this, page);
+        root.addView(onboarding, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        onboarding.setInsets(insTop, insBottom);
+    }
+
+    @Override
+    public void onboardLanguage(String lang) {
+        prefs.edit().putString("lang", lang).putInt("onboardPage", 1).commit();
+        RestartActivity.restart(this);
+    }
+
+    @Override
+    public void onboardDone(boolean lookChanged) {
+        if (onboarding != null) {
+            Onboarding o = onboarding;
+            onboarding = null;
+            o.animate().alpha(0f).setDuration(220).withEndAction(() -> root.removeView(o)).start();
+        }
+        if ("free".equals(prefs.getString("drawerOrder", "alpha"))) {
+            sections.sortAll(this);
+            sections.save();
+        }
+        if (lookChanged) ui.postDelayed(this::recreate, 240);
+        else refreshDrawer();
+    }
+
+    @Override
+    public boolean notificationsOn() {
+        return DotNotifications.active();
+    }
+
+    @Override
+    public boolean usageOn() {
+        return Usage.granted(this);
+    }
+
+    @Override
+    public boolean locationOn() {
+        return prefs.contains("mlat")
+                || checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    @Override
+    public void askLocation() {
+        requestPermissions(new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, REQ_LOC);
+    }
+
+    @Override
+    public boolean isDefaultLauncher() {
+        try {
+            Intent i = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME);
+            android.content.pm.ResolveInfo r = getPackageManager().resolveActivity(i, PackageManager.MATCH_DEFAULT_ONLY);
+            return r != null && r.activityInfo != null && getPackageName().equals(r.activityInfo.packageName);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    @Override
+    public void requestDefaultLauncher() {
+        if (Build.VERSION.SDK_INT >= 29) {
+            try {
+                android.app.role.RoleManager rm = getSystemService(android.app.role.RoleManager.class);
+                if (rm != null && rm.isRoleAvailable(android.app.role.RoleManager.ROLE_HOME)
+                        && !rm.isRoleHeld(android.app.role.RoleManager.ROLE_HOME)) {
+                    startActivityForResult(rm.createRequestRoleIntent(android.app.role.RoleManager.ROLE_HOME), REQ_ROLE);
+                    return;
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        safeStart(new Intent(Settings.ACTION_HOME_SETTINGS));
     }
 
     private void appInfo(AppEntry a) {
         try {
             launcherApps.startAppDetailsActivity(a.component, a.user, null, null);
         } catch (Exception e) {
-            toast("Impossibile aprire le informazioni");
+            toast(T.t("Impossibile aprire le informazioni"));
         }
     }
 
@@ -3782,7 +3877,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         if (dock.getChildCount() == 0) {
             TextView t = new TextView(this);
-            t.setText("Trascina qui un'app dal cassetto");
+            t.setText(T.t("Trascina qui un'app dal cassetto"));
             t.setTextColor(th.sub);
             t.setTypeface(th.bodyFace);
             t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
@@ -3797,35 +3892,35 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         List<String> labels = new ArrayList<>();
         List<Runnable> acts = new ArrayList<>();
         if (fromDock == null) {
-            labels.add("Aggiungi alla home");
+            labels.add(T.t("Aggiungi alla home"));
             acts.add(() -> {
                 closeDrawer();
                 addAppToHome(a, pager.getCurrent(), 0, 0);
             });
         }
-        labels.add(inDock ? "Rimuovi dal dock" : "Aggiungi al dock");
+        labels.add(inDock ? T.t("Rimuovi dal dock") : T.t("Aggiungi al dock"));
         acts.add(() -> {
             if (inDock) dk.remove(a.key);
             else if (dk.size() >= dockMax()) {
-                toast("Il dock contiene al massimo " + dockMax() + " app");
+                toast(T.t("Il dock contiene al massimo ") + dockMax() + T.t(" app"));
                 return;
             } else dk.add(a.key);
             prefs.edit().putBoolean("dockInit", true).apply();
             saveDock(dk);
             buildDock();
         });
-        labels.add("Rinomina");
+        labels.add(T.t("Rinomina"));
         acts.add(() -> renameApp(a));
-        labels.add("Cambia icona");
+        labels.add(T.t("Cambia icona"));
         acts.add(() -> changeIcon(a));
-        labels.add("Stile icona");
+        labels.add(T.t("Stile icona"));
         acts.add(() -> chooseIconMode(a));
         if (fromDock == null) {
-            labels.add("Sposta in sezione…");
+            labels.add(T.t("Sposta in sezione…"));
             acts.add(() -> moveAppToSection(a));
-            labels.add("Aggiungi a una cartella");
+            labels.add(T.t("Aggiungi a una cartella"));
             acts.add(() -> addToFolder(a));
-            labels.add("Nascondi dal cassetto");
+            labels.add(T.t("Nascondi dal cassetto"));
             acts.add(() -> {
                 Set<String> h = hidden();
                 h.add(a.key);
@@ -3833,11 +3928,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 refreshDrawer();
             });
         }
-        labels.add("Benessere digitale…");
+        labels.add(T.t("Benessere digitale…"));
         acts.add(() -> appWellbeing(a));
-        labels.add("Info app");
+        labels.add(T.t("Info app"));
         acts.add(() -> appInfo(a));
-        labels.add("Disinstalla");
+        labels.add(T.t("Disinstalla"));
         acts.add(() -> safeStart(new Intent(Intent.ACTION_DELETE,
                 Uri.fromParts("package", a.component.getPackageName(), null))));
         return showMenuWithShortcuts(a.label, a, labels, acts);
@@ -3947,7 +4042,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void setLocked(boolean on) {
         prefs.edit().putBoolean("locked", on).apply();
-        toast(on ? "Home bloccata: niente spostamenti accidentali" : "Home sbloccata");
+        toast(on ? T.t("Home bloccata: niente spostamenti accidentali") : T.t("Home sbloccata"));
         refillSettings();
     }
 
@@ -4058,9 +4153,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void showDropBar() {
         boolean app = dragKey != null && !dragKey.startsWith("sc:") && appsByKey.containsKey(dragKey);
-        dropLeft.setText(drawerDrag ? "Sulla home" : dragSrc == SRC_DRAWER ? "Info app"
-                : dragSrc == SRC_DOCK ? "Togli dal dock" : "Rimuovi");
-        dropRight.setText("Disinstalla");
+        dropLeft.setText(drawerDrag ? T.t("Sulla home") : dragSrc == SRC_DRAWER ? T.t("Info app")
+                : dragSrc == SRC_DOCK ? T.t("Togli dal dock") : T.t("Rimuovi"));
+        dropRight.setText(T.t("Disinstalla"));
         dropRight.setVisibility(app ? View.VISIBLE : View.GONE);
         if (dragSrc == SRC_DRAWER && !app) dropLeft.setVisibility(View.GONE);
         else dropLeft.setVisibility(View.VISIBLE);
@@ -4437,7 +4532,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 else if (tZone == 1 && a != null) {
                     closeDrawer();
                     addAppToHome(a, pager.getCurrent(), 0, 0);
-                    toast(a.label + " aggiunta alla home");
+                    toast(a.label + T.t(" aggiunta alla home"));
                 }
                 return;
             case T_DTAB: {
@@ -4496,7 +4591,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 int idx = tDockIndex;
                 int old = dk.indexOf(key);
                 if (old < 0 && dk.size() >= dockMax()) {
-                    toast("Il dock contiene al massimo " + dockMax() + " app");
+                    toast(T.t("Il dock contiene al massimo ") + dockMax() + T.t(" app"));
                     return;
                 }
                 if (old >= 0) {
@@ -4534,10 +4629,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     List<String> apps = new ArrayList<>();
                     apps.add(target.data);
                     if (!apps.contains(key)) apps.add(key);
-                    FolderTile.set(f, "Cartella", apps);
+                    FolderTile.set(f, T.t("Cartella"), apps);
                     items.remove(target);
                     items.add(f);
-                    toast("Cartella creata");
+                    toast(T.t("Cartella creata"));
                 }
                 if (src == SRC_HOME && it != null) items.remove(it);
                 if (src == SRC_DOCK) removeFromDock(key);
@@ -4624,7 +4719,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         resizer = new ResizeOverlay(this, it);
         root.addView(resizer, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
-        toast("Trascina il pallino per ridimensionare · tocca fuori per finire");
+        toast(T.t("Trascina il pallino per ridimensionare · tocca fuori per finire"));
     }
 
     private void exitResize() {
@@ -4823,7 +4918,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             launcherApps.startShortcut(p[0], p[1], r, opts, u);
         } catch (Exception e) {
-            toast("Scorciatoia non disponibile");
+            toast(T.t("Scorciatoia non disponibile"));
         }
     }
 
@@ -4914,7 +5009,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         String key = AddItemActivity.key(si.getPackage(), si.getId(), serial, shortcutLabel(si));
         for (Item o : items) {
             if (key.equals(o.data)) {
-                toast("È già sulla home");
+                toast(T.t("È già sulla home"));
                 return;
             }
         }
@@ -4924,7 +5019,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         it.data = key;
         closeDrawer();
         addItem(it, pager.getCurrent(), 0, 0);
-        toast("Scorciatoia aggiunta alla home");
+        toast(T.t("Scorciatoia aggiunta alla home"));
     }
 
     /** Mostra il menu di un'app con le azioni rapide in cima. */
@@ -4953,7 +5048,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 i++;
             }
             if (!ns.isEmpty()) {
-                labels.add(i, "Cancella le notifiche (" + ns.size() + ")");
+                labels.add(i, T.t("Cancella le notifiche (") + ns.size() + ")");
                 acts.add(i, () -> DotNotifications.dismissAll(pkg));
             }
         }
@@ -4972,7 +5067,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 try {
                     launcherApps.startShortcut(si.getPackage(), si.getId(), null, null, si.getUserHandle());
                 } catch (Exception e) {
-                    toast("Azione non disponibile");
+                    toast(T.t("Azione non disponibile"));
                 }
             } else {
                 acts.get(w - n).run();
@@ -4982,7 +5077,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
         if (n > 0 && !prefs.getBoolean("scHint", false)) {
             prefs.edit().putBoolean("scHint", true).apply();
-            toast("Tieni premuta un'azione per metterla sulla home");
+            toast(T.t("Tieni premuta un'azione per metterla sulla home"));
         }
         return d;
     }
@@ -5015,7 +5110,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         long now = System.currentTimeMillis();
         if (!manual && now - prefs.getLong("updCheck", 0) < 6 * 60 * 60 * 1000L) return;
         prefs.edit().putLong("updCheck", now).apply();
-        if (manual) toast("Controllo gli aggiornamenti…");
+        if (manual) toast(T.t("Controllo gli aggiornamenti…"));
         bg(netExec, () -> {
             try {
                 JSONObject j = new JSONObject(http("https://api.github.com/repos/Rex11107/dot-launcher/releases/latest"));
@@ -5026,16 +5121,16 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     prefs.edit().putString("updSeen", tag).apply();
                     ui.post(() -> {
                         if (isFinishing() || isDestroyed()) return;
-                        Sheet.confirm(this, th, "Aggiornamento",
-                                "È pronta la versione " + tag.replace("v", "") + " (hai la " + versionName()
-                                        + "). Si installa sopra quella attuale: home e impostazioni restano.",
-                                "Scarica", () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse(UPDATE_URL))));
+                        Sheet.confirm(this, th, T.t("Aggiornamento"),
+                                T.t("È pronta la versione ") + tag.replace("v", "") + T.t(" (hai la ") + versionName()
+                                        + T.t("). Si installa sopra quella attuale: home e impostazioni restano."),
+                                T.t("Scarica"), () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse(UPDATE_URL))));
                     });
                 } else if (manual) {
-                    ui.post(() -> toast("Hai già l'ultima versione (" + versionName() + ")"));
+                    ui.post(() -> toast(T.t("Hai già l'ultima versione (") + versionName() + ")"));
                 }
             } catch (Exception e) {
-                if (manual) ui.post(() -> toast("Impossibile controllare gli aggiornamenti"));
+                if (manual) ui.post(() -> toast(T.t("Impossibile controllare gli aggiornamenti")));
             }
         });
     }
@@ -5094,66 +5189,77 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         String icons = prefs.getString("icons", IconFactory.AUTO);
         String city = prefs.getString("city", "");
 
-        st.section("Aspetto");
-        st.row(SectionIcons.PALETTE, "Stile", "nuovo".equals(style) ? "Nuovo (5.0): numeri sottili, vetro"
-                : "Classico: puntini e caratteri a matrice", () -> choose("Stile",
-                new String[]{"Classico", "Nuovo (5.0)"}, new String[]{"classic", "nuovo"}, "style", style));
-        st.row(SectionIcons.MOON, "Tema", "light".equals(mode) ? "Chiaro" : "auto".equals(mode) ? "Automatico (segue il sistema)"
-                : "grey".equals(mode) ? "Scuro (grigio)" : "Extra scuro (nero)", () -> choose("Tema",
-                new String[]{"Extra scuro (nero)", "Scuro (grigio)", "Chiaro", "Automatico"},
+        st.section(T.t("Aspetto"));
+        String lang = prefs.getString("lang", "auto");
+        st.row(SectionIcons.GLOBE, T.t("Lingua"), "it".equals(lang) ? "Italiano" : "en".equals(lang) ? "English"
+                : T.t("Automatica (lingua del telefono)"), () -> {
+            String[] vals = {"auto", "it", "en"};
+            Sheet.list(this, th, T.t("Lingua"), new String[]{T.t("Automatica (lingua del telefono)"), "Italiano", "English"},
+                    Arrays.asList(vals).indexOf(lang), w -> {
+                        if (vals[w].equals(lang)) return;
+                        prefs.edit().putString("lang", vals[w]).commit();
+                        RestartActivity.restart(this);
+                    });
+        });
+        st.row(SectionIcons.PALETTE, T.t("Stile"), "nuovo".equals(style) ? T.t("Nuovo (5.0): numeri sottili, vetro")
+                : T.t("Classico: puntini e caratteri a matrice"), () -> choose(T.t("Stile"),
+                new String[]{T.t("Classico"), T.t("Nuovo (5.0)")}, new String[]{"classic", "nuovo"}, "style", style));
+        st.row(SectionIcons.MOON, T.t("Tema"), "light".equals(mode) ? T.t("Chiaro") : "auto".equals(mode) ? T.t("Automatico (segue il sistema)")
+                : "grey".equals(mode) ? T.t("Scuro (grigio)") : T.t("Extra scuro (nero)"), () -> choose(T.t("Tema"),
+                new String[]{T.t("Extra scuro (nero)"), T.t("Scuro (grigio)"), T.t("Chiaro"), T.t("Automatico")},
                 new String[]{"dark", "grey", "light", "auto"}, "mode", mode));
-        st.row(SectionIcons.GRID, "Icone", IconFactory.INVERSE.equals(icons) ? "Invertite"
-                : IconFactory.COLOR.equals(icons) ? "A colori (originali)" : "Monocromatiche", () -> choose("Icone",
-                new String[]{"Monocromatiche", "Invertite", "A colori"},
+        st.row(SectionIcons.GRID, T.t("Icone"), IconFactory.INVERSE.equals(icons) ? T.t("Invertite")
+                : IconFactory.COLOR.equals(icons) ? T.t("A colori (originali)") : T.t("Monocromatiche"), () -> choose(T.t("Icone"),
+                new String[]{T.t("Monocromatiche"), T.t("Invertite"), T.t("A colori")},
                 new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons));
-        st.row(SectionIcons.BAG, "Pacchetto di icone", packLabel(), this::pickIconPack);
-        st.row(Draw.PHOTO, "Sfondi", "Sfondi generati, foto a puntini o a strisce",
+        st.row(SectionIcons.BAG, T.t("Pacchetto di icone"), packLabel(), this::pickIconPack);
+        st.row(Draw.PHOTO, T.t("Sfondi"), T.t("Sfondi generati, foto a puntini o a strisce"),
                 () -> startActivity(new Intent(this, WallpaperActivity.class)));
-        st.toggle(SectionIcons.HOME, "Usa lo sfondo del telefono", "Altrimenti tinta unita del tema",
+        st.toggle(SectionIcons.HOME, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
                 prefs.getBoolean("wall", false), on -> toggle("wall", !on));
-        st.toggle(SectionIcons.CHIP, "Punti spenti sui display", "Si vede la griglia dei puntini spenti",
+        st.toggle(SectionIcons.CHIP, T.t("Punti spenti sui display"), T.t("Si vede la griglia dei puntini spenti"),
                 prefs.getBoolean("ghost", true), on -> toggle("ghost", !on));
-        st.toggle(SectionIcons.STAR, "Animazioni a punti", "Cifre che si accendono, onda, ricarica",
+        st.toggle(SectionIcons.STAR, T.t("Animazioni a punti"), T.t("Cifre che si accendono, onda, ricarica"),
                 prefs.getBoolean("anim", true), on -> toggle("anim", !on));
 
-        st.section("Personalizzazione");
+        st.section(T.t("Personalizzazione"));
         final int accC = prefs.getInt("accentC", 0);
-        st.row(SectionIcons.PALETTE, "Colore d'accento", accentName(accC), this::chooseAccent);
-        final String[] shapes = {"Cerchio", "Squircle", "Quadrato arrotondato", "Quadrato"};
-        st.row(SectionIcons.SHAPES, "Forma delle icone", shapes[IconFactory.shape], () ->
-                Sheet.list(this, th, "Forma delle icone", shapes, IconFactory.shape, w -> {
+        st.row(SectionIcons.PALETTE, T.t("Colore d'accento"), accentName(accC), this::chooseAccent);
+        final String[] shapes = {T.t("Cerchio"), "Squircle", T.t("Quadrato arrotondato"), T.t("Quadrato")};
+        st.row(SectionIcons.SHAPES, T.t("Forma delle icone"), shapes[IconFactory.shape], () ->
+                Sheet.list(this, th, T.t("Forma delle icone"), shapes, IconFactory.shape, w -> {
                     prefs.edit().putInt("iconShape", w).apply();
                     recreate();
                 }));
-        final String[] scales = {"Piccole", "Normali", "Grandi", "Molto grandi"};
+        final String[] scales = {T.t("Piccole"), T.t("Normali"), T.t("Grandi"), T.t("Molto grandi")};
         final float[] scaleV = {0.85f, 1f, 1.12f, 1.22f};
         int sIdx = 1;
         for (int i = 0; i < scaleV.length; i++) if (Math.abs(scaleV[i] - AppTile.SCALE) < 0.02f) sIdx = i;
         final int curScale = sIdx;
-        st.row(SectionIcons.GRID, "Dimensione delle icone", scales[curScale], () ->
-                Sheet.list(this, th, "Dimensione delle icone", scales, curScale, w -> {
+        st.row(SectionIcons.GRID, T.t("Dimensione delle icone"), scales[curScale], () ->
+                Sheet.list(this, th, T.t("Dimensione delle icone"), scales, curScale, w -> {
                     prefs.edit().putFloat("iconScale", scaleV[w]).apply();
                     recreate();
                 }));
-        final String[] rowsL = {"Automatiche", "4 righe", "5 righe", "6 righe", "7 righe", "8 righe"};
+        final String[] rowsL = {T.t("Automatiche"), T.t("4 righe"), T.t("5 righe"), T.t("6 righe"), T.t("7 righe"), T.t("8 righe")};
         final int rowsCur = TileGrid.ROWS == 0 ? 0 : Math.max(0, Math.min(5, TileGrid.ROWS - 3));
-        st.row(SectionIcons.CHART, "Righe della home", rowsL[rowsCur] + " · celle quadrate, centrate se servono", () ->
-                Sheet.list(this, th, "Righe della home", rowsL, rowsCur, w -> {
+        st.row(SectionIcons.CHART, T.t("Righe della home"), rowsL[rowsCur] + T.t(" · celle quadrate, centrate se servono"), () ->
+                Sheet.list(this, th, T.t("Righe della home"), rowsL, rowsCur, w -> {
                     prefs.edit().putInt("rows", w == 0 ? 0 : w + 3).apply();
                     recreate();
                 }));
-        final String[] dockL = {"Nascosto", "3 app", "4 app", "5 app", "6 app"};
+        final String[] dockL = {T.t("Nascosto"), "3 app", "4 app", "5 app", "6 app"};
         final int dockCur = dockMax() == 0 ? 0 : Math.max(1, Math.min(4, dockMax() - 2));
-        st.row(SectionIcons.HOME, "Dock", dockL[dockCur], () -> Sheet.list(this, th, "App nel dock", dockL, dockCur, w -> {
+        st.row(SectionIcons.HOME, T.t("Dock"), dockL[dockCur], () -> Sheet.list(this, th, T.t("App nel dock"), dockL, dockCur, w -> {
             prefs.edit().putInt("dockMax", w == 0 ? 0 : w + 2).apply();
             recreate();
         }));
-        st.toggle(SectionIcons.HOME, "Sfondo del dock", "Una pillola dietro le app del dock",
+        st.toggle(SectionIcons.HOME, T.t("Sfondo del dock"), T.t("Una pillola dietro le app del dock"),
                 prefs.getBoolean("dockBg", false), on -> toggle("dockBg", !on));
         String font = prefs.getString("font", "");
-        st.row(SectionIcons.BOOK, "Carattere", font.isEmpty() ? "Predefinito (Geist, Doto per le etichette a puntini)"
-                : "Personalizzato", () -> Sheet.list(this, th, "Carattere",
-                new String[]{"Predefinito", "Scegli un file .ttf o .otf…"}, font.isEmpty() ? 0 : -1, w -> {
+        st.row(SectionIcons.BOOK, T.t("Carattere"), font.isEmpty() ? T.t("Predefinito (Geist, Doto per le etichette a puntini)")
+                : T.t("Personalizzato"), () -> Sheet.list(this, th, T.t("Carattere"),
+                new String[]{T.t("Predefinito"), T.t("Scegli un file .ttf o .otf…")}, font.isEmpty() ? 0 : -1, w -> {
                     if (w == 1) pickFont();
                     else if (!font.isEmpty()) {
                         //noinspection ResultOfMethodCallIgnored
@@ -5162,33 +5268,33 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         recreate();
                     }
                 }));
-        st.toggle(SectionIcons.PHONE, "Nascondi la barra di stato", "Riappare scorrendo dal bordo in alto",
+        st.toggle(SectionIcons.PHONE, T.t("Nascondi la barra di stato"), T.t("Riappare scorrendo dal bordo in alto"),
                 prefs.getBoolean("hideStatus", false), on -> toggle("hideStatus", !on));
-        st.toggle(SectionIcons.LOCK, "Blocca la home", "Niente spostamenti o rimozioni per errore",
+        st.toggle(SectionIcons.LOCK, T.t("Blocca la home"), T.t("Niente spostamenti o rimozioni per errore"),
                 locked(), this::setLocked);
 
         st.section("Home");
-        st.row(SectionIcons.GRID, "Griglia", TileGrid.COLS + " colonne", () -> Sheet.list(this, th, "Griglia della home",
-                new String[]{"4 colonne", "5 colonne"}, TileGrid.COLS == 5 ? 1 : 0, w -> setColumns(w == 1 ? 5 : 4)));
-        st.toggle(SectionIcons.NEWS, "Nomi delle app", "Mostra il nome sotto le icone della home",
+        st.row(SectionIcons.GRID, T.t("Griglia"), TileGrid.COLS + T.t(" colonne"), () -> Sheet.list(this, th, T.t("Griglia della home"),
+                new String[]{T.t("4 colonne"), T.t("5 colonne")}, TileGrid.COLS == 5 ? 1 : 0, w -> setColumns(w == 1 ? 5 : 4)));
+        st.toggle(SectionIcons.NEWS, T.t("Nomi delle app"), T.t("Mostra il nome sotto le icone della home"),
                 prefs.getBoolean("labels", false), on -> toggle("labels", !on));
-        st.toggle(SettingsScreen.CLOCK, "Orologio a 24 ore", h24 ? "14:30" : "2:30",
+        st.toggle(SettingsScreen.CLOCK, T.t("Orologio a 24 ore"), h24 ? "14:30" : "2:30",
                 h24, on -> toggle("h24", !on));
-        st.toggle(SectionIcons.HOME, "Pagina a sinistra", "IA, notizie, calendario, attività e note",
+        st.toggle(SectionIcons.HOME, T.t("Pagina a sinistra"), T.t("IA, notizie, calendario, attività e note"),
                 prefs.getBoolean("panel", true), on -> toggle("panel", !on));
-        st.row(SectionIcons.STAR, "Aggiungi un widget Dot", Widgets.TYPES.length + " widget con anteprima", () -> {
+        st.row(SectionIcons.STAR, T.t("Aggiungi un widget Dot"), Widgets.TYPES.length + T.t(" widget con anteprima"), () -> {
             closeSettings();
             pickNothingWidget(pager.getCurrent(), 0, 0);
         });
-        st.row(SectionIcons.PHONE, "Aggiungi un widget di sistema", "Widget delle app installate", () -> {
+        st.row(SectionIcons.PHONE, T.t("Aggiungi un widget di sistema"), T.t("Widget delle app installate"), () -> {
             closeSettings();
             pickSysWidget(pager.getCurrent(), 0, 0);
         });
 
-        st.section("Cassetto delle app");
+        st.section(T.t("Cassetto delle app"));
         final boolean free = drawerFree();
-        st.row(SectionIcons.CHART, "Ordine delle app", free ? "Libero: le disponi trascinandole" : "Alfabetico", () ->
-                Sheet.list(this, th, "Ordine delle app", new String[]{"Alfabetico", "Libero"}, free ? 1 : 0, w -> {
+        st.row(SectionIcons.CHART, T.t("Ordine delle app"), free ? T.t("Libero: le disponi trascinandole") : T.t("Alfabetico"), () ->
+                Sheet.list(this, th, T.t("Ordine delle app"), new String[]{T.t("Alfabetico"), T.t("Libero")}, free ? 1 : 0, w -> {
                     boolean toFree = w == 1;
                     if (toFree == free) return;
                     if (toFree) {
@@ -5199,19 +5305,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     refreshDrawer();
                     refillSettings();
                 }));
-        st.toggle(SectionIcons.GRID, "Sezione \"Tutte le app\"", "In fondo alle sezioni, in ordine alfabetico",
+        st.toggle(SectionIcons.GRID, T.t("Sezione \"Tutte le app\""), T.t("In fondo alle sezioni, in ordine alfabetico"),
                 prefs.getBoolean("drawerAll", true), on -> {
                     prefs.edit().putBoolean("drawerAll", on).apply();
                     refreshDrawer();
                 });
         final int nHidden = hidden().size();
-        st.row(SectionIcons.LOCK, "App nascoste", nHidden == 0 ? "Nessuna" : nHidden + (nHidden == 1 ? " app nascosta" : " app nascoste"),
+        st.row(SectionIcons.LOCK, T.t("App nascoste"), nHidden == 0 ? T.t("Nessuna") : nHidden + (nHidden == 1 ? T.t(" app nascosta") : T.t(" app nascoste")),
                 this::manageHidden);
 
-        st.section("Notifiche e musica");
-        st.row(Draw.BELL, "Accesso alle notifiche", DotNotifications.active()
-                ? "Attivo: pallini, anteprime e musica" : "Spento: tocca per attivarlo", this::askNotificationAccess);
-        st.toggle(Draw.BELL, "Pallini di notifica", "Un punto sulle icone delle app con notifiche",
+        st.section(T.t("Notifiche e musica"));
+        st.row(Draw.BELL, T.t("Accesso alle notifiche"), DotNotifications.active()
+                ? T.t("Attivo: pallini, anteprime e musica") : T.t("Spento: tocca per attivarlo"), this::askNotificationAccess);
+        st.toggle(Draw.BELL, T.t("Pallini di notifica"), T.t("Un punto sulle icone delle app con notifiche"),
                 prefs.getBoolean("badges", true), on -> {
                     prefs.edit().putBoolean("badges", on).apply();
                     onNotificationsChanged();
@@ -5219,59 +5325,64 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
         wellbeingSettings(st);
 
-        st.section("Gesti");
+        st.section(T.t("Gesti"));
         for (String[] g : GESTURES) {
             final String key = g[0], name = g[1];
             st.row(SectionIcons.STAR, name, actionLabel(gestureAction(key)), () -> chooseGesture(key, name));
         }
-        st.row(SectionIcons.LOCK, "Servizio per i gesti di sistema", DotAccessibility.active()
-                        ? "Attivo: blocco schermo, screenshot, recenti" : "Spento: serve per bloccare lo schermo e altro",
+        st.row(SectionIcons.LOCK, T.t("Servizio per i gesti di sistema"), DotAccessibility.active()
+                        ? T.t("Attivo: blocco schermo, screenshot, recenti") : T.t("Spento: serve per bloccare lo schermo e altro"),
                 () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
 
-        st.section("Ricerca");
-        st.row(SectionIcons.GLOBE, "Motore di ricerca web", UniversalSearch.engineName(searchEngine()), () -> {
+        st.section(T.t("Ricerca"));
+        st.row(SectionIcons.GLOBE, T.t("Motore di ricerca web"), UniversalSearch.engineName(searchEngine()), () -> {
             String[] names = new String[UniversalSearch.ENGINES.length];
             int sel = 0;
             for (int i = 0; i < names.length; i++) {
                 names[i] = UniversalSearch.ENGINES[i][1];
                 if (UniversalSearch.ENGINES[i][0].equals(searchEngine())) sel = i;
             }
-            Sheet.list(this, th, "Motore di ricerca", names, sel, w -> {
+            Sheet.list(this, th, T.t("Motore di ricerca"), names, sel, w -> {
                 prefs.edit().putString("engine", UniversalSearch.ENGINES[w][0]).apply();
                 refillSettings();
             });
         });
-        st.row(SectionIcons.PEOPLE, "Contatti nella ricerca",
+        st.row(SectionIcons.PEOPLE, T.t("Contatti nella ricerca"),
                 checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-                        ? "Attivi" : "Tocca per consentire l'accesso", this::requestContacts);
+                        ? T.t("Attivi") : T.t("Tocca per consentire l'accesso"), this::requestContacts);
 
-        st.section("Meteo e sensori");
-        st.row(Draw.SUN, "Città per il meteo", city.isEmpty() ? "Posizione automatica" : city, this::askCity);
-        st.row(Draw.STEPS, "Obiettivo di passi", State.stepGoal + " passi al giorno", this::editStepGoal);
+        st.section(T.t("Meteo e sensori"));
+        st.row(Draw.SUN, T.t("Città per il meteo"), city.isEmpty() ? T.t("Posizione automatica") : city, this::askCity);
+        st.row(Draw.STEPS, T.t("Obiettivo di passi"), State.stepGoal + T.t(" passi al giorno"), this::editStepGoal);
 
         st.section("Backup");
-        st.row(SectionIcons.DOWNLOAD, "Esporta la configurazione", "Home, cassetto, impostazioni (senza chiavi API)",
+        st.row(SectionIcons.DOWNLOAD, T.t("Esporta la configurazione"), T.t("Home, cassetto, impostazioni (senza chiavi API)"),
                 this::exportBackup);
-        st.row(Draw.CLOUD, "Importa una configurazione", "Da un file esportato in precedenza", this::importBackup);
+        st.row(Draw.CLOUD, T.t("Importa una configurazione"), T.t("Da un file esportato in precedenza"), this::importBackup);
 
-        st.section("Informazioni");
-        st.row(SectionIcons.CHIP, "Versione " + versionName(), "Tocca per cercare aggiornamenti", () -> checkUpdate(true));
-        st.row(SectionIcons.HOME, "Launcher predefinito", "Scegli Dot Launcher come schermata Home",
-                () -> safeStart(new Intent(Settings.ACTION_HOME_SETTINGS)));
-        st.row(SectionIcons.CODE, "Codice sorgente", "github.com/Rex11107/dot-launcher",
+        st.section(T.t("Informazioni"));
+        st.row(SectionIcons.CHIP, T.t("Versione ") + versionName(), T.t("Tocca per cercare aggiornamenti"), () -> checkUpdate(true));
+        st.row(SectionIcons.HOME, T.t("Launcher predefinito"), T.t("Scegli Dot Launcher come schermata Home"),
+                this::requestDefaultLauncher);
+        st.row(SectionIcons.STAR, T.t("Configurazione guidata"), T.t("Rivedi lingua, stile, icone e permessi"), () -> {
+            closeSettings();
+            prefs.edit().putBoolean("onboarded", false).apply();
+            showOnboarding(0);
+        });
+        st.row(SectionIcons.CODE, T.t("Codice sorgente"), "github.com/Rex11107/dot-launcher",
                 () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Rex11107/dot-launcher"))));
-        st.note("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. "
-                + "Nessun dato viene inviato a server del launcher.");
+        st.note(T.t("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. ")
+                + T.t("Nessun dato viene inviato a server del launcher."));
     }
 
     static final int[] ACCENTS = {0, 0xFFD71921, 0xFFFF6A13, 0xFFF5A623, 0xFF2EBD59, 0xFF14B8A6, 0xFF2F6BFF,
             0xFF8B5CF6, 0xFFEC4899, 0xFF9CA3AF};
-    static final String[] ACCENT_NAMES = {"Predefinito", "Rosso Nothing", "Arancio", "Ambra", "Verde", "Acqua", "Blu",
-            "Viola", "Rosa", "Grigio"};
+    static final String[] ACCENT_NAMES = {T.t("Predefinito"), T.t("Rosso Nothing"), T.t("Arancio"), T.t("Ambra"), T.t("Verde"), T.t("Acqua"), T.t("Blu"),
+            T.t("Viola"), T.t("Rosa"), T.t("Grigio")};
 
     private String accentName(int c) {
         for (int i = 0; i < ACCENTS.length; i++) if (ACCENTS[i] == c) return ACCENT_NAMES[i];
-        return "Personalizzato";
+        return T.t("Personalizzato");
     }
 
     private void chooseAccent() {
@@ -5288,9 +5399,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (ACCENTS[i] == cur) sel = i;
         }
         String[] names = ACCENT_NAMES.clone();
-        names[0] = "Predefinito (rosso, o dallo sfondo nello stile 5.0)";
+        names[0] = T.t("Predefinito (rosso, o dallo sfondo nello stile 5.0)");
         final int s0 = sel;
-        Sheet.list(this, th, "Colore d'accento", names, dots, s0, w -> {
+        Sheet.list(this, th, T.t("Colore d'accento"), names, dots, s0, w -> {
             if (ACCENTS[w] == 0) prefs.edit().remove("accentC").apply();
             else prefs.edit().putInt("accentC", ACCENTS[w]).apply();
             recreate();
@@ -5328,28 +5439,28 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private String packLabel() {
         String pkg = prefs.getString("iconPack", "");
-        if (pkg.isEmpty()) return "nessuno";
+        if (pkg.isEmpty()) return T.t("nessuno");
         String name = IconPacks.installed(this).get(pkg);
-        return name == null ? "non più installato" : name;
+        return name == null ? T.t("non più installato") : name;
     }
 
     private void pickIconPack() {
         final Map<String, String> packs = IconPacks.installed(this);
         final List<String> pkgs = new ArrayList<>(packs.keySet());
         String[] labels = new String[pkgs.size() + 1];
-        labels[0] = "Nessuno (conversione automatica)";
+        labels[0] = T.t("Nessuno (conversione automatica)");
         String cur = prefs.getString("iconPack", "");
         int sel = 0;
         for (int i = 0; i < pkgs.size(); i++) {
             labels[i + 1] = packs.get(pkgs.get(i));
             if (pkgs.get(i).equals(cur)) sel = i + 1;
         }
-        if (pkgs.isEmpty()) toast("Nessun pacchetto di icone installato");
-        Sheet.list(this, th, "Pacchetto di icone", labels, sel, w -> {
+        if (pkgs.isEmpty()) toast(T.t("Nessun pacchetto di icone installato"));
+        Sheet.list(this, th, T.t("Pacchetto di icone"), labels, sel, w -> {
             String v = w == 0 ? "" : pkgs.get(w - 1);
             if (v.equals(cur)) return;
             if (!v.isEmpty() && IconPacks.load(this, v) == null) {
-                toast("Questo pacchetto non è leggibile");
+                toast(T.t("Questo pacchetto non è leggibile"));
                 return;
             }
             prefs.edit().putString("iconPack", v).apply();
@@ -5365,7 +5476,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         try {
             startActivityForResult(i, REQ_EXPORT);
         } catch (Exception e) {
-            toast("Impossibile aprire il selettore di file");
+            toast(T.t("Impossibile aprire il selettore di file"));
         }
     }
 
@@ -5376,7 +5487,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         try {
             startActivityForResult(i, REQ_IMPORT);
         } catch (Exception e) {
-            toast("Impossibile aprire il selettore di file");
+            toast(T.t("Impossibile aprire il selettore di file"));
         }
     }
 
@@ -5385,18 +5496,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Set<String> h = hidden();
         for (AppEntry a : allApps) if (h.contains(a.key)) hiddenApps.add(a);
         if (hiddenApps.isEmpty()) {
-            toast("Nessuna app nascosta");
+            toast(T.t("Nessuna app nascosta"));
             return;
         }
-        Sheet.grid(this, th, "App nascoste", hiddenApps.size(),
+        Sheet.grid(this, th, T.t("App nascoste"), hiddenApps.size(),
                 i -> iconFor(hiddenApps.get(i).key, px(54)), i -> hiddenApps.get(i).label,
                 i -> launch(hiddenApps.get(i), null),
                 i -> hiddenAppMenu(hiddenApps.get(i)),
-                "Tocca per aprire · tieni premuto per mostrarla o disinstallarla");
+                T.t("Tocca per aprire · tieni premuto per mostrarla o disinstallarla"));
     }
 
     private void hiddenAppMenu(AppEntry a) {
-        String[] opts = {"Mostra nel cassetto", "Info app", "Disinstalla"};
+        String[] opts = {T.t("Mostra nel cassetto"), T.t("Info app"), T.t("Disinstalla")};
         Sheet.list(this, th, a.label, opts, -1, w -> {
             switch (w) {
                 case 0:
@@ -5404,7 +5515,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     s.remove(a.key);
                     prefs.edit().putStringSet("hidden", s).apply();
                     refreshDrawer();
-                    toast(a.label + " di nuovo nel cassetto");
+                    toast(a.label + T.t(" di nuovo nel cassetto"));
                     if (!s.isEmpty()) manageHidden();
                     break;
                 case 1: appInfo(a); break;
@@ -5414,7 +5525,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void askCity() {
-        Sheet.input(this, th, "Città per il meteo", "es. Milano (vuoto = posizione automatica)",
+        Sheet.input(this, th, T.t("Città per il meteo"), T.t("es. Milano (vuoto = posizione automatica)"),
                 prefs.getString("city", ""), c -> {
                     if (c.isEmpty()) {
                         prefs.edit().remove("city").remove("mlat").remove("mlon").apply();
@@ -5453,6 +5564,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
         super.onRequestPermissionsResult(req, perms, results);
+        if (onboarding != null) onboarding.refresh();
         if (req == REQ_CAL || req == REQ_CONTACTS) {
             if (panel != null) panel.refreshCalendar();
             if (searchMode) grid.setQuery(search.getText().toString());
@@ -5460,7 +5572,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         if (req == REQ_STEPS) {
             State.stepPerm = SensorHub.stepPermission(this);
-            if (!State.stepPerm) toast("Senza il permesso \"Attività fisica\" il contapassi non può contare");
+            if (!State.stepPerm) toast(T.t("Senza il permesso \"Attività fisica\" il contapassi non può contare"));
             startSensors();
             refreshTiles("steps");
             return;
@@ -5494,7 +5606,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 lm.getCurrentLocation(provider, locCancel, getMainExecutor(), loc -> {
                     if (destroyed) return;
                     if (loc != null) fetchWeather(loc.getLatitude(), loc.getLongitude(), null);
-                    else toast("Posizione non disponibile: imposta una città");
+                    else toast(T.t("Posizione non disponibile: imposta una città"));
                 });
             } catch (Exception ignored) {
             }
@@ -5547,7 +5659,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         try {
             if (!Geocoder.isPresent()) return "";
             @SuppressWarnings("deprecation")
-            List<Address> res = new Geocoder(this, Locale.ITALIAN).getFromLocation(lat, lon, 1);
+            List<Address> res = new Geocoder(this, T.loc()).getFromLocation(lat, lon, 1);
             if (res != null && !res.isEmpty() && res.get(0).getLocality() != null) return res.get(0).getLocality();
         } catch (Exception ignored) {
         }
@@ -5570,7 +5682,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         .putLong("mlon", Double.doubleToLongBits(lon)).apply();
                 fetchWeather(lat, lon, name);
             } catch (Exception e) {
-                ui.post(() -> toast("Città non trovata"));
+                ui.post(() -> toast(T.t("Città non trovata")));
             }
         });
     }
@@ -5616,11 +5728,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(i);
         } catch (Exception e) {
-            toast("Nessuna app disponibile");
+            toast(T.t("Nessuna app disponibile"));
         }
     }
 
     public void toast(String s) {
-        Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, T.t(s), Toast.LENGTH_SHORT).show();
     }
 }

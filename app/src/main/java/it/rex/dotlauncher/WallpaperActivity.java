@@ -77,11 +77,11 @@ public class WallpaperActivity extends Activity {
         title.setPitch(4.4f * dp);
         title.setColor(th.onTile);
         title.setAccent(".", th.accent);
-        title.setText("SFONDI.");
+        title.setText(T.t("SFONDI."));
         root.addView(title);
 
         TextView hint = new TextView(this);
-        hint.setText("Tocca per applicare · tieni premuto per una nuova variante");
+        hint.setText(T.t("Tocca per applicare · tieni premuto per una nuova variante"));
         hint.setTextColor(th.sub);
         hint.setTypeface(th.bodyFace);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -148,8 +148,8 @@ public class WallpaperActivity extends Activity {
 
     private void askTarget(Target t) {
         if (busy) return;
-        String[] items = {"Schermata home", "Home e schermata di blocco"};
-        Sheet.list(this, th, "Applica sfondo", items, -1, w ->
+        String[] items = {T.t("Schermata home"), T.t("Home e schermata di blocco")};
+        Sheet.list(this, th, T.t("Applica sfondo"), items, -1, w ->
                 t.go(w == 0 ? WallpaperManager.FLAG_SYSTEM
                         : WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK));
     }
@@ -164,7 +164,7 @@ public class WallpaperActivity extends Activity {
         final long seed = seeds[style];
         final int[] sz = screen();
         busy = true;
-        toast("Applico lo sfondo…");
+        toast(T.t("Applico lo sfondo…"));
         exec.execute(() -> {
             try {
                 Bitmap b = WallpaperGen.make(style, sz[0], sz[1], seed);
@@ -181,7 +181,7 @@ public class WallpaperActivity extends Activity {
         prefs.edit().putBoolean("wall", true).putInt("wallVer", prefs.getInt("wallVer", 0) + 1).apply();
         ui.post(() -> {
             busy = false;
-            toast("Sfondo applicato");
+            toast(T.t("Sfondo applicato"));
             finish();
         });
     }
@@ -189,7 +189,7 @@ public class WallpaperActivity extends Activity {
     private void fail() {
         ui.post(() -> {
             busy = false;
-            toast("Impossibile applicare lo sfondo");
+            toast(T.t("Impossibile applicare lo sfondo"));
         });
     }
 
@@ -198,9 +198,9 @@ public class WallpaperActivity extends Activity {
         i.setType("image/*");
         i.addCategory(Intent.CATEGORY_OPENABLE);
         try {
-            startActivityForResult(Intent.createChooser(i, "Scegli una foto"), REQ_IMAGE);
+            startActivityForResult(Intent.createChooser(i, T.t("Scegli una foto")), REQ_IMAGE);
         } catch (Exception e) {
-            toast("Nessuna galleria disponibile");
+            toast(T.t("Nessuna galleria disponibile"));
         }
     }
 
@@ -209,15 +209,15 @@ public class WallpaperActivity extends Activity {
         super.onActivityResult(req, res, data);
         if (req != REQ_IMAGE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
-        String[] modes = {"Originale", "A puntini (colori)", "A puntini (bianco e nero)", "A strisce (vetro rigato)"};
-        Sheet.list(this, th, "Come vuoi la foto?", modes, -1, mode ->
+        String[] modes = {T.t("Originale"), T.t("A puntini (colori)"), T.t("A puntini (bianco e nero)"), T.t("A strisce (vetro rigato)")};
+        Sheet.list(this, th, T.t("Come vuoi la foto?"), modes, -1, mode ->
                 askTarget(which -> applyPhoto(uri, mode, which)));
     }
 
     private void applyPhoto(Uri uri, int mode, int which) {
         final int[] sz = screen();
         busy = true;
-        toast("Applico lo sfondo…");
+        toast(T.t("Applico lo sfondo…"));
         exec.execute(() -> {
             try {
                 WallpaperManager wm = WallpaperManager.getInstance(this);
@@ -258,7 +258,7 @@ public class WallpaperActivity extends Activity {
     }
 
     private void toast(String s) {
-        Toast.makeText(this, s, Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, T.t(s), Toast.LENGTH_SHORT).show();
     }
 
     private class Adapter extends BaseAdapter {
@@ -294,7 +294,7 @@ public class WallpaperActivity extends Activity {
                         th.onTile, th.accent);
                 plus.setImageBitmap(pb);
                 card.addView(plus, new FrameLayout.LayoutParams(cardW / 3, cardW / 3, Gravity.CENTER));
-                label.setText("Dalla galleria");
+                label.setText(T.t("Dalla galleria"));
                 label.setTextColor(th.onTile);
             } else {
                 ImageView iv = new ImageView(WallpaperActivity.this);

@@ -82,7 +82,7 @@ final class State {
                 dMin = new int[n];
                 dName = new String[n];
                 SimpleDateFormat in = new SimpleDateFormat("yyyy-MM-dd", Locale.US);
-                SimpleDateFormat out = new SimpleDateFormat("EEE", Locale.ITALIAN);
+                SimpleDateFormat out = new SimpleDateFormat("EEE", T.loc());
                 for (int i = 0; i < n; i++) {
                     dCode[i] = c.optInt(i, 3);
                     dMax[i] = (int) Math.round(mx.optDouble(i, 0));
@@ -136,16 +136,16 @@ final class State {
     }
 
     static String describe(int code) {
-        if (code == 0) return "Sereno";
-        if (code <= 2) return "Poco nuvoloso";
-        if (code == 3) return "Nuvoloso";
-        if (code == 45 || code == 48) return "Nebbia";
-        if (code >= 51 && code <= 57) return "Pioggerella";
-        if (code >= 61 && code <= 67) return "Pioggia";
-        if (code >= 71 && code <= 77) return "Neve";
-        if (code >= 80 && code <= 82) return "Rovesci";
-        if (code == 85 || code == 86) return "Neve";
-        if (code >= 95) return "Temporale";
+        if (code == 0) return T.t("Sereno");
+        if (code <= 2) return T.t("Poco nuvoloso");
+        if (code == 3) return T.t("Nuvoloso");
+        if (code == 45 || code == 48) return T.t("Nebbia");
+        if (code >= 51 && code <= 57) return T.t("Pioggerella");
+        if (code >= 61 && code <= 67) return T.t("Pioggia");
+        if (code >= 71 && code <= 77) return T.t("Neve");
+        if (code >= 80 && code <= 82) return T.t("Rovesci");
+        if (code == 85 || code == 86) return T.t("Neve");
+        if (code >= 95) return T.t("Temporale");
         return "";
     }
 

@@ -43,12 +43,21 @@
     </queries>
 
     <application
+        android:name=".DotApp"
         android:allowBackup="true"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="Dot Launcher"
         android:theme="@style/Dot">
+
+        <activity
+            android:name=".RestartActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:noHistory="true"
+            android:process=":restart"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
 
         <activity
             android:name=".HomeActivity"
@@ -107,7 +116,7 @@
         <activity
             android:name=".WallpaperActivity"
             android:exported="false"
-            android:label="Sfondi"
+            android:label="@string/wallpapers"
             android:screenOrientation="nosensor" />
     </application>
 </manifest>

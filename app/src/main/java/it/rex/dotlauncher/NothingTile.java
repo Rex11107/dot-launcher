@@ -209,7 +209,7 @@ class NothingTile extends View {
     }
 
     private String time(String pattern24, String pattern12) {
-        return new SimpleDateFormat(h24 ? pattern24 : pattern12, Locale.ITALIAN).format(new Date());
+        return new SimpleDateFormat(h24 ? pattern24 : pattern12, T.loc()).format(new Date());
     }
 
     // ---------- orologi ----------
@@ -222,7 +222,7 @@ class NothingTile extends View {
         Draw.big(cv, th, t, W / 2f, item.h >= 2 ? H * 0.42f : H / 2f, h, W - pad * 2,
                 fg(), ":", acc(), 0, p, true, prog(0, t));
         if (item.h >= 2) {
-            String d = new SimpleDateFormat("EEEE d MMMM", Locale.ITALIAN).format(new Date());
+            String d = new SimpleDateFormat("EEEE d MMMM", T.loc()).format(new Date());
             Draw.label(cv, th, d, W / 2f, H * 0.82f, H * 0.075f, sub(), 0, p, W - pad * 2);
         }
     }
@@ -296,9 +296,9 @@ class NothingTile extends View {
 
     private void dateBig(Canvas cv, float W, float H) {
         Date d = new Date();
-        String wd = new SimpleDateFormat("EEEE", Locale.ITALIAN).format(d);
-        String day = new SimpleDateFormat("d", Locale.ITALIAN).format(d);
-        String mo = new SimpleDateFormat("MMMM", Locale.ITALIAN).format(d);
+        String wd = new SimpleDateFormat("EEEE", T.loc()).format(d);
+        String day = new SimpleDateFormat("d", T.loc()).format(d);
+        String mo = new SimpleDateFormat("MMMM", T.loc()).format(d);
         Draw.label(cv, th, wd, W / 2f, H * 0.2f, H * 0.075f, fg(), 0, p, W * 0.8f);
         Draw.big(cv, th, day, W / 2f, H * 0.52f, H * 0.36f, W * 0.8f, acc(), "", acc(), 0, p, false);
         Draw.label(cv, th, mo, W / 2f, H * 0.88f, H * 0.075f, fg(), 0, p, W * 0.8f);
@@ -306,8 +306,8 @@ class NothingTile extends View {
 
     private void dateDot(Canvas cv, float W, float H) {
         Date d = new Date();
-        String wd = new SimpleDateFormat("EEE", Locale.ITALIAN).format(d).replace(".", "");
-        String day = new SimpleDateFormat("d", Locale.ITALIAN).format(d);
+        String wd = new SimpleDateFormat("EEE", T.loc()).format(d).replace(".", "");
+        String day = new SimpleDateFormat("d", T.loc()).format(d);
         Draw.label(cv, th, wd, W / 2f, H * 0.32f, H * 0.11f, acc(), 0, p, W * 0.6f);
         Draw.big(cv, th, day, W / 2f, H * 0.58f, H * 0.26f, W * 0.6f, fg(), "", acc(), 0, p, false);
     }
@@ -322,13 +322,13 @@ class NothingTile extends View {
         int weeks = (offset + days + 6) / 7;
         float pad = Math.min(W, H) * 0.1f;
         float headerH = H * 0.2f;
-        String mo = new SimpleDateFormat("MMMM", Locale.ITALIAN).format(c.getTime());
+        String mo = new SimpleDateFormat("MMMM", T.loc()).format(c.getTime());
         Draw.big(cv, th, mo, pad, pad + headerH * 0.35f, headerH * 0.42f, W * 0.6f, fg(), "", acc(), -1, p, true);
         float gx = pad, gw = W - pad * 2;
         float gy = pad + headerH * 0.8f, gh = H - gy - pad * 0.7f;
         float cw = gw / 7f, ch = gh / (weeks + 1);
         float ts = Math.min(ch * 0.5f, cw * 0.42f);
-        String[] wn = {"L", "M", "M", "G", "V", "S", "D"};
+        String[] wn = T.en ? new String[]{"M", "T", "W", "T", "F", "S", "S"} : new String[]{"L", "M", "M", "G", "V", "S", "D"};
         p.setTypeface(th.bodyFace);
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(ts);
@@ -358,7 +358,7 @@ class NothingTile extends View {
     private void weather(Canvas cv, float W, float H) {
         if (!State.wOk) {
             Draw.icon(cv, Draw.CLOUD, W / 2f, H * 0.42f, Math.min(W, H) * 0.3f, p, fg(), acc());
-            Draw.label(cv, th, "Tocca per il meteo", W / 2f, H * 0.78f, Math.min(W, H) * 0.08f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Tocca per il meteo"), W / 2f, H * 0.78f, Math.min(W, H) * 0.08f, sub(), 0, p, W * 0.8f);
             return;
         }
         String temp = State.wTemp + "°";
@@ -382,7 +382,7 @@ class NothingTile extends View {
     private void weatherWeek(Canvas cv, float W, float H) {
         float pad = Math.min(W, H) * 0.12f;
         if (!State.wOk) {
-            Draw.label(cv, th, "Tocca per il meteo", W / 2f, H / 2f, H * 0.08f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Tocca per il meteo"), W / 2f, H / 2f, H * 0.08f, sub(), 0, p, W * 0.8f);
             return;
         }
         Draw.icon(cv, Draw.weatherIcon(State.wCode), pad + H * 0.12f, pad + H * 0.12f, H * 0.24f, p, fg(), acc());
@@ -521,12 +521,12 @@ class NothingTile extends View {
 
     // ---------- bussola ----------
 
-    private static final String[] DIRS = {"N", "NE", "E", "SE", "S", "SO", "O", "NO"};
+    private static final String[] DIRS = {"N", "NE", "E", "SE", "S", T.t("SO"), "O", T.t("NO")};
 
     private void compass(Canvas cv, float W, float H) {
         float cx = W / 2f, cy = H / 2f, R = Math.min(W, H) / 2f;
         if (!State.hasCompass) {
-            Draw.label(cv, th, "Bussola non disponibile", cx, cy, R * 0.13f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Bussola non disponibile"), cx, cy, R * 0.13f, sub(), 0, p, W * 0.8f);
             return;
         }
         float hd = State.heading;
@@ -573,14 +573,14 @@ class NothingTile extends View {
     private void countdown(Canvas cv, float W, float H) {
         float m = Math.min(W, H), pad = m * 0.14f;
         long target = WData.getLong(item, "d", 0);
-        String title = WData.get(item, "t", "Evento");
+        String title = WData.get(item, "t", T.t("Evento"));
         if (target == 0) {
-            Draw.label(cv, th, "Tocca per impostare", W / 2f, H / 2f, m * 0.09f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Tocca per impostare"), W / 2f, H / 2f, m * 0.09f, sub(), 0, p, W * 0.8f);
             return;
         }
         int d = WData.daysTo(target);
-        String num = d == 0 ? "OGGI" : String.valueOf(Math.abs(d));
-        String unit = d == 0 ? title : (Math.abs(d) == 1 ? "giorno" : "giorni") + (d < 0 ? " fa" : "");
+        String num = d == 0 ? T.t("OGGI") : String.valueOf(Math.abs(d));
+        String unit = d == 0 ? title : (Math.abs(d) == 1 ? T.t("giorno") : T.t("giorni")) + (d < 0 ? T.t(" fa") : "");
         int numColor = d == 0 ? acc() : fg();
         if (isCircle()) {
             Draw.big(cv, th, num, W / 2f, H * 0.44f, H * 0.24f, W * 0.62f, numColor, "", acc(), 0, p, true);
@@ -597,14 +597,14 @@ class NothingTile extends View {
         Draw.label(cv, th, title, pad, pad + m * 0.08f, m * 0.085f, fg(), -1, p, W - pad * 2);
         Draw.big(cv, th, num, W / 2f, H * 0.5f, H * 0.3f, W - pad * 2, numColor, "", acc(), 0, p, true);
         if (d != 0) Draw.label(cv, th, unit, W / 2f, H * 0.76f, m * 0.08f, acc(), 0, p, W - pad * 2);
-        String date = new SimpleDateFormat("d MMM yyyy", Locale.ITALIAN).format(new Date(target));
+        String date = new SimpleDateFormat("d MMM yyyy", T.loc()).format(new Date(target));
         Draw.label(cv, th, date, W / 2f, H - pad * 0.8f, m * 0.065f, sub(), 0, p, W - pad * 2);
     }
 
     // ---------- fusi orari ----------
 
     private String zoneTime(String zone) {
-        SimpleDateFormat f = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.ITALIAN);
+        SimpleDateFormat f = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc());
         f.setTimeZone(TimeZone.getTimeZone(zone));
         return f.format(new Date());
     }
@@ -619,7 +619,7 @@ class NothingTile extends View {
         List<String[]> z = WData.zones(item);
         float m = Math.min(W, H), pad = m * 0.13f;
         if (z.isEmpty()) {
-            Draw.label(cv, th, "Tocca per scegliere", W / 2f, H / 2f, m * 0.09f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Tocca per scegliere"), W / 2f, H / 2f, m * 0.09f, sub(), 0, p, W * 0.8f);
             return;
         }
         if (isCircle()) {
@@ -662,12 +662,12 @@ class NothingTile extends View {
         float cx = W / 2f, cy = H / 2f, m = Math.min(W, H), pad = m * 0.14f;
         if (!State.hasSteps) {
             Draw.icon(cv, Draw.STEPS, cx, H * 0.4f, m * 0.26f, p, fg(), acc());
-            Draw.label(cv, th, "Contapassi assente", cx, H * 0.78f, m * 0.08f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Contapassi assente"), cx, H * 0.78f, m * 0.08f, sub(), 0, p, W * 0.8f);
             return;
         }
         if (!State.stepPerm) {
             Draw.icon(cv, Draw.STEPS, cx, H * 0.4f, m * 0.26f, p, fg(), acc());
-            Draw.label(cv, th, "Tocca per attivare", cx, H * 0.78f, m * 0.08f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Tocca per attivare"), cx, H * 0.78f, m * 0.08f, sub(), 0, p, W * 0.8f);
             return;
         }
         int goal = Math.max(100, State.stepGoal);
@@ -687,8 +687,8 @@ class NothingTile extends View {
             Draw.big(cv, th, String.valueOf(s), cx, circ ? cy : cy - m * 0.04f, m * (circ ? 0.15f : 0.13f),
                     R * 1.3f, fg(), "", acc(), 0, p, true);
             if (!circ) {
-                Draw.label(cv, th, "passi", cx, cy + m * 0.13f, m * 0.065f, sub(), 0, p, R);
-                Draw.label(cv, th, "obiettivo " + goal, cx, cy + m * 0.22f, m * 0.05f, acc(), 0, p, R * 1.2f);
+                Draw.label(cv, th, T.t("passi"), cx, cy + m * 0.13f, m * 0.065f, sub(), 0, p, R);
+                Draw.label(cv, th, T.t("obiettivo ") + goal, cx, cy + m * 0.22f, m * 0.05f, acc(), 0, p, R * 1.2f);
             }
             return;
         }
@@ -714,7 +714,7 @@ class NothingTile extends View {
         String u = WData.get(item, "u", "");
         if (u.isEmpty() || Photos.failed(u)) {
             Draw.icon(cv, Draw.PHOTO, W / 2f, H * 0.42f, m * 0.26f, p, fg(), acc());
-            Draw.label(cv, th, u.isEmpty() ? "Tocca per scegliere" : "Foto non disponibile", W / 2f, H * 0.76f,
+            Draw.label(cv, th, u.isEmpty() ? T.t("Tocca per scegliere") : T.t("Foto non disponibile"), W / 2f, H * 0.76f,
                     m * 0.075f, sub(), 0, p, W * 0.8f);
             return;
         }
@@ -812,7 +812,7 @@ class NothingTile extends View {
         int hr = c.get(Calendar.HOUR_OF_DAY), min = c.get(Calendar.MINUTE);
         float frac = (hr * 60 + min) / 1440f;
         float pad = H * 0.16f;
-        Draw.label(cv, th, "Giornata", pad, H * 0.36f, H * 0.14f, sub(), -1, p, W * 0.5f);
+        Draw.label(cv, th, T.t("Giornata"), pad, H * 0.36f, H * 0.14f, sub(), -1, p, W * 0.5f);
         Draw.big(cv, th, Math.round(frac * 100) + "%", W - pad, H * 0.3f, H * 0.2f, W * 0.4f, acc(), "", acc(), 1, p, true);
         int n = 24;
         float bw = W - pad * 2, step = bw / n, cy = H * 0.68f;
@@ -862,8 +862,8 @@ class NothingTile extends View {
     }
 
     static String moonName(double age) {
-        String[] n = {"Luna nuova", "Crescente", "Primo quarto", "Gibbosa crescente", "Luna piena",
-                "Gibbosa calante", "Ultimo quarto", "Calante"};
+        String[] n = {T.t("Luna nuova"), T.t("Crescente"), T.t("Primo quarto"), T.t("Gibbosa crescente"), T.t("Luna piena"),
+                T.t("Gibbosa calante"), T.t("Ultimo quarto"), T.t("Calante")};
         return n[(int) Math.floor((age / SYNODIC) * 8 + 0.5) % 8];
     }
 
@@ -897,7 +897,7 @@ class NothingTile extends View {
     private void sun(Canvas cv, float W, float H) {
         if (!State.wOk || State.sunrise.isEmpty()) {
             Draw.icon(cv, Draw.SUN, W / 2f, H * 0.42f, Math.min(W, H) * 0.3f, p, fg(), acc());
-            Draw.label(cv, th, "Tocca per il meteo", W / 2f, H * 0.8f, Math.min(W, H) * 0.08f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Tocca per il meteo"), W / 2f, H * 0.8f, Math.min(W, H) * 0.08f, sub(), 0, p, W * 0.8f);
             return;
         }
         float pad = Math.min(W, H) * 0.14f;
@@ -932,7 +932,7 @@ class NothingTile extends View {
 
     private void weatherHours(Canvas cv, float W, float H) {
         if (!State.wOk || State.hTemp.length == 0) {
-            Draw.label(cv, th, "Tocca per il meteo", W / 2f, H / 2f, Math.min(W, H) * 0.12f, sub(), 0, p, W * 0.8f);
+            Draw.label(cv, th, T.t("Tocca per il meteo"), W / 2f, H / 2f, Math.min(W, H) * 0.12f, sub(), 0, p, W * 0.8f);
             return;
         }
         int start = State.hourIndex();
@@ -982,7 +982,7 @@ class NothingTile extends View {
         }
         float pad = H * 0.2f;
         Draw.big(cv, th, s, pad, H / 2f, H * 0.42f, W * 0.55f, fg(), "", acc(), -1, p, true, prog(0, s));
-        Draw.label(cv, th, title.isEmpty() ? "Contatore" : title, W - pad, H * 0.44f, H * 0.13f, sub(), 1, p, W * 0.4f);
+        Draw.label(cv, th, title.isEmpty() ? T.t("Contatore") : title, W - pad, H * 0.44f, H * 0.13f, sub(), 1, p, W * 0.4f);
         p.setColor(acc());
         cv.drawCircle(W - pad - H * 0.08f, H * 0.66f, H * 0.08f, p);
         p.setColor(item.tone == 2 ? th.accent : th.onAccent);
@@ -995,22 +995,22 @@ class NothingTile extends View {
     // ---------- proverbio del giorno ----------
 
     static final String[] PROVERBS = {
-            "Chi dorme non piglia pesci.", "Chi va piano va sano e va lontano.", "Meglio tardi che mai.",
-            "L'abito non fa il monaco.", "Chi trova un amico trova un tesoro.",
-            "Tra il dire e il fare c'è di mezzo il mare.", "Non tutte le ciambelle riescono col buco.",
-            "Chi semina vento raccoglie tempesta.", "Rosso di sera, bel tempo si spera.",
-            "Il buongiorno si vede dal mattino.", "Chi la dura la vince.", "L'unione fa la forza.",
-            "Sbagliando s'impara.", "Paese che vai, usanza che trovi.", "Chi fa da sé fa per tre.",
-            "A caval donato non si guarda in bocca.", "Ogni lasciata è persa.", "Chi cerca trova.",
-            "Meglio un uovo oggi che una gallina domani.", "Una mela al giorno toglie il medico di torno.",
-            "Chi ben comincia è a metà dell'opera.", "Non c'è rosa senza spine.", "Volere è potere.",
-            "Il riso fa buon sangue.", "Chi tace acconsente.", "Fidarsi è bene, non fidarsi è meglio.",
-            "Occhio non vede, cuore non duole.", "Can che abbaia non morde.", "L'appetito vien mangiando.",
-            "Aiutati che il ciel t'aiuta.", "Tutto è bene quel che finisce bene.",
-            "La pazienza è la virtù dei forti.", "Dimmi con chi vai e ti dirò chi sei.",
-            "Batti il ferro finché è caldo.", "Non rimandare a domani quello che puoi fare oggi.",
-            "Ride bene chi ride ultimo.", "Gallina vecchia fa buon brodo.", "Chi non risica non rosica.",
-            "Il tempo è galantuomo.", "Acqua passata non macina più."
+            T.t("Chi dorme non piglia pesci."), T.t("Chi va piano va sano e va lontano."), T.t("Meglio tardi che mai."),
+            T.t("L'abito non fa il monaco."), T.t("Chi trova un amico trova un tesoro."),
+            T.t("Tra il dire e il fare c'è di mezzo il mare."), T.t("Non tutte le ciambelle riescono col buco."),
+            T.t("Chi semina vento raccoglie tempesta."), T.t("Rosso di sera, bel tempo si spera."),
+            T.t("Il buongiorno si vede dal mattino."), T.t("Chi la dura la vince."), T.t("L'unione fa la forza."),
+            T.t("Sbagliando s'impara."), T.t("Paese che vai, usanza che trovi."), T.t("Chi fa da sé fa per tre."),
+            T.t("A caval donato non si guarda in bocca."), T.t("Ogni lasciata è persa."), T.t("Chi cerca trova."),
+            T.t("Meglio un uovo oggi che una gallina domani."), T.t("Una mela al giorno toglie il medico di torno."),
+            T.t("Chi ben comincia è a metà dell'opera."), T.t("Non c'è rosa senza spine."), T.t("Volere è potere."),
+            T.t("Il riso fa buon sangue."), T.t("Chi tace acconsente."), T.t("Fidarsi è bene, non fidarsi è meglio."),
+            T.t("Occhio non vede, cuore non duole."), T.t("Can che abbaia non morde."), T.t("L'appetito vien mangiando."),
+            T.t("Aiutati che il ciel t'aiuta."), T.t("Tutto è bene quel che finisce bene."),
+            T.t("La pazienza è la virtù dei forti."), T.t("Dimmi con chi vai e ti dirò chi sei."),
+            T.t("Batti il ferro finché è caldo."), T.t("Non rimandare a domani quello che puoi fare oggi."),
+            T.t("Ride bene chi ride ultimo."), T.t("Gallina vecchia fa buon brodo."), T.t("Chi non risica non rosica."),
+            T.t("Il tempo è galantuomo."), T.t("Acqua passata non macina più.")
     };
 
     static String proverb(Item it) {
@@ -1022,7 +1022,7 @@ class NothingTile extends View {
 
     private void proverb(Canvas cv, float W, float H) {
         float pad = Math.min(W, H) * 0.14f;
-        Draw.label(cv, th, "Proverbio del giorno", pad, pad + H * 0.06f, Math.min(W, H) * 0.07f, acc(), -1, p, W - pad * 2);
+        Draw.label(cv, th, T.t("Proverbio del giorno"), pad, pad + H * 0.06f, Math.min(W, H) * 0.07f, acc(), -1, p, W - pad * 2);
         android.text.TextPaint tp = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
         tp.setColor(fg());
         tp.setTypeface(th.nuovo ? th.titleFace : Fonts.medium);
@@ -1077,7 +1077,7 @@ class NothingTile extends View {
         int dow = (c.get(Calendar.DAY_OF_WEEK) + 5) % 7; // lunedì = 0
         Calendar d = (Calendar) c.clone();
         d.add(Calendar.DAY_OF_MONTH, -dow);
-        String[] names = {"L", "M", "M", "G", "V", "S", "D"};
+        String[] names = T.en ? new String[]{"M", "T", "W", "T", "F", "S", "S"} : new String[]{"L", "M", "M", "G", "V", "S", "D"};
         float pad = H * 0.14f, cw = (W - pad * 2) / 7f;
         for (int i = 0; i < 7; i++) {
             float x = pad + cw * i + cw / 2f;
@@ -1106,9 +1106,9 @@ class NothingTile extends View {
         }
         float used = total > 0 ? (total - free) / (float) total : 0;
         float pad = Math.min(W, H) * 0.14f;
-        String gb = String.format(Locale.ITALIAN, "%.0f", free / 1e9);
+        String gb = String.format(T.loc(), "%.0f", free / 1e9);
         boolean tall = item.h >= 2;
-        Draw.label(cv, th, "Memoria libera", pad, tall ? pad + H * 0.06f : H * 0.32f, tall ? H * 0.065f : H * 0.13f, sub(), -1,
+        Draw.label(cv, th, T.t("Memoria libera"), pad, tall ? pad + H * 0.06f : H * 0.32f, tall ? H * 0.065f : H * 0.13f, sub(), -1,
                 p, W - pad * 2);
         Draw.big(cv, th, gb + " GB", pad, tall ? H * 0.42f : H * 0.58f, tall ? H * 0.16f : H * 0.24f, W - pad * 2, fg(), "",
                 acc(), -1, p, true);
@@ -1128,13 +1128,13 @@ class NothingTile extends View {
     private void note(Canvas cv, float W, float H) {
         String t = WData.get(item, "t", "");
         float pad = Math.min(W, H) * 0.14f;
-        Draw.label(cv, th, "Nota", pad, pad + H * 0.04f, Math.min(W, H) * (item.h == 1 ? 0.12f : 0.07f), acc(), -1, p,
+        Draw.label(cv, th, T.t("Nota"), pad, pad + H * 0.04f, Math.min(W, H) * (item.h == 1 ? 0.12f : 0.07f), acc(), -1, p,
                 W * 0.5f);
         android.text.TextPaint tp = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
         tp.setColor(t.isEmpty() ? sub() : fg());
         tp.setTypeface(th.bodyFace);
         float size = Math.min(W, H) * (item.h == 1 ? 0.22f : 0.1f);
-        String text = t.isEmpty() ? "Tocca per scrivere" : t;
+        String text = t.isEmpty() ? T.t("Tocca per scrivere") : t;
         float top = pad + H * (item.h == 1 ? 0.12f : 0.1f);
         float maxH = H - top - pad * 0.7f;
         android.text.StaticLayout sl;
@@ -1214,7 +1214,7 @@ class NothingTile extends View {
         float m = Math.min(W, H);
         if (!DotNotifications.active()) {
             Draw.icon(cv, NOTE, W / 2f, H * 0.4f, m * 0.3f, p, fg(), acc());
-            Draw.label(cv, th, "Tocca per attivare", W / 2f, H * 0.82f, m * 0.08f, sub(), 0, p, W * 0.9f);
+            Draw.label(cv, th, T.t("Tocca per attivare"), W / 2f, H * 0.82f, m * 0.08f, sub(), 0, p, W * 0.9f);
             return;
         }
         boolean tall = item.h >= 2;
@@ -1240,7 +1240,7 @@ class NothingTile extends View {
             Draw.icon(cv, NOTE, art.centerX(), art.centerY(), artS * 0.5f, p, fg(), acc());
         }
         String title = DotNotifications.mActive && !DotNotifications.mTitle.isEmpty() ? DotNotifications.mTitle
-                : "Niente in riproduzione";
+                : T.t("Niente in riproduzione");
         String artist = DotNotifications.mArtist;
         RectF[] b = mediaButtons(W, H);
         float tx, tw, ty;
@@ -1317,14 +1317,14 @@ class NothingTile extends View {
         if (!Usage.permitted) {
             Draw.icon(cv, HOURGLASS, W / 2f, H * (item.h >= 2 ? 0.4f : 0.5f), m * 0.3f, p, fg(), acc());
             if (item.h >= 2)
-                Draw.label(cv, th, "Tocca per attivare", W / 2f, H * 0.82f, m * 0.08f, sub(), 0, p, W * 0.9f);
+                Draw.label(cv, th, T.t("Tocca per attivare"), W / 2f, H * 0.82f, m * 0.08f, sub(), 0, p, W * 0.9f);
             return;
         }
         List<Usage.App> top = Usage.today;
         String total = Usage.shortFmt(Usage.total);
         float pad = item.h >= 2 ? m * 0.12f : H * 0.2f;
         if (item.h == 1) {
-            Draw.label(cv, th, "Oggi", pad, H * 0.36f, H * 0.14f, sub(), -1, p, W * 0.4f);
+            Draw.label(cv, th, T.t("Oggi"), pad, H * 0.36f, H * 0.14f, sub(), -1, p, W * 0.4f);
             Draw.big(cv, th, total, pad, H * 0.64f, H * 0.26f, W * 0.5f, fg(), "hmHM", acc(), -1, p, false);
             if (W > H * 3 && !top.isEmpty()) {
                 // app più usata a destra
@@ -1336,10 +1336,10 @@ class NothingTile extends View {
         }
         boolean wide = W >= H * 1.6f;
         float leftW = wide ? W * 0.42f : W - pad * 2;
-        Draw.label(cv, th, "Tempo di utilizzo", pad, pad + m * 0.06f, m * 0.07f, sub(), -1, p, leftW);
+        Draw.label(cv, th, T.t("Tempo di utilizzo"), pad, pad + m * 0.06f, m * 0.07f, sub(), -1, p, leftW);
         Draw.big(cv, th, total, pad, pad + m * 0.27f, m * 0.17f, leftW, fg(), "hmHM", acc(), -1, p, false);
         if (wide) {
-            Draw.label(cv, th, Usage.unlocks + " sblocchi", pad, H - pad, m * 0.065f, sub(), -1, p, leftW);
+            Draw.label(cv, th, Usage.unlocks + T.t(" sblocchi"), pad, H - pad, m * 0.065f, sub(), -1, p, leftW);
         }
         float x0 = wide ? W * 0.5f : pad, x1 = W - pad;
         float y0 = wide ? pad : pad + m * 0.48f, y1 = H - pad * 0.8f;
@@ -1351,7 +1351,7 @@ class NothingTile extends View {
         tp.setTextSize(Math.min(rh * 0.36f, m * 0.075f));
         if (top.isEmpty()) {
             tp.setColor(sub());
-            cv.drawText("Ancora niente oggi", x0, y0 + rh * 0.6f, tp);
+            cv.drawText(T.t("Ancora niente oggi"), x0, y0 + rh * 0.6f, tp);
             return;
         }
         for (int i = 0; i < rows && i < top.size(); i++) {
@@ -1390,8 +1390,8 @@ class NothingTile extends View {
         Draw.icon(cv, TARGET, H / 2f, H / 2f, H * 0.42f, p, on ? acc() : Theme.alpha(fg(), 0.55f), on ? fg() : acc());
         float x = H * 0.95f;
         Draw.label(cv, th, "Focus", x, H * 0.44f, H * 0.17f, fg(), -1, p, W - x - H * 0.2f);
-        String st = !on ? "Spento" : until == Long.MAX_VALUE ? "Attivo"
-                : "Fino alle " + new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.ITALIAN).format(new Date(until));
+        String st = !on ? T.t("Spento") : until == Long.MAX_VALUE ? T.t("Attivo")
+                : T.t("Fino alle ") + new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc()).format(new Date(until));
         Draw.label(cv, th, st, x, H * 0.7f, H * 0.13f, on ? acc() : sub(), -1, p, W - x - H * 0.2f);
     }
 
@@ -1415,7 +1415,7 @@ class NothingTile extends View {
 
     private void search(Canvas cv, float W, float H) {
         Draw.icon(cv, Draw.SEARCH, H * 0.55f, H / 2f, H * 0.34f, p, fg(), acc());
-        Draw.label(cv, th, "Cerca app", H * 0.95f, H / 2f + H * 0.07f, H * 0.2f, sub(), -1, p, W * 0.6f);
+        Draw.label(cv, th, T.t("Cerca app"), H * 0.95f, H / 2f + H * 0.07f, H * 0.2f, sub(), -1, p, W * 0.6f);
         p.setColor(acc());
         p.setStyle(Paint.Style.FILL);
         cv.drawCircle(W - H / 2f, H / 2f, H * 0.07f, p);

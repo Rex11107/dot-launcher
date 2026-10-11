@@ -41,11 +41,11 @@ public class AddItemActivity extends Activity {
                     Set<String> pend = new HashSet<>(p.getStringSet("pendingSc", new HashSet<>()));
                     pend.add(k);
                     p.edit().putStringSet("pendingSc", pend).commit();
-                    Toast.makeText(this, "Scorciatoia aggiunta alla home", Toast.LENGTH_SHORT).show();
+                    Toast.makeText(this, T.t("Scorciatoia aggiunta alla home"), Toast.LENGTH_SHORT).show();
                 }
             }
         } catch (Exception e) {
-            Toast.makeText(this, "Impossibile aggiungere alla home", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, T.t("Impossibile aggiungere alla home"), Toast.LENGTH_SHORT).show();
         }
         finish();
     }

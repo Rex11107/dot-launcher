@@ -12,55 +12,55 @@ final class Widgets {
 
     /** Categorie per la scelta dei widget: {titolo, tipi…}. */
     static final String[][] CATEGORIES = {
-            {"Orologi", "clock_dots", "clock_analog", "clock_pill", "clock_ring", "world_clock", "alarm"},
-            {"Data e tempo", "date_big", "date_dot", "calendar", "week", "year", "day", "countdown"},
-            {"Meteo e cielo", "weather", "weather_week", "weather_hours", "sun", "moon"},
-            {"Batteria e sistema", "battery_ring", "battery_pill", "battery_dots", "storage", "torch"},
-            {"Musica e strumenti", "media", "search", "compass", "steps", "counter", "dice"},
-            {"Foto e testi", "photo", "note", "proverb"},
-            {"Benessere digitale", "usage", "focus"}
+            {T.t("Orologi"), "clock_dots", "clock_analog", "clock_pill", "clock_ring", "world_clock", "alarm"},
+            {T.t("Data e tempo"), "date_big", "date_dot", "calendar", "week", "year", "day", "countdown"},
+            {T.t("Meteo e cielo"), "weather", "weather_week", "weather_hours", "sun", "moon"},
+            {T.t("Batteria e sistema"), "battery_ring", "battery_pill", "battery_dots", "storage", "torch"},
+            {T.t("Musica e strumenti"), "media", "search", "compass", "steps", "counter", "dice"},
+            {T.t("Foto e testi"), "photo", "note", "proverb"},
+            {T.t("Benessere digitale"), "usage", "focus"}
     };
 
     static String name(String type) {
         switch (type) {
-            case "clock_dots": return "Orologio a puntini";
-            case "clock_analog": return "Orologio analogico";
-            case "clock_pill": return "Orologio a pillola";
-            case "date_big": return "Data grande";
-            case "date_dot": return "Data (cerchio)";
-            case "calendar": return "Calendario del mese";
-            case "weather": return "Meteo";
-            case "weather_week": return "Meteo settimana";
-            case "battery_ring": return "Batteria (anello)";
-            case "battery_pill": return "Batteria (pillola)";
-            case "battery_dots": return "Batteria (puntini)";
-            case "alarm": return "Sveglia";
-            case "search": return "Barra di ricerca";
-            case "world_clock": return "Fusi orari";
-            case "countdown": return "Conto alla rovescia";
-            case "photo": return "Foto";
-            case "compass": return "Bussola";
-            case "steps": return "Contapassi";
-            case "year": return "Anno in punti";
-            case "day": return "Giornata";
-            case "clock_ring": return "Orologio ad anello";
-            case "moon": return "Fase lunare";
-            case "sun": return "Alba e tramonto";
-            case "weather_hours": return "Meteo delle prossime ore";
-            case "counter": return "Contatore";
-            case "proverb": return "Proverbio del giorno";
-            case "dice": return "Dado";
-            case "week": return "Settimana";
-            case "storage": return "Memoria";
-            case "note": return "Nota";
-            case "torch": return "Torcia";
-            case "media": return "Musica";
-            case "usage": return "Tempo di utilizzo";
+            case "clock_dots": return T.t("Orologio a puntini");
+            case "clock_analog": return T.t("Orologio analogico");
+            case "clock_pill": return T.t("Orologio a pillola");
+            case "date_big": return T.t("Data grande");
+            case "date_dot": return T.t("Data (cerchio)");
+            case "calendar": return T.t("Calendario del mese");
+            case "weather": return T.t("Meteo");
+            case "weather_week": return T.t("Meteo settimana");
+            case "battery_ring": return T.t("Batteria (anello)");
+            case "battery_pill": return T.t("Batteria (pillola)");
+            case "battery_dots": return T.t("Batteria (puntini)");
+            case "alarm": return T.t("Sveglia");
+            case "search": return T.t("Barra di ricerca");
+            case "world_clock": return T.t("Fusi orari");
+            case "countdown": return T.t("Conto alla rovescia");
+            case "photo": return T.t("Foto");
+            case "compass": return T.t("Bussola");
+            case "steps": return T.t("Contapassi");
+            case "year": return T.t("Anno in punti");
+            case "day": return T.t("Giornata");
+            case "clock_ring": return T.t("Orologio ad anello");
+            case "moon": return T.t("Fase lunare");
+            case "sun": return T.t("Alba e tramonto");
+            case "weather_hours": return T.t("Meteo delle prossime ore");
+            case "counter": return T.t("Contatore");
+            case "proverb": return T.t("Proverbio del giorno");
+            case "dice": return T.t("Dado");
+            case "week": return T.t("Settimana");
+            case "storage": return T.t("Memoria");
+            case "note": return T.t("Nota");
+            case "torch": return T.t("Torcia");
+            case "media": return T.t("Musica");
+            case "usage": return T.t("Tempo di utilizzo");
             case "focus": return "Focus";
-            case "stack": return "Pila di widget";
+            case "stack": return T.t("Pila di widget");
             case "app": return "App";
-            case "folder": return "Cartella";
-            case "shortcut": return "Scorciatoia";
+            case "folder": return T.t("Cartella");
+            case "shortcut": return T.t("Scorciatoia");
             default: return "Widget";
         }
     }

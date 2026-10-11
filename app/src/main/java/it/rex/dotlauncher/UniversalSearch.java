@@ -145,7 +145,7 @@ class UniversalSearch extends ScrollView {
         firstApp = null;
         firstAction = null;
         if (query.isEmpty()) {
-            appsSection(recentApps(), "Tutte le app");
+            appsSection(recentApps(), T.t("Tutte le app"));
             return;
         }
         String norm = DotTextView.normalize(query);
@@ -155,7 +155,7 @@ class UniversalSearch extends ScrollView {
             Double v = SearchTools.calc(query);
             if (v != null) {
                 String res = SearchTools.format(v);
-                header("Calcolatrice");
+                header(T.t("Calcolatrice"));
                 Runnable copy = () -> copy(res);
                 bigResult("= " + res, query, copy);
                 firstAction = copy;
@@ -164,7 +164,7 @@ class UniversalSearch extends ScrollView {
         // 2) convertitore
         List<String[]> conv = SearchTools.convert(query);
         if (!conv.isEmpty()) {
-            header("Conversione");
+            header(T.t("Conversione"));
             for (int i = 0; i < Math.min(6, conv.size()); i++) {
                 String[] c = conv.get(i);
                 Runnable copy = () -> copy(c[0]);
@@ -197,14 +197,14 @@ class UniversalSearch extends ScrollView {
                 CharSequence ll = si.getLongLabel();
                 String hay = DotTextView.normalize((l == null ? "" : l) + " " + (ll == null ? "" : ll));
                 if (!hay.contains(norm)) continue;
-                if (n == 0) header("Azioni delle app");
+                if (n == 0) header(T.t("Azioni delle app"));
                 String app = appLabel(si.getPackage());
                 row(shortcutIcon(si), l == null ? String.valueOf(ll) : String.valueOf(l), app, () -> {
                     try {
                         LauncherApps la = (LauncherApps) act.getSystemService(Context.LAUNCHER_APPS_SERVICE);
                         la.startShortcut(si, null, null);
                     } catch (Exception e) {
-                        host.toast("Azione non disponibile");
+                        host.toast(T.t("Azione non disponibile"));
                     }
                 }, null);
                 if (++n >= 4) break;
@@ -214,7 +214,7 @@ class UniversalSearch extends ScrollView {
         int sn = 0;
         for (String[] s : SETTINGS) {
             if (!DotTextView.normalize(s[0] + " " + s[2]).contains(norm)) continue;
-            if (sn == 0) header("Impostazioni del telefono");
+            if (sn == 0) header(T.t("Impostazioni del telefono"));
             row(SectionIcons.bitmap(SectionIcons.SLIDERS, px(40), th.onTile, th.accent, circle()), s[0], s[2],
                     () -> host.startSafe(new Intent(s[1])), null);
             if (++sn >= 4) break;
@@ -244,7 +244,7 @@ class UniversalSearch extends ScrollView {
 
     private void header(String t) {
         TextView v = new TextView(act);
-        v.setText(th.upperLabels ? t.toUpperCase(Locale.ITALIAN) : t);
+        v.setText(th.upperLabels ? t.toUpperCase(T.loc()) : t);
         v.setTypeface(th.labelFace);
         v.setTextColor(th.sub);
         v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
@@ -275,7 +275,7 @@ class UniversalSearch extends ScrollView {
         m.setTextIsSelectable(false);
         box.addView(m);
         TextView hint = new TextView(act);
-        hint.setText("Tocca per copiare");
+        hint.setText(T.t("Tocca per copiare"));
         hint.setTextColor(th.accent);
         hint.setTypeface(th.bodyFace);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
@@ -383,7 +383,7 @@ class UniversalSearch extends ScrollView {
         header("Web");
         String eng = host.searchEngine();
         row(SectionIcons.bitmap(SectionIcons.GLOBE, px(40), th.onTile, th.accent, circle()),
-                "Cerca «" + q + "»", "con " + engineName(eng), () -> host.startSafe(
+                T.t("Cerca «") + q + "»", T.t("con ") + engineName(eng), () -> host.startSafe(
                         new Intent(Intent.ACTION_VIEW, Uri.parse(engineUrl(eng, q)))), null);
         if (firstAction == null) firstAction = () -> host.startSafe(new Intent(Intent.ACTION_VIEW, Uri.parse(engineUrl(eng, q))));
     }
@@ -455,28 +455,28 @@ class UniversalSearch extends ScrollView {
 
     private void showPeople(List<Object[]> contacts, List<Object[]> events, String q) {
         if (contacts == null) {
-            header("Contatti");
+            header(T.t("Contatti"));
             row(SectionIcons.bitmap(SectionIcons.PEOPLE, px(40), th.onTile, th.accent, circle()),
-                    "Cerca anche nei contatti", "Tocca per consentire l'accesso ai contatti", host::requestContacts, null);
+                    T.t("Cerca anche nei contatti"), T.t("Tocca per consentire l'accesso ai contatti"), host::requestContacts, null);
         } else if (!contacts.isEmpty()) {
-            header("Contatti");
+            header(T.t("Contatti"));
             for (Object[] c : contacts) {
                 long id = (Long) c[0];
                 String lookup = (String) c[1];
                 String name = (String) c[2];
                 Uri cu = ContactsContract.Contacts.getLookupUri(id, lookup);
-                row(letter(name), name, (Boolean) c[3] ? "Tieni premuto per chiamare" : "",
+                row(letter(name), name, (Boolean) c[3] ? T.t("Tieni premuto per chiamare") : "",
                         () -> host.startSafe(new Intent(Intent.ACTION_VIEW, cu)),
                         (Boolean) c[3] ? () -> dial(id) : null);
             }
         }
         if (events != null && !events.isEmpty()) {
-            header("Eventi");
-            SimpleDateFormat f = new SimpleDateFormat("EEE d MMM · HH:mm", Locale.ITALIAN);
+            header(T.t("Eventi"));
+            SimpleDateFormat f = new SimpleDateFormat("EEE d MMM · HH:mm", T.loc());
             for (Object[] e : events) {
                 long id = (Long) e[0], begin = (Long) e[2], end = (Long) e[3];
                 row(SectionIcons.bitmap(SectionIcons.CALENDAR, px(40), th.onTile, th.accent, circle()),
-                        e[1] == null ? "(senza titolo)" : (String) e[1], f.format(new Date(begin)), () -> {
+                        e[1] == null ? T.t("(senza titolo)") : (String) e[1], f.format(new Date(begin)), () -> {
                             Intent i = new Intent(Intent.ACTION_VIEW,
                                     ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, id));
                             i.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, begin);
@@ -517,7 +517,7 @@ class UniversalSearch extends ScrollView {
         p.setTextAlign(android.graphics.Paint.Align.CENTER);
         p.setTypeface(th.dots ? Fonts.dot : Fonts.medium);
         p.setTextSize(s * 0.45f);
-        String l = name == null || name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase(Locale.ITALIAN);
+        String l = name == null || name.isEmpty() ? "?" : name.substring(0, 1).toUpperCase(T.loc());
         c.drawText(l, s / 2f, s / 2f + s * 0.16f, p);
         return b;
     }
@@ -546,36 +546,36 @@ class UniversalSearch extends ScrollView {
     private void copy(String text) {
         ClipboardManager cm = (ClipboardManager) act.getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("risultato", text));
-        host.toast("Copiato: " + text);
+        host.toast(T.t("Copiato: ") + text);
     }
 
     /** Impostazioni del telefono raggiungibili dalla ricerca: {nome, azione, parole chiave}. */
     static final String[][] SETTINGS = {
-            {"Wi-Fi", Settings.ACTION_WIFI_SETTINGS, "wifi rete internet wireless"},
-            {"Bluetooth", Settings.ACTION_BLUETOOTH_SETTINGS, "cuffie auricolari dispositivi"},
-            {"Rete mobile", Settings.ACTION_DATA_ROAMING_SETTINGS, "dati sim roaming 4g 5g"},
-            {"Hotspot e tethering", "android.settings.TETHER_SETTINGS", "hotspot condivisione"},
-            {"Modalità aereo", Settings.ACTION_AIRPLANE_MODE_SETTINGS, "aereo volo"},
-            {"NFC", Settings.ACTION_NFC_SETTINGS, "pagamenti contactless"},
-            {"Schermo", Settings.ACTION_DISPLAY_SETTINGS, "display luminosità tema scuro"},
-            {"Suoni e vibrazione", Settings.ACTION_SOUND_SETTINGS, "suoneria volume vibrazione audio"},
-            {"Notifiche", "android.settings.NOTIFICATION_SETTINGS", "avvisi"},
-            {"Non disturbare", "android.settings.ZEN_MODE_SETTINGS", "silenzio dnd"},
-            {"Batteria", Intent.ACTION_POWER_USAGE_SUMMARY, "consumo energia risparmio"},
-            {"Memoria", Settings.ACTION_INTERNAL_STORAGE_SETTINGS, "archiviazione spazio"},
-            {"App", Settings.ACTION_APPLICATION_SETTINGS, "applicazioni gestione app predefinite"},
-            {"Posizione", Settings.ACTION_LOCATION_SOURCE_SETTINGS, "gps localizzazione"},
-            {"Sicurezza", Settings.ACTION_SECURITY_SETTINGS, "blocco schermo impronta pin password"},
-            {"Privacy", Settings.ACTION_PRIVACY_SETTINGS, "permessi"},
-            {"Account", Settings.ACTION_SYNC_SETTINGS, "sincronizzazione"},
-            {"Accessibilità", Settings.ACTION_ACCESSIBILITY_SETTINGS, "talkback testo grande"},
-            {"Data e ora", Settings.ACTION_DATE_SETTINGS, "orologio fuso orario"},
-            {"Lingua e tastiera", Settings.ACTION_LOCALE_SETTINGS, "lingua italiano tastiera"},
-            {"Opzioni sviluppatore", Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, "sviluppatori debug usb"},
-            {"Info telefono", Settings.ACTION_DEVICE_INFO_SETTINGS, "versione android modello"},
-            {"Launcher predefinito", Settings.ACTION_HOME_SETTINGS, "home schermata iniziale"},
-            {"Utilizzo dati", "android.settings.DATA_USAGE_SETTINGS", "consumo dati traffico"},
-            {"Sfondo del telefono", Intent.ACTION_SET_WALLPAPER, "sfondo wallpaper"},
-            {"Tutte le impostazioni", Settings.ACTION_SETTINGS, "impostazioni configurazione"},
+            {"Wi-Fi", Settings.ACTION_WIFI_SETTINGS, "wifi rete internet wireless network"},
+            {"Bluetooth", Settings.ACTION_BLUETOOTH_SETTINGS, "cuffie auricolari dispositivi headphones earbuds devices"},
+            {T.t("Rete mobile"), Settings.ACTION_DATA_ROAMING_SETTINGS, "dati sim roaming 4g 5g data mobile cellular"},
+            {T.t("Hotspot e tethering"), "android.settings.TETHER_SETTINGS", "hotspot condivisione tethering share"},
+            {T.t("Modalità aereo"), Settings.ACTION_AIRPLANE_MODE_SETTINGS, "aereo volo airplane flight"},
+            {"NFC", Settings.ACTION_NFC_SETTINGS, "pagamenti contactless payments"},
+            {T.t("Schermo"), Settings.ACTION_DISPLAY_SETTINGS, "display luminosità tema scuro screen brightness dark theme"},
+            {T.t("Suoni e vibrazione"), Settings.ACTION_SOUND_SETTINGS, "suoneria volume vibrazione audio sound ringtone vibration"},
+            {T.t("Notifiche"), "android.settings.NOTIFICATION_SETTINGS", "avvisi notifications alerts"},
+            {T.t("Non disturbare"), "android.settings.ZEN_MODE_SETTINGS", "silenzio dnd do not disturb silence"},
+            {T.t("Batteria"), Intent.ACTION_POWER_USAGE_SUMMARY, "consumo energia risparmio battery power saver"},
+            {T.t("Memoria"), Settings.ACTION_INTERNAL_STORAGE_SETTINGS, "archiviazione spazio storage space"},
+            {"App", Settings.ACTION_APPLICATION_SETTINGS, "applicazioni gestione app predefinite apps default applications"},
+            {T.t("Posizione"), Settings.ACTION_LOCATION_SOURCE_SETTINGS, "gps localizzazione location"},
+            {T.t("Sicurezza"), Settings.ACTION_SECURITY_SETTINGS, "blocco schermo impronta pin password security lock fingerprint"},
+            {"Privacy", Settings.ACTION_PRIVACY_SETTINGS, "permessi permissions"},
+            {"Account", Settings.ACTION_SYNC_SETTINGS, "sincronizzazione accounts sync"},
+            {T.t("Accessibilità"), Settings.ACTION_ACCESSIBILITY_SETTINGS, "talkback testo grande accessibility large text"},
+            {T.t("Data e ora"), Settings.ACTION_DATE_SETTINGS, "orologio fuso orario date time clock timezone"},
+            {T.t("Lingua e tastiera"), Settings.ACTION_LOCALE_SETTINGS, "lingua italiano tastiera language english keyboard"},
+            {T.t("Opzioni sviluppatore"), Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS, "sviluppatori debug usb developer options"},
+            {T.t("Info telefono"), Settings.ACTION_DEVICE_INFO_SETTINGS, "versione android modello about phone version model"},
+            {T.t("Launcher predefinito"), Settings.ACTION_HOME_SETTINGS, "home schermata iniziale default launcher home"},
+            {T.t("Utilizzo dati"), "android.settings.DATA_USAGE_SETTINGS", "consumo dati traffico data usage"},
+            {T.t("Sfondo del telefono"), Intent.ACTION_SET_WALLPAPER, "sfondo wallpaper background"},
+            {T.t("Tutte le impostazioni"), Settings.ACTION_SETTINGS, "impostazioni configurazione settings all"},
     };
 }

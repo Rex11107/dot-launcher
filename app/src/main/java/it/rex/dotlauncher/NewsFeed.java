@@ -29,8 +29,16 @@ final class NewsFeed {
         long time;
     }
 
-    /** Fonti suggerite: {nome, indirizzo}. */
-    static final String[][] PRESETS = {
+    /** Fonti suggerite: {nome, indirizzo} (in inglese si propongono testate internazionali). */
+    static final String[][] PRESETS = T.en ? new String[][]{
+            {"BBC News", "https://feeds.bbci.co.uk/news/rss.xml"},
+            {"The Guardian", "https://www.theguardian.com/international/rss"},
+            {"Ars Technica", "https://feeds.arstechnica.com/arstechnica/index"},
+            {"The Verge", "https://www.theverge.com/rss/index.xml"},
+            {"NPR", "https://feeds.npr.org/1001/rss.xml"},
+            {"ANSA", "https://www.ansa.it/sito/ansait_rss.xml"},
+            {"Il Post", "https://www.ilpost.it/feed/"},
+    } : new String[][]{
             {"ANSA", "https://www.ansa.it/sito/ansait_rss.xml"},
             {"Il Post", "https://www.ilpost.it/feed/"},
             {"HDblog", "https://www.hdblog.it/feed/"},
@@ -38,7 +46,9 @@ final class NewsFeed {
             {"Il Fatto Quotidiano", "https://www.ilfattoquotidiano.it/feed/"},
             {"Internazionale", "https://www.internazionale.it/sitemaps/rss.xml"},
     };
-    static final String DEFAULT_SOURCES = "ANSA|https://www.ansa.it/sito/ansait_rss.xml\n"
+    static final String DEFAULT_SOURCES = T.en
+            ? "BBC News|https://feeds.bbci.co.uk/news/rss.xml\nThe Guardian|https://www.theguardian.com/international/rss"
+            : "ANSA|https://www.ansa.it/sito/ansait_rss.xml\n"
             + "Il Post|https://www.ilpost.it/feed/";
 
     private static final Pattern IMG = Pattern.compile("<img[^>]+src=[\"']([^\"']+)[\"']", Pattern.CASE_INSENSITIVE);

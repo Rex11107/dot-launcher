@@ -164,14 +164,14 @@ class LeftPanel extends FrameLayout {
         dateView.setSingleLine(true);
         rebuildHeaderDate();
         r.addView(dateView, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        r.addView(iconButton(SectionIcons.MORE, v -> editBlocks(), "Modifica la pagina"));
+        r.addView(iconButton(SectionIcons.MORE, v -> editBlocks(), T.t("Modifica la pagina")));
         return r;
     }
 
     private void rebuildHeaderDate() {
         if (dateView == null) return;
-        String d = new SimpleDateFormat("EEE d MMM", Locale.ITALIAN).format(new Date()).replace(".", "");
-        dateView.setText(th.upperLabels ? d.toUpperCase(Locale.ITALIAN) : d);
+        String d = new SimpleDateFormat("EEE d MMM", T.loc()).format(new Date()).replace(".", "");
+        dateView.setText(th.upperLabels ? d.toUpperCase(T.loc()) : d);
     }
 
     private List<String> order() {
@@ -189,11 +189,11 @@ class LeftPanel extends FrameLayout {
 
     static String blockName(String b) {
         switch (b) {
-            case "ai": return "Chiedi all'IA";
-            case "news": return "Notizie";
-            case "calendar": return "Calendario";
-            case "tasks": return "Attività";
-            default: return "Note";
+            case "ai": return T.t("Chiedi all'IA");
+            case "news": return T.t("Notizie");
+            case "calendar": return T.t("Calendario");
+            case "tasks": return T.t("Attività");
+            default: return T.t("Note");
         }
     }
 
@@ -220,7 +220,7 @@ class LeftPanel extends FrameLayout {
             blocks.addView(v, lp);
         }
         if (!any) {
-            TextView t = text("Nessun blocco: tocca ⋮ in alto per sceglierne", 14, th.sub);
+            TextView t = text(T.t("Nessun blocco: tocca ⋮ in alto per sceglierne"), 14, th.sub);
             t.setPadding(px(6), px(20), px(6), 0);
             blocks.addView(t);
         }
@@ -234,10 +234,10 @@ class LeftPanel extends FrameLayout {
         for (int i = 0; i < labels.length; i++) {
             labels[i] = (off.contains(ord.get(i)) ? "○  " : "●  ") + blockName(ord.get(i));
         }
-        Sheet.list(act, th, "Blocchi della pagina", labels, -1, w -> {
+        Sheet.list(act, th, T.t("Blocchi della pagina"), labels, -1, w -> {
             String b = ord.get(w);
             boolean hidden = off.contains(b);
-            String[] opts = {hidden ? "Mostra" : "Nascondi", "Sposta su", "Sposta giù"};
+            String[] opts = {hidden ? T.t("Mostra") : T.t("Nascondi"), T.t("Sposta su"), T.t("Sposta giù")};
             Sheet.list(act, th, blockName(b), opts, -1, o -> {
                 if (o == 0) {
                     if (hidden) off.remove(b);
@@ -273,7 +273,7 @@ class LeftPanel extends FrameLayout {
         h.setOrientation(LinearLayout.HORIZONTAL);
         h.setGravity(Gravity.CENTER_VERTICAL);
         TextView t = new TextView(act);
-        t.setText(th.upperLabels ? title.toUpperCase(Locale.ITALIAN) : title);
+        t.setText(th.upperLabels ? title.toUpperCase(T.loc()) : title);
         t.setTypeface(th.labelFace);
         t.setTextColor(th.sub);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -370,7 +370,7 @@ class LeftPanel extends FrameLayout {
             aiSettings();
             return true;
         });
-        LinearLayout c = card("Chiedi", aiChip, iconButton(SectionIcons.MORE, v -> aiSettings(), "Impostazioni IA"));
+        LinearLayout c = card(T.t("Chiedi"), aiChip, iconButton(SectionIcons.MORE, v -> aiSettings(), T.t("Impostazioni IA")));
 
         aiLog = new LinearLayout(act);
         aiLog.setOrientation(LinearLayout.VERTICAL);
@@ -389,7 +389,7 @@ class LeftPanel extends FrameLayout {
             return true;
         });
         row.addView(aiInput, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        ImageView send = iconButton(SEND, v -> sendAi(), "Invia");
+        ImageView send = iconButton(SEND, v -> sendAi(), T.t("Invia"));
         LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(px(44), px(44));
         sl.leftMargin = px(6);
         GradientDrawable sbg = new GradientDrawable();
@@ -415,10 +415,10 @@ class LeftPanel extends FrameLayout {
         if (aiChip == null) return;
         String p = provider();
         String l = AiClient.label(p) + (apiMode(p) ? " · API" : "");
-        aiChip.setText(th.upperLabels ? l.toUpperCase(Locale.ITALIAN) : l);
+        aiChip.setText(th.upperLabels ? l.toUpperCase(T.loc()) : l);
         if (aiInput != null) {
-            aiInput.setHint(apiMode(p) ? "Chiedi a " + AiClient.label(p) + "…"
-                    : "Chiedi a " + AiClient.label(p) + " (si apre l'app)…");
+            aiInput.setHint(apiMode(p) ? T.t("Chiedi a ") + AiClient.label(p) + "…"
+                    : T.t("Chiedi a ") + AiClient.label(p) + T.t(" (si apre l'app)…"));
         }
     }
 
@@ -439,7 +439,7 @@ class LeftPanel extends FrameLayout {
             t.setPadding(px(4), px(2), px(4), px(2));
             aiLog.addView(t);
         }
-        TextView clear = text("✕  nuova domanda", 12, th.sub);
+        TextView clear = text(T.t("✕  nuova domanda"), 12, th.sub);
         clear.setPadding(px(4), px(8), px(4), px(4));
         clear.setOnClickListener(v -> {
             history.clear();
@@ -487,9 +487,9 @@ class LeftPanel extends FrameLayout {
             String ans;
             try {
                 ans = AiClient.ask(p, key, model, base, h);
-                if (ans.isEmpty()) ans = "(nessuna risposta)";
+                if (ans.isEmpty()) ans = T.t("(nessuna risposta)");
             } catch (Exception e) {
-                ans = "⚠ " + (e.getMessage() == null ? "Errore di rete" : e.getMessage());
+                ans = "⚠ " + (e.getMessage() == null ? T.t("Errore di rete") : e.getMessage());
             }
             final String a = ans;
             ui.post(() -> {
@@ -518,14 +518,14 @@ class LeftPanel extends FrameLayout {
         }
         String url = AiClient.webUrl(p, text);
         if (url == null) {
-            host.toast("Per " + AiClient.label(p) + " serve una chiave API: tocca ⋮");
+            host.toast(T.t("Per ") + AiClient.label(p) + T.t(" serve una chiave API: tocca ⋮"));
             aiSettings();
             return;
         }
         if (!AiClient.webPrefills(p)) {
             ClipboardManager cm = (ClipboardManager) act.getSystemService(Context.CLIPBOARD_SERVICE);
             if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("domanda", text));
-            host.toast("Domanda copiata: incollala nella chat");
+            host.toast(T.t("Domanda copiata: incollala nella chat"));
         }
         host.startSafe(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
     }
@@ -536,68 +536,68 @@ class LeftPanel extends FrameLayout {
         String key = aiKey(p);
         String model = prefs.getString("aiModel_" + p, "");
         List<String> opts = new ArrayList<>();
-        opts.add("Servizio: " + AiClient.label(p));
-        opts.add("Modalità: " + (api ? "risposte qui (chiave API)" : "apri l'app o il sito"));
-        opts.add("Chiave API: " + (key.isEmpty() ? "nessuna" : "•••• " + key.substring(Math.max(0, key.length() - 4))));
-        opts.add("Modello: " + (model.isEmpty() ? AiClient.defaultModel(p) + " (predefinito)" : model));
+        opts.add(T.t("Servizio: ") + AiClient.label(p));
+        opts.add(T.t("Modalità: ") + (api ? T.t("risposte qui (chiave API)") : T.t("apri l'app o il sito")));
+        opts.add(T.t("Chiave API: ") + (key.isEmpty() ? T.t("nessuna") : "•••• " + key.substring(Math.max(0, key.length() - 4))));
+        opts.add(T.t("Modello: ") + (model.isEmpty() ? AiClient.defaultModel(p) + T.t(" (predefinito)") : model));
         if ("custom".equals(p) || "openrouter".equals(p)) {
             String b = prefs.getString("aiBase_" + p, "");
-            opts.add("Indirizzo: " + (b.isEmpty() ? AiClient.defaultBase(p).isEmpty() ? "da impostare" : AiClient.defaultBase(p) : b));
+            opts.add(T.t("Indirizzo: ") + (b.isEmpty() ? AiClient.defaultBase(p).isEmpty() ? T.t("da impostare") : AiClient.defaultBase(p) : b));
         }
-        if (!key.isEmpty()) opts.add("Cancella la chiave");
-        Sheet.list(act, th, "Chiedi all'IA", opts.toArray(new String[0]), -1, w -> {
+        if (!key.isEmpty()) opts.add(T.t("Cancella la chiave"));
+        Sheet.list(act, th, T.t("Chiedi all'IA"), opts.toArray(new String[0]), -1, w -> {
             String o = opts.get(w);
-            if (o.startsWith("Servizio")) {
+            if (o.startsWith(T.t("Servizio: "))) {
                 String[] ps = AiClient.PROVIDERS;
                 String[] names = new String[ps.length];
                 for (int i = 0; i < ps.length; i++) names[i] = AiClient.label(ps[i]);
-                Sheet.list(act, th, "Servizio", names, Arrays.asList(ps).indexOf(p), s -> {
+                Sheet.list(act, th, T.t("Servizio"), names, Arrays.asList(ps).indexOf(p), s -> {
                     prefs.edit().putString("aiProvider", ps[s]).apply();
                     history.clear();
                     updateAiChip();
                     renderLog();
                     aiSettings();
                 });
-            } else if (o.startsWith("Modalità")) {
+            } else if (o.startsWith(T.t("Modalità: "))) {
                 if (!api && key.isEmpty()) {
-                    host.toast("Inserisci prima una chiave API");
+                    host.toast(T.t("Inserisci prima una chiave API"));
                     askKey(p, true);
                     return;
                 }
                 prefs.edit().putString("aiMode_" + p, api ? "app" : "api").apply();
                 updateAiChip();
                 aiSettings();
-            } else if (o.startsWith("Chiave")) {
+            } else if (o.startsWith(T.t("Chiave API: "))) {
                 askKey(p, false);
-            } else if (o.startsWith("Modello")) {
-                Sheet.input(act, th, "Modello", AiClient.defaultModel(p).isEmpty() ? "nome del modello"
+            } else if (o.startsWith(T.t("Modello: "))) {
+                Sheet.input(act, th, T.t("Modello"), AiClient.defaultModel(p).isEmpty() ? T.t("nome del modello")
                         : AiClient.defaultModel(p), model, v -> {
                     prefs.edit().putString("aiModel_" + p, v.trim()).apply();
                     aiSettings();
                 });
-            } else if (o.startsWith("Indirizzo")) {
-                Sheet.input(act, th, "Indirizzo compatibile OpenAI", "https://…/v1",
+            } else if (o.startsWith(T.t("Indirizzo: "))) {
+                Sheet.input(act, th, T.t("Indirizzo compatibile OpenAI"), "https://…/v1",
                         prefs.getString("aiBase_" + p, ""), v -> {
                             prefs.edit().putString("aiBase_" + p, v.trim()).apply();
                             aiSettings();
                         });
-            } else if (o.startsWith("Cancella")) {
+            } else if (o.equals(T.t("Cancella la chiave"))) {
                 secret.edit().remove("aiKey_" + p).apply();
                 prefs.edit().putString("aiMode_" + p, "app").apply();
                 updateAiChip();
-                host.toast("Chiave cancellata");
+                host.toast(T.t("Chiave cancellata"));
             }
         });
     }
 
     private void askKey(String p, boolean enable) {
-        Sheet.input(act, th, "Chiave API di " + AiClient.label(p), "resta solo su questo telefono", "", v -> {
+        Sheet.input(act, th, T.t("Chiave API di ") + AiClient.label(p), T.t("resta solo su questo telefono"), "", v -> {
             String k = v.trim();
             if (k.isEmpty()) return;
             secret.edit().putString("aiKey_" + p, k).apply();
             if (enable) prefs.edit().putString("aiMode_" + p, "api").apply();
             updateAiChip();
-            host.toast("Chiave salvata solo su questo telefono");
+            host.toast(T.t("Chiave salvata solo su questo telefono"));
             aiSettings();
         });
     }
@@ -614,7 +614,7 @@ class LeftPanel extends FrameLayout {
     private String newsQuery = "";
 
     private View newsBlock() {
-        newsSearch = field("Cerca tra le notizie");
+        newsSearch = field(T.t("Cerca tra le notizie"));
         newsSearch.setSingleLine(true);
         newsSearch.setVisibility(View.GONE);
         newsSearch.addTextChangedListener(new TextWatcher() {
@@ -625,7 +625,7 @@ class LeftPanel extends FrameLayout {
                 showNews();
             }
         });
-        LinearLayout c = card("Notizie",
+        LinearLayout c = card(T.t("Notizie"),
                 iconButton(SectionIcons.SEARCH, v -> {
                     boolean show = newsSearch.getVisibility() != View.VISIBLE;
                     newsSearch.setVisibility(show ? View.VISIBLE : View.GONE);
@@ -637,8 +637,8 @@ class LeftPanel extends FrameLayout {
                         newsSearch.setText("");
                         hideKeyboard(newsSearch);
                     }
-                }, "Cerca"),
-                iconButton(SectionIcons.MORE, v -> newsMenu(), "Fonti"));
+                }, T.t("Cerca")),
+                iconButton(SectionIcons.MORE, v -> newsMenu(), T.t("Fonti")));
         LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         sl.bottomMargin = px(8);
@@ -674,7 +674,7 @@ class LeftPanel extends FrameLayout {
                     prefs.edit().putString("newsCache", NewsFeed.toJson(list))
                             .putLong("newsTime", System.currentTimeMillis()).apply();
                 } else if (force) {
-                    host.toast("Notizie non raggiungibili: controlla la connessione");
+                    host.toast(T.t("Notizie non raggiungibili: controlla la connessione"));
                 }
                 showNews();
             });
@@ -691,8 +691,8 @@ class LeftPanel extends FrameLayout {
             if (shown.size() >= 30) break;
         }
         if (shown.isEmpty()) {
-            TextView t = text(newsLoading ? "Carico le notizie…" : !newsQuery.isEmpty() ? "Nessuna notizia trovata"
-                    : "Nessuna notizia: tocca ⋮ per aggiornare o scegliere le fonti", 14, th.sub);
+            TextView t = text(newsLoading ? T.t("Carico le notizie…") : !newsQuery.isEmpty() ? T.t("Nessuna notizia trovata")
+                    : T.t("Nessuna notizia: tocca ⋮ per aggiornare o scegliere le fonti"), 14, th.sub);
             t.setPadding(px(4), px(8), px(4), px(8));
             newsStrip.addView(t);
             return;
@@ -738,7 +738,7 @@ class LeftPanel extends FrameLayout {
             Intent s = new Intent(Intent.ACTION_SEND);
             s.setType("text/plain");
             s.putExtra(Intent.EXTRA_TEXT, a.title + "\n" + a.link);
-            host.startSafe(Intent.createChooser(s, "Condividi"));
+            host.startSafe(Intent.createChooser(s, T.t("Condividi")));
             return true;
         });
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -751,27 +751,27 @@ class LeftPanel extends FrameLayout {
         if (t <= 0) return "";
         long m = (System.currentTimeMillis() - t) / 60000;
         if (m < 1) return "ora";
-        if (m < 60) return m + " min";
+        if (m < 60) return m + T.t(" min");
         long h = m / 60;
         if (h < 24) return h + " h";
-        if (h < 48) return "ieri";
-        return new SimpleDateFormat("d MMM", Locale.ITALIAN).format(new Date(t));
+        if (h < 48) return T.t("ieri");
+        return new SimpleDateFormat("d MMM", T.loc()).format(new Date(t));
     }
 
     private void newsMenu() {
         List<String[]> src = newsSources();
         List<String> opts = new ArrayList<>();
-        opts.add("Aggiorna ora");
+        opts.add(T.t("Aggiorna ora"));
         for (String[] s : src) opts.add("✕  " + s[0]);
-        opts.add("+  Aggiungi una fonte");
-        Sheet.list(act, th, "Fonti delle notizie", opts.toArray(new String[0]), -1, w -> {
+        opts.add(T.t("+  Aggiungi una fonte"));
+        Sheet.list(act, th, T.t("Fonti delle notizie"), opts.toArray(new String[0]), -1, w -> {
             if (w == 0) {
                 refreshNews(true);
             } else if (w == opts.size() - 1) {
                 addSource();
             } else {
                 String[] s = src.get(w - 1);
-                Sheet.confirm(act, th, "Togli la fonte", "Togliere " + s[0] + " dalle notizie?", "Togli", () -> {
+                Sheet.confirm(act, th, T.t("Togli la fonte"), T.t("Togliere ") + s[0] + T.t(" dalle notizie?"), T.t("Togli"), () -> {
                     src.remove(w - 1);
                     prefs.edit().putString("newsSources", NewsFeed.join(src)).apply();
                     refreshNews(true);
@@ -790,8 +790,8 @@ class LeftPanel extends FrameLayout {
         }
         String[] opts = new String[avail.size() + 1];
         for (int i = 0; i < avail.size(); i++) opts[i] = avail.get(i)[0];
-        opts[avail.size()] = "Indirizzo di un feed RSS…";
-        Sheet.list(act, th, "Aggiungi una fonte", opts, -1, w -> {
+        opts[avail.size()] = T.t("Indirizzo di un feed RSS…");
+        Sheet.list(act, th, T.t("Aggiungi una fonte"), opts, -1, w -> {
             if (w < avail.size()) {
                 src.add(avail.get(w));
                 prefs.edit().putString("newsSources", NewsFeed.join(src)).apply();
@@ -803,7 +803,7 @@ class LeftPanel extends FrameLayout {
                         return;
                     }
                     String name = Uri.parse(url).getHost();
-                    if (name == null) name = "Fonte";
+                    if (name == null) name = T.t("Fonte");
                     name = name.replaceFirst("^www\\.", "");
                     src.add(new String[]{name, url});
                     prefs.edit().putString("newsSources", NewsFeed.join(src)).apply();
@@ -820,10 +820,10 @@ class LeftPanel extends FrameLayout {
     private LinearLayout eventsBox;
 
     private View calendarBlock() {
-        LinearLayout c = card("Calendario", iconButton(SectionIcons.PLUS, v -> {
+        LinearLayout c = card(T.t("Calendario"), iconButton(SectionIcons.PLUS, v -> {
             Intent i = new Intent(Intent.ACTION_INSERT).setData(CalendarContract.Events.CONTENT_URI);
             host.startSafe(i);
-        }, "Nuovo evento"));
+        }, T.t("Nuovo evento")));
         Item fake = new Item("calendar", 0, 0, 4, 3, 0, 0);
         NothingTile cal = new NothingTile(act, fake, th, h24);
         cal.setOnClickListener(v -> {
@@ -842,7 +842,7 @@ class LeftPanel extends FrameLayout {
         if (eventsBox == null) return;
         eventsBox.removeAllViews();
         if (act.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
-            TextView t = text("Tocca qui per vedere i tuoi prossimi eventi", 14, th.accent);
+            TextView t = text(T.t("Tocca qui per vedere i tuoi prossimi eventi"), 14, th.accent);
             t.setPadding(px(4), px(6), px(4), px(4));
             t.setOnClickListener(v -> host.requestCalendar());
             eventsBox.addView(t);
@@ -878,19 +878,19 @@ class LeftPanel extends FrameLayout {
         if (eventsBox == null) return;
         eventsBox.removeAllViews();
         if (evs.isEmpty()) {
-            TextView t = text("Nessun evento nei prossimi 7 giorni", 14, th.sub);
+            TextView t = text(T.t("Nessun evento nei prossimi 7 giorni"), 14, th.sub);
             t.setPadding(px(4), px(6), px(4), px(4));
             eventsBox.addView(t);
             return;
         }
-        SimpleDateFormat tf = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.ITALIAN);
-        SimpleDateFormat df = new SimpleDateFormat("EEE d", Locale.ITALIAN);
+        SimpleDateFormat tf = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc());
+        SimpleDateFormat df = new SimpleDateFormat("EEE d", T.loc());
         for (Object[] e : evs) {
             long id = (Long) e[0], begin = (Long) e[2], end = (Long) e[3];
             boolean allDay = (Boolean) e[4];
             int color = (Integer) e[5];
             int diff = WData.daysTo(begin);
-            String day = diff <= 0 ? "Oggi" : diff == 1 ? "Domani" : df.format(new Date(begin)).replace(".", "");
+            String day = diff <= 0 ? T.t("Oggi") : diff == 1 ? T.t("Domani") : df.format(new Date(begin)).replace(".", "");
             String when = day + (allDay ? "" : " · " + tf.format(new Date(begin)));
             LinearLayout row = new LinearLayout(act);
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -905,10 +905,10 @@ class LeftPanel extends FrameLayout {
             LinearLayout texts = new LinearLayout(act);
             texts.setOrientation(LinearLayout.VERTICAL);
             texts.setPadding(px(12), 0, 0, 0);
-            TextView w = text(th.upperLabels ? when.toUpperCase(Locale.ITALIAN) : when, 11, diff <= 0 ? th.accent : th.sub);
+            TextView w = text(th.upperLabels ? when.toUpperCase(T.loc()) : when, 11, diff <= 0 ? th.accent : th.sub);
             w.setTypeface(th.labelFace);
             texts.addView(w);
-            TextView t = text(e[1] == null ? "(senza titolo)" : (String) e[1], 15, th.onTile);
+            TextView t = text(e[1] == null ? T.t("(senza titolo)") : (String) e[1], 15, th.onTile);
             t.setSingleLine(true);
             t.setEllipsize(TextUtils.TruncateAt.END);
             texts.addView(t);
@@ -929,7 +929,7 @@ class LeftPanel extends FrameLayout {
     // =====================================================================
 
     private View tasksBlock() {
-        LinearLayout c = card("Attività", iconButton(SectionIcons.CLOSE, v -> clearDone(), "Togli le completate"));
+        LinearLayout c = card(T.t("Attività"), iconButton(SectionIcons.CLOSE, v -> clearDone(), T.t("Togli le completate")));
         LinearLayout list = new LinearLayout(act);
         list.setOrientation(LinearLayout.VERTICAL);
         c.addView(list);
@@ -966,7 +966,7 @@ class LeftPanel extends FrameLayout {
                     b.remove(idx);
                     saveTasks(b);
                     render[0].run();
-                    host.toast("Attività tolta");
+                    host.toast(T.t("Attività tolta"));
                     return true;
                 });
                 list.addView(row);
@@ -977,7 +977,7 @@ class LeftPanel extends FrameLayout {
         LinearLayout row = new LinearLayout(act);
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setGravity(Gravity.CENTER_VERTICAL);
-        EditText in = field("Nuova attività");
+        EditText in = field(T.t("Nuova attività"));
         in.setSingleLine(true);
         in.setImeOptions(EditorInfo.IME_ACTION_DONE);
         Runnable add = () -> {
@@ -997,7 +997,7 @@ class LeftPanel extends FrameLayout {
             return true;
         });
         row.addView(in, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-        ImageView plus = iconButton(SectionIcons.PLUS, v -> add.run(), "Aggiungi");
+        ImageView plus = iconButton(SectionIcons.PLUS, v -> add.run(), T.t("Aggiungi"));
         row.addView(plus);
         LinearLayout.LayoutParams rl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
@@ -1051,8 +1051,8 @@ class LeftPanel extends FrameLayout {
     }
 
     private View notesBlock() {
-        LinearLayout c = card("Note");
-        EditText e = field("Scrivi qui…");
+        LinearLayout c = card(T.t("Note"));
+        EditText e = field(T.t("Scrivi qui…"));
         e.setGravity(Gravity.TOP | Gravity.START);
         e.setMinLines(4);
         e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE

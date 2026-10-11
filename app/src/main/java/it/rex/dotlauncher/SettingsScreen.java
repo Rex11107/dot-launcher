@@ -58,7 +58,7 @@ class SettingsScreen extends FrameLayout {
         ImageView back = new ImageView(a);
         back.setImageBitmap(SectionIcons.bitmap(BACK, px(44), th.onTile, th.accent, 0));
         back.setPadding(px(12), px(12), px(12), px(12));
-        back.setContentDescription("Indietro");
+        back.setContentDescription(T.t("Indietro"));
         back.setOnClickListener(v -> onBack.run());
         bar.addView(back, new LinearLayout.LayoutParams(px(48), px(48)));
         View title;
@@ -68,11 +68,11 @@ class SettingsScreen extends FrameLayout {
             dt.setFitWidth(true, 3.4f * dp);
             dt.setColor(th.onTile);
             dt.setAccent(".", th.accent);
-            dt.setText("IMPOSTAZIONI.");
+            dt.setText(T.t("IMPOSTAZIONI."));
             title = dt;
         } else {
             TextView tv = new TextView(a);
-            tv.setText("Impostazioni");
+            tv.setText(T.t("Impostazioni"));
             tv.setTextColor(th.onTile);
             tv.setTypeface(th.titleFace);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
@@ -116,8 +116,9 @@ class SettingsScreen extends FrameLayout {
     // ---------- costruzione ----------
 
     void section(String title) {
+        title = T.t(title);
         TextView t = new TextView(act);
-        t.setText(th.upperLabels ? title.toUpperCase(Locale.ITALIAN) : title);
+        t.setText(th.upperLabels ? title.toUpperCase(T.loc()) : title);
         t.setTypeface(th.labelFace);
         t.setTextColor(th.sub);
         t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
@@ -137,6 +138,8 @@ class SettingsScreen extends FrameLayout {
     }
 
     private LinearLayout baseRow(String[] icon, String title, String value) {
+        title = T.t(title);
+        value = T.t(value);
         if (group == null) section("");
         if (group.getChildCount() > 0) {
             View div = new View(act);

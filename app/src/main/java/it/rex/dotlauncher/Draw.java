@@ -179,7 +179,8 @@ final class Draw {
         p.setTypeface(th.labelFace);
         p.setTextSize(size);
         p.setColor(color);
-        if (th.upperLabels) s = s.toUpperCase(Locale.ITALIAN);
+        s = T.t(s);
+        if (th.upperLabels) s = s.toUpperCase(T.loc());
         p.setLetterSpacing(th.upperLabels ? 0.04f : 0f);
         float w = p.measureText(s);
         if (maxW > 0 && w > maxW) {

@@ -331,7 +331,7 @@ final class Sections {
 
     /** Mette tutto in ordine alfabetico (usato passando all'ordine libero, così nulla si sposta). */
     void sortAll(LabelSource labels) {
-        final Collator col = Collator.getInstance(Locale.ITALIAN);
+        final Collator col = Collator.getInstance(T.loc());
         for (Section s : list) {
             Collections.sort(s.entries, (x, y) -> col.compare(
                     x.isFolder() ? x.name : labels.labelFor(x.app),
@@ -381,7 +381,7 @@ final class Sections {
             } else if (!hidden.contains(e.app)) out.add(e);
         }
         if (alpha) {
-            final Collator col = Collator.getInstance(Locale.ITALIAN);
+            final Collator col = Collator.getInstance(T.loc());
             Collections.sort(out, (x, y) -> col.compare(
                     x.isFolder() ? x.name : labels.labelFor(x.app),
                     y.isFolder() ? y.name : labels.labelFor(y.app)));

@@ -46,7 +46,7 @@ final class SearchTools {
     }
 
     static String format(double v) {
-        DecimalFormatSymbols sym = new DecimalFormatSymbols(Locale.ITALIAN);
+        DecimalFormatSymbols sym = new DecimalFormatSymbols(T.loc());
         if (Math.abs(v) >= 1e12 || (Math.abs(v) < 1e-6 && v != 0)) {
             return new DecimalFormat("0.######E0", sym).format(v);
         }

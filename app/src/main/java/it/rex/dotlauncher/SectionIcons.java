@@ -105,18 +105,18 @@ final class SectionIcons {
 
     /** Icone sceglibili per una sezione: {nome interno, nome mostrato}. */
     static final String[][] CHOICES = {
-            {"chat", "Messaggi"}, {"globe", "Internet"}, {"photo", "Foto"}, {"tv", "Video"},
-            {"pad", "Giochi"}, {"cap", "Studio"}, {"money", "Soldi"}, {"gear", "Strumenti"},
-            {"shapes", "Varie"}, {"music", "Musica"}, {"heart", "Preferiti"}, {"star", "Stella"},
-            {"bag", "Acquisti"}, {"book", "Lettura"}, {"work", "Lavoro"}, {"health", "Salute"},
-            {"home", "Casa"}, {"car", "Auto"}, {"code", "Sviluppo"}, {"grid", "Tutte"},
-            {"sliders", "Impostazioni"}, {"phone", "Dispositivo"}, {"chip", "Sistema"}, {"wifi", "Connessioni"},
-            {"camera", "Fotocamera"}, {"pin", "Mappe"}, {"calendar", "Calendario"}, {"mail", "Posta"},
-            {"lock", "Sicurezza"}, {"cloud", "Cloud"}, {"bolt", "Energia"}, {"bell", "Avvisi"},
-            {"coffee", "Cibo"}, {"ball", "Sport"}, {"plane", "Viaggi"}, {"cart", "Spesa"},
-            {"palette", "Arte"}, {"sun", "Meteo"}, {"moon", "Notte"}, {"wrench", "Attrezzi"},
-            {"download", "Download"}, {"leaf", "Natura"}, {"paw", "Animali"}, {"film", "Film"},
-            {"news", "Notizie"}, {"chart", "Grafici"}, {"people", "Persone"}, {"steps", "Fitness"}
+            {"chat", T.t("Messaggi")}, {"globe", "Internet"}, {"photo", T.t("Foto")}, {"tv", "Video"},
+            {"pad", T.t("Giochi")}, {"cap", T.t("Studio")}, {"money", T.t("Soldi")}, {"gear", T.t("Strumenti")},
+            {"shapes", T.t("Varie")}, {"music", T.t("Musica")}, {"heart", T.t("Preferiti")}, {"star", T.t("Stella")},
+            {"bag", T.t("Acquisti")}, {"book", T.t("Lettura")}, {"work", T.t("Lavoro")}, {"health", T.t("Salute")},
+            {"home", T.t("Casa")}, {"car", "Auto"}, {"code", T.t("Sviluppo")}, {"grid", T.t("Tutte")},
+            {"sliders", T.t("Impostazioni")}, {"phone", T.t("Dispositivo")}, {"chip", T.t("Sistema")}, {"wifi", T.t("Connessioni")},
+            {"camera", T.t("Fotocamera")}, {"pin", T.t("Mappe")}, {"calendar", T.t("Calendario")}, {"mail", T.t("Posta")},
+            {"lock", T.t("Sicurezza")}, {"cloud", "Cloud"}, {"bolt", T.t("Energia")}, {"bell", T.t("Avvisi")},
+            {"coffee", T.t("Cibo")}, {"ball", "Sport"}, {"plane", T.t("Viaggi")}, {"cart", T.t("Spesa")},
+            {"palette", T.t("Arte")}, {"sun", T.t("Meteo")}, {"moon", T.t("Notte")}, {"wrench", T.t("Attrezzi")},
+            {"download", "Download"}, {"leaf", T.t("Natura")}, {"paw", T.t("Animali")}, {"film", "Film"},
+            {"news", T.t("Notizie")}, {"chart", T.t("Grafici")}, {"people", T.t("Persone")}, {"steps", "Fitness"}
     };
 
     static String[] get(String name) {
