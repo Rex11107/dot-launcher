@@ -3078,12 +3078,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 allApps.clear();
                 allApps.addAll(list);
                 appsByKey.clear();
-                Map<String, String> names = new HashMap<>();
+                Map<String, String> pkgNames = new HashMap<>();
                 for (AppEntry a : list) {
                     appsByKey.put(a.key, a);
-                    if (!names.containsKey(a.component.getPackageName())) names.put(a.component.getPackageName(), a.label);
+                    if (!pkgNames.containsKey(a.component.getPackageName())) pkgNames.put(a.component.getPackageName(), a.label);
                 }
-                Usage.names = names;
+                Usage.names = pkgNames;
                 iconCache.evictAll();
                 for (Map.Entry<String, Bitmap> e : pre.entrySet()) iconCache.put(e.getKey(), e.getValue());
                 refreshDrawer();
