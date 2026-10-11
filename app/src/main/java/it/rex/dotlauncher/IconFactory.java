@@ -32,6 +32,46 @@ final class IconFactory {
 
     private static final float GLYPH = 0.50f; // lato del simbolo rispetto al cerchio
 
+    /** Forma delle icone: 0 cerchio, 1 squircle, 2 quadrato arrotondato, 3 quadrato. */
+    static int shape = 0;
+
+    static android.graphics.Path shapePath(float size, float inset) {
+        android.graphics.Path path = new android.graphics.Path();
+        float l = inset, r = size - inset;
+        switch (shape) {
+            case 1: {
+                // superellisse (n = 4): la forma "squircle"
+                float cx = size / 2f, rad = size / 2f - inset;
+                for (int i = 0; i <= 72; i++) {
+                    double t = Math.PI * 2 * i / 72;
+                    double c = Math.cos(t), s = Math.sin(t);
+                    float x = cx + (float) (Math.signum(c) * Math.pow(Math.abs(c), 0.5) * rad);
+                    float y = cx + (float) (Math.signum(s) * Math.pow(Math.abs(s), 0.5) * rad);
+                    if (i == 0) path.moveTo(x, y);
+                    else path.lineTo(x, y);
+                }
+                path.close();
+                break;
+            }
+            case 2: path.addRoundRect(l, l, r, r, size * 0.24f, size * 0.24f, android.graphics.Path.Direction.CW); break;
+            case 3: path.addRoundRect(l, l, r, r, size * 0.06f, size * 0.06f, android.graphics.Path.Direction.CW); break;
+            default: path.addCircle(size / 2f, size / 2f, size / 2f - inset, android.graphics.Path.Direction.CW);
+        }
+        return path;
+    }
+
+    /** Immagine scelta dall'utente come icona: ritagliata al centro dentro la forma. */
+    static Bitmap custom(Bitmap src, int size) {
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(out);
+        c.clipPath(shapePath(size, 0));
+        float sc = Math.max(size / (float) src.getWidth(), size / (float) src.getHeight());
+        float w = src.getWidth() * sc, h = src.getHeight() * sc;
+        c.drawBitmap(src, null, new RectF((size - w) / 2f, (size - h) / 2f, (size + w) / 2f, (size + h) / 2f),
+                new Paint(Paint.FILTER_BITMAP_FLAG | Paint.ANTI_ALIAS_FLAG));
+        return out;
+    }
+
     static Bitmap make(Drawable d, int size, String style, boolean red, int mode, Theme th) {
         if (d == null) return Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
         synchronized (d) { // lo stesso Drawable può essere disegnato da due thread
@@ -51,7 +91,7 @@ final class IconFactory {
         int bg, fg;
         if (red) {
             bg = th.accent;
-            fg = 0xFFFFFFFF;
+            fg = th.onAccent;
         } else if (INVERSE.equals(style)) {
             bg = th.iconBgAlt;
             fg = th.iconFgAlt;
@@ -64,13 +104,13 @@ final class IconFactory {
         Canvas c = new Canvas(out);
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         p.setColor(bg);
-        c.drawCircle(size / 2f, size / 2f, size / 2f, p);
+        c.drawPath(shapePath(size, 0), p);
         int ring = th.iconStroke;
         if (ring != 0 && !red && !INVERSE.equals(style)) {
             p.setStyle(Paint.Style.STROKE);
             p.setStrokeWidth(Math.max(1f, size / 60f));
             p.setColor(ring);
-            c.drawCircle(size / 2f, size / 2f, size / 2f - p.getStrokeWidth() / 2f, p);
+            c.drawPath(shapePath(size, p.getStrokeWidth() / 2f), p);
             p.setStyle(Paint.Style.FILL);
         }
         p.setColor(0xFFFFFFFF); // il simbolo va disegnato pieno, non con la trasparenza del bordo

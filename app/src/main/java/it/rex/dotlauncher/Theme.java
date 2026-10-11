@@ -29,6 +29,7 @@ final class Theme {
 
     private Theme(Context c, SharedPreferences p) {
         Fonts.init(c);
+        Fonts.loadCustom(c, p.getString("font", ""));
         String mode = p.getString("mode", "dark");
         boolean sysNight = (c.getResources().getConfiguration().uiMode
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
@@ -59,12 +60,12 @@ final class Theme {
                 drawerBg = 0xFAE2E2E4; scrim = 0x14FFFFFF; sheetBg = 0xFFF6F6F7;
             }
             stroke = 0;
-            accent = RED;
+            accent = p.getInt("accentC", 0) != 0 ? readable(p.getInt("accentC", 0), light) : RED;
             iconBg = tile;
             iconFg = onTile;
             numFace = Fonts.light;
             labelFace = Fonts.dot;   // etichette a puntini (Doto), sempre maiuscole
-            titleFace = Fonts.medium;
+            titleFace = Fonts.custom != null ? Fonts.custom : Fonts.medium;
         } else {
             if (!light) {
                 bg = grey ? 0xFF141416 : 0xFF0B0B0C;
@@ -81,17 +82,18 @@ final class Theme {
                 stroke = 0x1A000000; drawerBg = 0xF5F2F2F2; scrim = 0x14FFFFFF; sheetBg = 0xFFF7F7F7;
                 iconBg = 0xF7FFFFFF;
             }
-            accent = wall ? readable(wallpaperAccent(c), light) : RED;
+            accent = p.getInt("accentC", 0) != 0 ? readable(p.getInt("accentC", 0), light)
+                    : wall ? readable(wallpaperAccent(c), light) : RED;
             iconFg = blend(onTile, accent, 0.15f);
             numFace = Fonts.thin;
-            labelFace = Fonts.medium;
-            titleFace = Fonts.medium;
+            labelFace = Fonts.custom != null ? Fonts.custom : Fonts.medium;
+            titleFace = Fonts.custom != null ? Fonts.custom : Fonts.medium;
         }
         // bordo leggero dei cerchi: indispensabile nei temi chiari (cerchio bianco su fondo chiaro)
         iconStroke = light ? 0x2E000000 : (nuovo ? 0x26FFFFFF : 0);
         iconBgAlt = 0xFF000000 | tileAlt;
         iconFgAlt = onTileAlt;
-        bodyFace = Fonts.regular;
+        bodyFace = Fonts.custom != null ? Fonts.custom : Fonts.regular;
         // le icone della barra di stato seguono il tema; una sfumatura dietro le barre garantisce il contrasto
         darkIcons = light;
         onAccent = Color.luminance(accent) > 0.45f ? 0xFF111111 : 0xFFFFFFFF;
@@ -121,7 +123,9 @@ final class Theme {
                 + p.getString("icons", "auto") + "|" + p.getBoolean("wall", false) + "|"
                 + p.getBoolean("labels", false) + "|" + p.getInt("wallVer", 0) + "|"
                 + p.getString("iconPack", "") + "|" + p.getBoolean("ghost", true) + "|"
-                + p.getBoolean("anim", true);
+                + p.getBoolean("anim", true) + "|" + p.getInt("accentC", 0) + "|" + p.getInt("iconShape", 0) + "|"
+                + p.getFloat("iconScale", 1f) + "|" + p.getInt("rows", 0) + "|" + p.getString("font", "") + "|"
+                + p.getInt("dockMax", 5) + "|" + p.getBoolean("dockBg", false) + "|" + p.getBoolean("hideStatus", false);
     }
 
     /** Colore principale dello sfondo di sistema, reso abbastanza vivo da fare da accento. */

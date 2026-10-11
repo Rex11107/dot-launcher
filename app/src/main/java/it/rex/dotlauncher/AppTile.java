@@ -10,6 +10,9 @@ import android.view.View;
 
 /** Un'app sulla home: icona (1x1 o grande 2x2) con nome facoltativo. */
 class AppTile extends View {
+    /** Dimensione delle icone scelta dall'utente (1 = normale). */
+    static float SCALE = 1f;
+
     interface Source {
         Bitmap iconFor(String key, int size);
         String labelFor(String key);
@@ -40,7 +43,7 @@ class AppTile extends View {
         float W = getWidth(), H = getHeight();
         float m = Math.min(W, H);
         boolean showLabel = labels && item.w == 1;
-        float size = m * (showLabel ? 0.68f : (item.w == 1 ? 0.86f : 0.9f));
+        float size = m * Math.min(0.98f, (showLabel ? 0.68f : (item.w == 1 ? 0.86f : 0.9f)) * SCALE);
         float cx = W / 2f;
         float cy = showLabel ? H * 0.42f : H / 2f;
         Bitmap b = src.iconFor(item.data, Math.round(size));

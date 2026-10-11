@@ -9,6 +9,23 @@ import android.graphics.Typeface;
  */
 final class Fonts {
     static Typeface thin, light, regular, medium, mono, dot;
+    /** Carattere scelto dall'utente (file .ttf/.otf copiato nell'app), o null. */
+    static Typeface custom;
+    private static String customName = "";
+
+    static void loadCustom(Context c, String file) {
+        if (file == null) file = "";
+        if (file.equals(customName)) return;
+        customName = file;
+        custom = null;
+        if (file.isEmpty()) return;
+        try {
+            java.io.File f = new java.io.File(c.getFilesDir(), "fonts/" + file);
+            if (f.exists()) custom = Typeface.createFromFile(f);
+        } catch (Exception ignored) {
+            custom = null;
+        }
+    }
 
     static void init(Context c) {
         if (regular != null) return;

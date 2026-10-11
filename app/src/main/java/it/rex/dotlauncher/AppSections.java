@@ -346,7 +346,7 @@ class AppSections extends LinearLayout {
         c.setGravity(Gravity.CENTER_HORIZONTAL);
         c.setPadding(0, px(8), 0, px(12));
         View icon;
-        int s = px(54);
+        int s = px(54 * AppTile.SCALE);
         if (e.isFolder()) {
             Item fake = new Item("folder", 0, 0, 1, 1, 0, 0);
             List<String> vis = new ArrayList<>();

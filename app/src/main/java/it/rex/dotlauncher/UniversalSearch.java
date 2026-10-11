@@ -329,7 +329,7 @@ class UniversalSearch extends ScrollView {
         header(title);
         int cols = TileGrid.COLS;
         LinearLayout row = null;
-        int s = px(54);
+        int s = px(54 * AppTile.SCALE);
         for (int i = 0; i < apps.size(); i++) {
             if (i % cols == 0) {
                 row = new LinearLayout(act);

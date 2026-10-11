@@ -30,7 +30,10 @@ class TileGrid extends ViewGroup {
 
     final int page;
     private final Host host;
-    private final float padH, padTop, gap;
+    private final float basePadH, padTop, gap;
+    private float padH;
+    /** Righe scelte dall'utente (0 = quante ne entrano con celle quadrate). */
+    static int ROWS = 0;
     private float cell;
     private int rows = 6;
     private float downX, downY;
@@ -46,7 +49,7 @@ class TileGrid extends ViewGroup {
         this.page = page;
         this.host = host;
         dp = c.getResources().getDisplayMetrics().density;
-        padH = 16 * dp;
+        padH = basePadH = 16 * dp;
         padTop = 10 * dp;
         gap = 12 * dp;
         setClipChildren(false);
@@ -117,8 +120,19 @@ class TileGrid extends ViewGroup {
     @Override
     protected void onMeasure(int ws, int hs) {
         int W = MeasureSpec.getSize(ws), H = MeasureSpec.getSize(hs);
+        padH = basePadH;
         cell = (W - padH * 2 - gap * (COLS - 1)) / COLS;
-        if (cell > 0) rows = Math.max(1, (int) ((H - padTop + gap) / (cell + gap)));
+        if (cell > 0) {
+            int auto = Math.max(1, (int) ((H - padTop + gap) / (cell + gap)));
+            if (ROWS > auto) {
+                // più righe di quelle che entrano: celle più piccole e griglia centrata
+                cell = (H - padTop + gap) / ROWS - gap;
+                padH = (W - cell * COLS - gap * (COLS - 1)) / 2f;
+                rows = ROWS;
+            } else {
+                rows = ROWS > 0 ? ROWS : auto;
+            }
+        }
         for (int i = 0; i < getChildCount(); i++) {
             View v = getChildAt(i);
             Item it = (Item) v.getTag();

@@ -23,15 +23,16 @@ final class Backup {
     // dati temporanei che non ha senso copiare
     private static final List<String> SKIP = Arrays.asList(
             "wjson", "wt", "blurWallId", "askedLoc", "widgets", "wcity",
-            "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday", "pendPos", "newsCache", "newsTime");
+            "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday", "pendPos", "newsCache", "newsTime",
+            "pendIcon", "customIcons", "font");
 
     // tipi attesi delle impostazioni lette come numeri o sì/no (le altre sono testi o insiemi)
     private static final Set<String> BOOLS = new HashSet<>(Arrays.asList("anim", "askedLoc", "dockInit",
-            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24"));
+            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked"));
     private static final Set<String> INTS = new HashSet<>(Arrays.asList("blurWallId", "cols", "pages", "stepAcc",
-            "stepGoal", "stepToday", "wallVer"));
+            "stepGoal", "stepToday", "wallVer", "accentC", "iconShape", "rows", "dockMax"));
     private static final Set<String> LONGS = new HashSet<>(Arrays.asList("mlat", "mlon", "newsTime", "updCheck", "wt"));
-    private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast"));
+    private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast", "iconScale"));
 
     private static boolean typeOk(String k, String t) {
         if (BOOLS.contains(k)) return "b".equals(t);

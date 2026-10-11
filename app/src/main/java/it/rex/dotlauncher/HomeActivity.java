@@ -25,6 +25,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.content.res.Configuration;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
@@ -106,8 +107,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_STEPS = 7;
     private static final int REQ_CAL = 8;
     private static final int REQ_CONTACTS = 9;
+    private static final int REQ_ICON = 10;
+    private static final int REQ_FONT = 11;
     private static final int HOST_ID = 0x0D07;
-    private static final int MAX_DOCK = 5;
 
     private SharedPreferences prefs;
     private Theme th;
@@ -173,6 +175,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         UserHandle user;
         Drawable icon;
         int cat = -1;     // categoria dichiarata dall'app (ApplicationInfo.CATEGORY_*)
+        String origLabel; // nome originale (se l'utente l'ha rinominata)
         boolean game;
     }
 
@@ -221,6 +224,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         prefs = getSharedPreferences("dot", MODE_PRIVATE);
         migrateFromV1();
         TileGrid.COLS = prefs.getInt("cols", 4) == 5 ? 5 : 4;
+        TileGrid.ROWS = Math.max(0, Math.min(9, prefs.getInt("rows", 0)));
+        IconFactory.shape = Math.max(0, Math.min(3, prefs.getInt("iconShape", 0)));
+        AppTile.SCALE = Math.max(0.7f, Math.min(1.25f, prefs.getFloat("iconScale", 1f)));
         Draw.ghost = prefs.getBoolean("ghost", true);
         Draw.anim = prefs.getBoolean("anim", true);
         th = Theme.build(this, prefs);
@@ -583,6 +589,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void applyWindow() {
+        if (prefs.getBoolean("hideStatus", false)) {
+            // barra di stato nascosta: riappare scorrendo dal bordo in alto
+            if (Build.VERSION.SDK_INT >= 30) {
+                android.view.WindowInsetsController c = getWindow().getInsetsController();
+                if (c != null) {
+                    c.hide(android.view.WindowInsets.Type.statusBars());
+                    c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
+                }
+            } else {
+                getWindow().addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+            }
+        }
         if (th.wall) {
             getWindow().addFlags(WindowManager.LayoutParams.FLAG_SHOW_WALLPAPER);
             getWindow().setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
@@ -1696,6 +1714,145 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 });
     }
 
+    // ---------- nome e icona personalizzati ----------
+
+    private void renameApp(AppEntry a) {
+        String orig = a.origLabel != null ? a.origLabel : a.label;
+        Sheet.input(this, th, "Nome dell'app", orig, a.label, n -> {
+            String v = n.trim();
+            putJson("customLabels", a.key, v.isEmpty() || v.equals(orig) ? null : v);
+            toast(v.isEmpty() || v.equals(orig) ? "Nome originale ripristinato" : "Rinominata in " + v);
+            loadApps();
+        });
+    }
+
+    private void changeIcon(AppEntry a) {
+        String[] opts = {"Immagine dalla galleria", "Icona di un'altra app", "Ripristina l'icona"};
+        Sheet.list(this, th, "Icona di " + a.label, opts, -1, w -> {
+            if (w == 0) {
+                prefs.edit().putString("pendIcon", a.key).apply();
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                i.addCategory(Intent.CATEGORY_OPENABLE);
+                i.setType("image/*");
+                try {
+                    startActivityForResult(i, REQ_ICON);
+                } catch (Exception e) {
+                    toast("Impossibile aprire la galleria");
+                }
+            } else if (w == 1) {
+                String[] labels = new String[allApps.size()];
+                Bitmap[] icons = new Bitmap[allApps.size()];
+                for (int i = 0; i < labels.length; i++) {
+                    labels[i] = allApps.get(i).label;
+                    icons[i] = iconFor(allApps.get(i).key, px(36));
+                }
+                Sheet.list(this, th, "Usa l'icona di…", labels, icons, -1,
+                        k -> setCustomIcon(a, "app:" + allApps.get(k).key), null);
+            } else {
+                setCustomIcon(a, null);
+            }
+        });
+    }
+
+    private void setCustomIcon(AppEntry a, String value) {
+        String old = customIcons().get(a.key);
+        if (old != null && old.startsWith("file:") && (value == null || !value.equals(old))) {
+            //noinspection ResultOfMethodCallIgnored
+            new java.io.File(getFilesDir(), "icons/" + old.substring(5)).delete();
+        }
+        putJson("customIcons", a.key, value);
+        customIcons = null;
+        iconCache.evictAll();
+        refreshDrawer();
+        buildDock();
+        refreshAppViews();
+    }
+
+    private void saveIconImage(Uri uri) {
+        String key = prefs.getString("pendIcon", "");
+        prefs.edit().remove("pendIcon").apply();
+        AppEntry a = appsByKey.get(key);
+        if (a == null) return;
+        bg(appExec, () -> {
+            try {
+                BitmapFactory.Options o = new BitmapFactory.Options();
+                o.inJustDecodeBounds = true;
+                try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+                    BitmapFactory.decodeStream(in, null, o);
+                }
+                int sample = 1;
+                while (Math.min(o.outWidth, o.outHeight) / (sample * 2) >= 512) sample *= 2;
+                BitmapFactory.Options o2 = new BitmapFactory.Options();
+                o2.inSampleSize = sample;
+                Bitmap b;
+                try (java.io.InputStream in = getContentResolver().openInputStream(uri)) {
+                    b = BitmapFactory.decodeStream(in, null, o2);
+                }
+                if (b == null) throw new Exception("decode");
+                java.io.File dir = new java.io.File(getFilesDir(), "icons");
+                //noinspection ResultOfMethodCallIgnored
+                dir.mkdirs();
+                String name = Integer.toHexString(key.hashCode()) + "_" + System.currentTimeMillis() + ".png";
+                try (java.io.FileOutputStream out = new java.io.FileOutputStream(new java.io.File(dir, name))) {
+                    b.compress(Bitmap.CompressFormat.PNG, 100, out);
+                }
+                ui.post(() -> setCustomIcon(a, "file:" + name));
+            } catch (Exception | OutOfMemoryError e) {
+                ui.post(() -> toast("Immagine non leggibile"));
+            }
+        });
+    }
+
+    private void pickFont() {
+        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.setType("*/*");
+        i.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"font/ttf", "font/otf", "application/x-font-ttf",
+                "application/x-font-otf", "application/octet-stream", "font/*"});
+        try {
+            startActivityForResult(i, REQ_FONT);
+        } catch (Exception e) {
+            toast("Impossibile aprire i file");
+        }
+    }
+
+    private void saveFont(Uri uri) {
+        bg(appExec, () -> {
+            try {
+                java.io.File dir = new java.io.File(getFilesDir(), "fonts");
+                //noinspection ResultOfMethodCallIgnored
+                dir.mkdirs();
+                String name = "custom_" + System.currentTimeMillis() + ".ttf";
+                java.io.File f = new java.io.File(dir, name);
+                try (java.io.InputStream in = getContentResolver().openInputStream(uri);
+                     java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                    if (in == null) throw new Exception("stream");
+                    byte[] buf = new byte[16384];
+                    int n;
+                    long total = 0;
+                    while ((n = in.read(buf)) > 0) {
+                        out.write(buf, 0, n);
+                        total += n;
+                        if (total > 20L * 1024 * 1024) throw new Exception("too big");
+                    }
+                }
+                // prova a caricarlo: se non è un carattere valido si scarta
+                android.graphics.Typeface.createFromFile(f);
+                String old = prefs.getString("font", "");
+                ui.post(() -> {
+                    if (!old.isEmpty()) {
+                        //noinspection ResultOfMethodCallIgnored
+                        new java.io.File(dir, old).delete();
+                    }
+                    prefs.edit().putString("font", name).apply();
+                    recreate();
+                });
+            } catch (Exception e) {
+                ui.post(() -> toast("Il file non è un carattere valido (.ttf o .otf)"));
+            }
+        });
+    }
+
     private void editNote(Item it) {
         Sheet.input(this, th, "Nota", "Scrivi qui…", WData.get(it, "t", ""), true, t -> {
             WData.put(it, "t", t);
@@ -1995,7 +2152,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         List<String> labels = new ArrayList<>();
         List<Runnable> acts = new ArrayList<>();
         int[][] sizes = Widgets.sizes(it.type);
-        if (sizes.length > 1) {
+        final boolean lk = locked();
+        if (sizes.length > 1 && !lk) {
             labels.add("Ridimensiona");
             acts.add(() -> startResize(it));
         }
@@ -2064,11 +2222,23 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (it.isApp()) {
             AppEntry a = appsByKey.get(it.data);
             if (a != null) {
+                labels.add("Rinomina");
+                acts.add(() -> renameApp(a));
+                labels.add("Cambia icona");
+                acts.add(() -> changeIcon(a));
                 labels.add("Stile icona");
                 acts.add(() -> chooseIconMode(a));
                 labels.add("Info app");
                 acts.add(() -> appInfo(a));
             }
+        }
+        if (lk) {
+            labels.add("Sblocca la home");
+            acts.add(() -> setLocked(false));
+            String title = it.isApp() || "shortcut".equals(it.type) ? labelFor(it.data) : it.isSys() ? "Widget"
+                    : "folder".equals(it.type) ? FolderTile.name(it) : Widgets.name(it.type);
+            showMenuWithShortcuts(title, it.isApp() ? appsByKey.get(it.data) : null, labels, acts);
+            return;
         }
         if (it.page < pages - 1) {
             labels.add("Sposta alla pagina successiva");
@@ -2091,6 +2261,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     @Override
     public void onEmptyLongPress(int page, int col, int row) {
+        if (locked()) {
+            Sheet.list(this, th, "Home bloccata", new String[]{"Sblocca la home", "Impostazioni", "Sfondi"}, -1, w -> {
+                if (w == 0) setLocked(false);
+                else if (w == 1) showSettings();
+                else startActivity(new Intent(this, WallpaperActivity.class));
+            });
+            return;
+        }
         String[] opts = {"Widget Dot", "Widget di sistema", "Aggiungi app", "Sfondi", "Impostazioni",
                 "Aggiungi pagina", "Rimuovi questa pagina", "Launcher predefinito"};
         Sheet.list(this, th, "Home", opts, -1, w -> {
@@ -2520,6 +2698,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             return;
         }
+        if (req == REQ_ICON || req == REQ_FONT) {
+            if (res != RESULT_OK || data == null || data.getData() == null) return;
+            if (req == REQ_ICON) saveIconImage(data.getData());
+            else saveFont(data.getData());
+            return;
+        }
         if (req == REQ_PHOTO) {
             Item it = pendingPhoto;
             pendingPhoto = null;
@@ -2599,11 +2783,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 }
             } catch (Exception ignored) {
             }
+            // nomi scelti dall'utente
+            Map<String, String> names = jsonMap(prefs.getString("customLabels", "{}"));
+            for (AppEntry a : list) {
+                a.origLabel = a.label;
+                String n = names.get(a.key);
+                if (n != null && !n.isEmpty()) a.label = n;
+            }
             final Collator col = Collator.getInstance(Locale.ITALIAN);
             Collections.sort(list, (x, y) -> col.compare(x.label, y.label));
+            Map<String, AppEntry> lookup = new HashMap<>();
+            for (AppEntry a : list) lookup.put(a.key, a);
+            iconLookup = lookup;
             // icone del cassetto e del dock preparate in background: il cassetto si apre senza scatti
             final Map<String, Bitmap> pre = new HashMap<>();
-            final int size = px(54);
+            final int size = px(54 * AppTile.SCALE);
             final String style = prefs.getString("icons", IconFactory.AUTO);
             final Set<String> reds = new HashSet<>(prefs.getStringSet("redApps", new HashSet<>()));
             final Set<String> origs = new HashSet<>(prefs.getStringSet("origApps", new HashSet<>()));
@@ -2634,7 +2828,52 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
     }
 
+    private volatile Map<String, AppEntry> iconLookup = new HashMap<>();
+    private volatile Map<String, String> customIcons;
+
+    private Map<String, String> customIcons() {
+        Map<String, String> m = customIcons;
+        if (m == null) customIcons = m = jsonMap(prefs.getString("customIcons", "{}"));
+        return m;
+    }
+
+    static Map<String, String> jsonMap(String json) {
+        Map<String, String> out = new HashMap<>();
+        try {
+            JSONObject o = new JSONObject(json);
+            java.util.Iterator<String> it = o.keys();
+            while (it.hasNext()) {
+                String k = it.next();
+                out.put(k, o.optString(k));
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private void putJson(String pref, String key, String value) {
+        try {
+            JSONObject o = new JSONObject(prefs.getString(pref, "{}"));
+            if (value == null) o.remove(key);
+            else o.put(key, value);
+            prefs.edit().putString(pref, o.toString()).apply();
+        } catch (Exception ignored) {
+        }
+    }
+
     private Bitmap makeIcon(AppEntry a, int size, String style, boolean red, int mode, IconPacks pack) {
+        String ci = customIcons().get(a.key);
+        if (ci != null) {
+            if (ci.startsWith("file:")) {
+                Bitmap src = BitmapFactory.decodeFile(new java.io.File(getFilesDir(), "icons/" + ci.substring(5)).getPath());
+                if (src != null) return IconFactory.custom(src, size);
+            } else if (ci.startsWith("app:")) {
+                AppEntry o = iconLookup.get(ci.substring(4));
+                if (o != null && o != a && !o.key.equals(a.key)) {
+                    return makeIcon(o, size, style, red, mode, pack);
+                }
+            }
+        }
         if (pack != null && !red && mode == IconFactory.MODE_AUTO) {
             Drawable pd = pack.iconFor(a.component);
             if (pd != null) return IconFactory.fromPack(pd, size);
@@ -2772,9 +3011,22 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         return keys;
     }
 
+    private int dockMax() {
+        return Math.max(0, Math.min(7, prefs.getInt("dockMax", 5)));
+    }
+
     private void buildDock() {
         dock.removeAllViews();
+        dock.setVisibility(dockMax() == 0 ? View.GONE : View.VISIBLE);
+        if (prefs.getBoolean("dockBg", false)) {
+            GradientDrawable db = new GradientDrawable();
+            db.setColor(Theme.alpha(th.tile, th.wall ? 0.75f : 1f));
+            db.setCornerRadius(px(36));
+            if (th.stroke != 0) db.setStroke(Math.max(1, px(1)), th.stroke);
+            dock.setBackground(db);
+        } else dock.setBackground(null);
         List<String> keys = dockKeys();
+        if (keys.size() > dockMax()) keys = new ArrayList<>(keys.subList(0, dockMax()));
         if (keys.isEmpty() && !prefs.getBoolean("dockInit", false) && !allApps.isEmpty()) {
             keys = defaultDock();
             saveDock(keys);
@@ -2782,7 +3034,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         // su schermi stretti (o con "dimensione display" grande) le icone si rimpiccioliscono per starci tutte
         int avail = getResources().getDisplayMetrics().widthPixels - px(16);
-        int size = Math.max(px(36), Math.min(px(54), avail / Math.max(1, keys.size()) - px(18)));
+        int size = Math.max(px(36), Math.min(px(54 * AppTile.SCALE), avail / Math.max(1, keys.size()) - px(18)));
         for (String k : keys) {
             AppEntry a = appsByKey.get(k);
             if (a == null) continue;
@@ -2795,7 +3047,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             lp.rightMargin = px(9);
             iv.setOnClickListener(v -> launch(a, v));
             iv.setOnLongClickListener(v -> {
-                beginDrag(SRC_DOCK, null, a.key, v);
+                if (locked()) showAppMenu(a, Boolean.TRUE);
+                else beginDrag(SRC_DOCK, null, a.key, v);
                 return true;
             });
             dock.addView(iv, lp);
@@ -2826,14 +3079,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         labels.add(inDock ? "Rimuovi dal dock" : "Aggiungi al dock");
         acts.add(() -> {
             if (inDock) dk.remove(a.key);
-            else if (dk.size() >= MAX_DOCK) {
-                toast("Il dock contiene al massimo " + MAX_DOCK + " app");
+            else if (dk.size() >= dockMax()) {
+                toast("Il dock contiene al massimo " + dockMax() + " app");
                 return;
             } else dk.add(a.key);
             prefs.edit().putBoolean("dockInit", true).apply();
             saveDock(dk);
             buildDock();
         });
+        labels.add("Rinomina");
+        acts.add(() -> renameApp(a));
+        labels.add("Cambia icona");
+        acts.add(() -> changeIcon(a));
         labels.add("Stile icona");
         acts.add(() -> chooseIconMode(a));
         if (fromDock == null) {
@@ -2946,7 +3203,23 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void startHomeDrag(Item it, View v) {
+        if (locked()) {
+            // home bloccata: niente trascinamenti, solo il menu (senza spostare o togliere)
+            v.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+            onItemMenu(it);
+            return;
+        }
         beginDrag(SRC_HOME, it, it.isApp() ? it.data : null, v);
+    }
+
+    private boolean locked() {
+        return prefs.getBoolean("locked", false);
+    }
+
+    private void setLocked(boolean on) {
+        prefs.edit().putBoolean("locked", on).apply();
+        toast(on ? "Home bloccata: niente spostamenti accidentali" : "Home sbloccata");
+        refillSettings();
     }
 
     private void beginDrag(int src, Item it, String key, View v) {
@@ -3080,7 +3353,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private boolean dockAccepts() {
-        return dragKey != null && !dragKey.startsWith("sc:") && (dragItem == null || dragItem.isApp());
+        return dockMax() > 0 && dragKey != null && !dragKey.startsWith("sc:") && (dragItem == null || dragItem.isApp());
     }
 
     private Item itemAt(int page, int c, int r) {
@@ -3128,7 +3401,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             tDockIndex = idx;
             List<String> dk = dockKeys();
-            boolean full = dk.size() >= MAX_DOCK && !dk.contains(dragKey);
+            boolean full = dk.size() >= dockMax() && !dk.contains(dragKey);
             GradientDrawable g = new GradientDrawable();
             g.setCornerRadius(px(38));
             g.setColor(Theme.alpha(full ? th.sub : th.accent, 0.18f));
@@ -3481,8 +3754,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 List<String> dk = dockKeys();
                 int idx = tDockIndex;
                 int old = dk.indexOf(key);
-                if (old < 0 && dk.size() >= MAX_DOCK) {
-                    toast("Il dock contiene al massimo " + MAX_DOCK + " app");
+                if (old < 0 && dk.size() >= dockMax()) {
+                    toast("Il dock contiene al massimo " + dockMax() + " app");
                     return;
                 }
                 if (old >= 0) {
@@ -4095,6 +4368,57 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.toggle(SectionIcons.STAR, "Animazioni a punti", "Cifre che si accendono, onda, ricarica",
                 prefs.getBoolean("anim", true), on -> toggle("anim", !on));
 
+        st.section("Personalizzazione");
+        final int accC = prefs.getInt("accentC", 0);
+        st.row(SectionIcons.PALETTE, "Colore d'accento", accentName(accC), this::chooseAccent);
+        final String[] shapes = {"Cerchio", "Squircle", "Quadrato arrotondato", "Quadrato"};
+        st.row(SectionIcons.SHAPES, "Forma delle icone", shapes[IconFactory.shape], () ->
+                Sheet.list(this, th, "Forma delle icone", shapes, IconFactory.shape, w -> {
+                    prefs.edit().putInt("iconShape", w).apply();
+                    recreate();
+                }));
+        final String[] scales = {"Piccole", "Normali", "Grandi", "Molto grandi"};
+        final float[] scaleV = {0.85f, 1f, 1.12f, 1.22f};
+        int sIdx = 1;
+        for (int i = 0; i < scaleV.length; i++) if (Math.abs(scaleV[i] - AppTile.SCALE) < 0.02f) sIdx = i;
+        final int curScale = sIdx;
+        st.row(SectionIcons.GRID, "Dimensione delle icone", scales[curScale], () ->
+                Sheet.list(this, th, "Dimensione delle icone", scales, curScale, w -> {
+                    prefs.edit().putFloat("iconScale", scaleV[w]).apply();
+                    recreate();
+                }));
+        final String[] rowsL = {"Automatiche", "4 righe", "5 righe", "6 righe", "7 righe", "8 righe"};
+        final int rowsCur = TileGrid.ROWS == 0 ? 0 : Math.max(0, Math.min(5, TileGrid.ROWS - 3));
+        st.row(SectionIcons.CHART, "Righe della home", rowsL[rowsCur] + " · celle quadrate, centrate se servono", () ->
+                Sheet.list(this, th, "Righe della home", rowsL, rowsCur, w -> {
+                    prefs.edit().putInt("rows", w == 0 ? 0 : w + 3).apply();
+                    recreate();
+                }));
+        final String[] dockL = {"Nascosto", "3 app", "4 app", "5 app", "6 app"};
+        final int dockCur = dockMax() == 0 ? 0 : Math.max(1, Math.min(4, dockMax() - 2));
+        st.row(SectionIcons.HOME, "Dock", dockL[dockCur], () -> Sheet.list(this, th, "App nel dock", dockL, dockCur, w -> {
+            prefs.edit().putInt("dockMax", w == 0 ? 0 : w + 2).apply();
+            recreate();
+        }));
+        st.toggle(SectionIcons.HOME, "Sfondo del dock", "Una pillola dietro le app del dock",
+                prefs.getBoolean("dockBg", false), on -> toggle("dockBg", !on));
+        String font = prefs.getString("font", "");
+        st.row(SectionIcons.BOOK, "Carattere", font.isEmpty() ? "Predefinito (Geist, Doto per le etichette a puntini)"
+                : "Personalizzato", () -> Sheet.list(this, th, "Carattere",
+                new String[]{"Predefinito", "Scegli un file .ttf o .otf…"}, font.isEmpty() ? 0 : -1, w -> {
+                    if (w == 1) pickFont();
+                    else if (!font.isEmpty()) {
+                        //noinspection ResultOfMethodCallIgnored
+                        new java.io.File(new java.io.File(getFilesDir(), "fonts"), font).delete();
+                        prefs.edit().remove("font").apply();
+                        recreate();
+                    }
+                }));
+        st.toggle(SectionIcons.PHONE, "Nascondi la barra di stato", "Riappare scorrendo dal bordo in alto",
+                prefs.getBoolean("hideStatus", false), on -> toggle("hideStatus", !on));
+        st.toggle(SectionIcons.LOCK, "Blocca la home", "Niente spostamenti o rimozioni per errore",
+                locked(), this::setLocked);
+
         st.section("Home");
         st.row(SectionIcons.GRID, "Griglia", TileGrid.COLS + " colonne", () -> Sheet.list(this, th, "Griglia della home",
                 new String[]{"4 colonne", "5 colonne"}, TileGrid.COLS == 5 ? 1 : 0, w -> setColumns(w == 1 ? 5 : 4)));
@@ -4188,6 +4512,39 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Rex11107/dot-launcher"))));
         st.note("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. "
                 + "Nessun dato viene inviato a server del launcher.");
+    }
+
+    static final int[] ACCENTS = {0, 0xFFD71921, 0xFFFF6A13, 0xFFF5A623, 0xFF2EBD59, 0xFF14B8A6, 0xFF2F6BFF,
+            0xFF8B5CF6, 0xFFEC4899, 0xFF9CA3AF};
+    static final String[] ACCENT_NAMES = {"Predefinito", "Rosso Nothing", "Arancio", "Ambra", "Verde", "Acqua", "Blu",
+            "Viola", "Rosa", "Grigio"};
+
+    private String accentName(int c) {
+        for (int i = 0; i < ACCENTS.length; i++) if (ACCENTS[i] == c) return ACCENT_NAMES[i];
+        return "Personalizzato";
+    }
+
+    private void chooseAccent() {
+        int cur = prefs.getInt("accentC", 0);
+        Bitmap[] dots = new Bitmap[ACCENTS.length];
+        int sel = -1;
+        for (int i = 0; i < ACCENTS.length; i++) {
+            int c = ACCENTS[i] == 0 ? (th.wall && th.nuovo ? th.accent : Theme.RED) : ACCENTS[i];
+            Bitmap b = Bitmap.createBitmap(px(28), px(28), Bitmap.Config.ARGB_8888);
+            Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+            p.setColor(c);
+            new Canvas(b).drawCircle(px(14), px(14), px(12), p);
+            dots[i] = b;
+            if (ACCENTS[i] == cur) sel = i;
+        }
+        String[] names = ACCENT_NAMES.clone();
+        names[0] = "Predefinito (rosso, o dallo sfondo nello stile 5.0)";
+        final int s0 = sel;
+        Sheet.list(this, th, "Colore d'accento", names, dots, s0, w -> {
+            if (ACCENTS[w] == 0) prefs.edit().remove("accentC").apply();
+            else prefs.edit().putInt("accentC", ACCENTS[w]).apply();
+            recreate();
+        }, null);
     }
 
     private void toggle(String key, boolean cur) {
