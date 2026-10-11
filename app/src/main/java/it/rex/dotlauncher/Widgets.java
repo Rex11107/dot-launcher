@@ -7,7 +7,7 @@ final class Widgets {
             "weather", "weather_week", "battery_ring", "battery_pill", "battery_dots", "alarm", "search",
             "world_clock", "countdown", "photo", "compass", "steps",
             "year", "day", "clock_ring", "moon", "sun", "weather_hours", "counter", "proverb", "dice", "week",
-            "storage", "note", "torch", "media"
+            "storage", "note", "torch", "media", "usage", "focus"
     };
 
     /** Categorie per la scelta dei widget: {titolo, tipi…}. */
@@ -17,7 +17,8 @@ final class Widgets {
             {"Meteo e cielo", "weather", "weather_week", "weather_hours", "sun", "moon"},
             {"Batteria e sistema", "battery_ring", "battery_pill", "battery_dots", "storage", "torch"},
             {"Musica e strumenti", "media", "search", "compass", "steps", "counter", "dice"},
-            {"Foto e testi", "photo", "note", "proverb"}
+            {"Foto e testi", "photo", "note", "proverb"},
+            {"Benessere digitale", "usage", "focus"}
     };
 
     static String name(String type) {
@@ -54,6 +55,9 @@ final class Widgets {
             case "note": return "Nota";
             case "torch": return "Torcia";
             case "media": return "Musica";
+            case "usage": return "Tempo di utilizzo";
+            case "focus": return "Focus";
+            case "stack": return "Pila di widget";
             case "app": return "App";
             case "folder": return "Cartella";
             case "shortcut": return "Scorciatoia";
@@ -97,6 +101,8 @@ final class Widgets {
             case "note": return new int[][]{{2, 2}, {2, 1}, {F, 2}};
             case "torch": return new int[][]{{1, 1}};
             case "media": return new int[][]{{F, 1}, {2, 2}, {F, 2}};
+            case "usage": return new int[][]{{2, 2}, {F, 2}, {2, 1}, {F, 1}};
+            case "focus": return new int[][]{{1, 1}, {2, 1}};
             case "app": return new int[][]{{1, 1}, {2, 2}};
             case "folder": return new int[][]{{1, 1}, {2, 2}};
             case "shortcut": return new int[][]{{1, 1}};

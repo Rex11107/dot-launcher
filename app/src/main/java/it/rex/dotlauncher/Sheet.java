@@ -243,6 +243,113 @@ final class Sheet {
         return d;
     }
 
+    /**
+     * Un respiro prima di aprire un'app: cerchio a puntini che "respira", messaggio e scelte.
+     * La prima scelta chiude il pannello senza aprire nulla; le altre si attivano dopo {@code waitSec} secondi.
+     */
+    static Dialog pause(Activity a, Theme th, String title, String message, int waitSec, String[] opts, OnPick cb) {
+        float dp = a.getResources().getDisplayMetrics().density;
+        Dialog d = base(a);
+        LinearLayout box = panel(a, th, title);
+        Breath br = new Breath(a, th);
+        LinearLayout.LayoutParams bl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(dp, 150));
+        box.addView(br, bl);
+        TextView msg = new TextView(a);
+        msg.setText(message);
+        msg.setTypeface(Fonts.regular);
+        msg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        msg.setTextColor(th.sub);
+        msg.setGravity(Gravity.CENTER_HORIZONTAL);
+        msg.setPadding(px(dp, 14), px(dp, 6), px(dp, 14), px(dp, 10));
+        box.addView(msg);
+        TextView[] later = new TextView[opts.length];
+        for (int i = 0; i < opts.length; i++) {
+            final int w = i;
+            TextView b = pill(a, th, dp, opts[i], i == 0, v -> {
+                if (w > 0 && !v.isEnabled()) return;
+                d.dismiss();
+                if (w > 0) cb.pick(w);
+            });
+            b.setGravity(Gravity.CENTER);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.topMargin = px(dp, 8);
+            lp.leftMargin = px(dp, 6);
+            lp.rightMargin = px(dp, 6);
+            box.addView(b, lp);
+            if (i > 0) {
+                later[i] = b;
+                if (waitSec > 0) {
+                    b.setEnabled(false);
+                    b.setAlpha(0.4f);
+                }
+            }
+        }
+        if (waitSec > 0) {
+            final int[] left = {waitSec};
+            final String[] base = opts.clone();
+            Runnable tick = new Runnable() {
+                @Override
+                public void run() {
+                    if (!d.isShowing()) return;
+                    for (int i = 1; i < later.length; i++) {
+                        if (later[i] == null) continue;
+                        if (left[0] > 0) later[i].setText(base[i] + " · " + left[0]);
+                        else {
+                            later[i].setText(base[i]);
+                            later[i].setEnabled(true);
+                            later[i].animate().alpha(1f).setDuration(200).start();
+                        }
+                    }
+                    if (left[0]-- > 0) box.postDelayed(this, 1000);
+                }
+            };
+            tick.run();
+        }
+        show(d, box, dp);
+        return d;
+    }
+
+    /** Cerchio di puntini che si espande e si contrae lentamente (4 s inspira, 4 s espira). */
+    private static final class Breath extends View {
+        private final Theme th;
+        private final android.graphics.Paint p = new android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG);
+        private final long t0 = android.os.SystemClock.uptimeMillis();
+
+        Breath(android.content.Context c, Theme th) {
+            super(c);
+            this.th = th;
+        }
+
+        @Override
+        protected void onDraw(android.graphics.Canvas cv) {
+            float W = getWidth(), H = getHeight();
+            float t = ((android.os.SystemClock.uptimeMillis() - t0) % 8000) / 8000f;
+            float k = (float) (0.5 - 0.5 * Math.cos(t * Math.PI * 2)); // 0..1..0
+            float R = Math.min(W, H) * (0.15f + 0.2f * k);
+            float cx = W / 2f, cy = H / 2f;
+            float dot = Math.min(W, H) * 0.022f;
+            int rings = 4;
+            for (int r = 1; r <= rings; r++) {
+                float rr = R * r / rings;
+                int n = Math.max(6, Math.round(rr * 2 * (float) Math.PI / (dot * 3.2f)));
+                p.setColor(Theme.alpha(r == rings ? th.accent : th.onTile, 0.25f + 0.6f * (r / (float) rings) * (0.4f + 0.6f * k)));
+                for (int i = 0; i < n; i++) {
+                    double ang = Math.PI * 2 * i / n + t * Math.PI * 0.5;
+                    cv.drawCircle(cx + (float) Math.cos(ang) * rr, cy + (float) Math.sin(ang) * rr, dot, p);
+                }
+            }
+            p.setColor(th.accent);
+            cv.drawCircle(cx, cy, dot * 1.4f, p);
+            p.setColor(th.sub);
+            p.setTextAlign(android.graphics.Paint.Align.CENTER);
+            p.setTextSize(Math.min(W, H) * 0.075f);
+            p.setTypeface(Fonts.regular);
+            if (H > 0) cv.drawText(t < 0.5f ? "inspira" : "espira", cx, H - p.getTextSize() * 0.3f, p);
+            if (isShown()) postInvalidateOnAnimation();
+        }
+    }
+
     // ---------- interni ----------
 
     private static int px(float dp, float v) {

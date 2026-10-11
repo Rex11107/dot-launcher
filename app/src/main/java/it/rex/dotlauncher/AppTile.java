@@ -19,6 +19,9 @@ class AppTile extends View {
 
         /** Numero di notifiche dell'app (0 = nessun pallino). */
         int badge(String key);
+
+        /** App in pausa (focus): icona attenuata. */
+        boolean dimmed(String key);
     }
 
     final Item item;
@@ -49,8 +52,11 @@ class AppTile extends View {
         Bitmap b = src.iconFor(item.data, Math.round(size));
         if (b != null) {
             rf.set(cx - size / 2f, cy - size / 2f, cx + size / 2f, cy + size / 2f);
+            boolean dim = src.dimmed(item.data);
+            if (dim) p.setAlpha(90);
             cv.drawBitmap(b, null, rf, p);
-            if (src.badge(item.data) > 0) BadgeDrawable.draw(cv, p, cx, cy, size, th.accent, th.bg);
+            p.setAlpha(255);
+            if (!dim && src.badge(item.data) > 0) BadgeDrawable.draw(cv, p, cx, cy, size, th.accent, th.bg);
         } else {
             p.setColor(th.tile);
             cv.drawCircle(cx, cy, size / 2f, p);

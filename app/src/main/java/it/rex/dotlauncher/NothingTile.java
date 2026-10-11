@@ -148,6 +148,8 @@ class NothingTile extends View {
             case "note": note(cv, W, H); break;
             case "torch": torch(cv, W, H); break;
             case "media": media(cv, W, H); break;
+            case "usage": usage(cv, W, H); break;
+            case "focus": focus(cv, W, H); break;
         }
         if (animating) postInvalidateOnAnimation();
         // l'animazione di ricarica continua solo se si vede davvero (pagina corrente, home non coperta)
@@ -1299,6 +1301,98 @@ class NothingTile extends View {
                 cv.drawRect(bx - s * 0.035f, cy - s * 0.18f, bx + s * 0.035f, cy + s * 0.18f, p);
             }
         }
+    }
+
+    // ---------- benessere digitale ----------
+
+    static final String[] HOURGLASS = {
+            "#########", ".#.....#.", "..#...#..", "...#R#...", "....R....",
+            "...#.#...", "..#.R.#..", ".#RRRRR#.", "#########"};
+    static final String[] TARGET = {
+            "..#####..", ".#.....#.", "#..###..#", "#.#...#.#", "#.#.R.#.#",
+            "#.#...#.#", "#..###..#", ".#.....#.", "..#####.."};
+
+    private void usage(Canvas cv, float W, float H) {
+        float m = Math.min(W, H);
+        if (!Usage.permitted) {
+            Draw.icon(cv, HOURGLASS, W / 2f, H * (item.h >= 2 ? 0.4f : 0.5f), m * 0.3f, p, fg(), acc());
+            if (item.h >= 2)
+                Draw.label(cv, th, "Tocca per attivare", W / 2f, H * 0.82f, m * 0.08f, sub(), 0, p, W * 0.9f);
+            return;
+        }
+        List<Usage.App> top = Usage.today;
+        String total = Usage.shortFmt(Usage.total);
+        float pad = item.h >= 2 ? m * 0.12f : H * 0.2f;
+        if (item.h == 1) {
+            Draw.label(cv, th, "Oggi", pad, H * 0.36f, H * 0.14f, sub(), -1, p, W * 0.4f);
+            Draw.big(cv, th, total, pad, H * 0.64f, H * 0.26f, W * 0.5f, fg(), "hmHM", acc(), -1, p, false);
+            if (W > H * 3 && !top.isEmpty()) {
+                // app più usata a destra
+                String name = Usage.name(top.get(0).pkg);
+                Draw.label(cv, th, name, W - pad, H * 0.42f, H * 0.14f, fg(), 1, p, W * 0.4f);
+                Draw.label(cv, th, Usage.fmt(top.get(0).ms), W - pad, H * 0.68f, H * 0.12f, sub(), 1, p, W * 0.4f);
+            }
+            return;
+        }
+        boolean wide = W >= H * 1.6f;
+        float leftW = wide ? W * 0.42f : W - pad * 2;
+        Draw.label(cv, th, "Tempo di utilizzo", pad, pad + m * 0.06f, m * 0.07f, sub(), -1, p, leftW);
+        Draw.big(cv, th, total, pad, pad + m * 0.27f, m * 0.17f, leftW, fg(), "hmHM", acc(), -1, p, false);
+        if (wide) {
+            Draw.label(cv, th, Usage.unlocks + " sblocchi", pad, H - pad, m * 0.065f, sub(), -1, p, leftW);
+        }
+        float x0 = wide ? W * 0.5f : pad, x1 = W - pad;
+        float y0 = wide ? pad : pad + m * 0.48f, y1 = H - pad * 0.8f;
+        int rows = wide ? 4 : 3;
+        float rh = (y1 - y0) / rows;
+        long max = top.isEmpty() ? 1 : Math.max(1, top.get(0).ms);
+        android.text.TextPaint tp = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
+        tp.setTypeface(th.bodyFace);
+        tp.setTextSize(Math.min(rh * 0.36f, m * 0.075f));
+        if (top.isEmpty()) {
+            tp.setColor(sub());
+            cv.drawText("Ancora niente oggi", x0, y0 + rh * 0.6f, tp);
+            return;
+        }
+        for (int i = 0; i < rows && i < top.size(); i++) {
+            Usage.App a = top.get(i);
+            float y = y0 + rh * i;
+            String t = Usage.shortFmt(a.ms);
+            tp.setColor(sub());
+            float tw = tp.measureText(t);
+            cv.drawText(t, x1 - tw, y + rh * 0.45f, tp);
+            tp.setColor(fg());
+            cv.drawText(android.text.TextUtils.ellipsize(Usage.name(a.pkg), tp, x1 - x0 - tw - m * 0.04f,
+                    android.text.TextUtils.TruncateAt.END).toString(), x0, y + rh * 0.45f, tp);
+            // barra a puntini proporzionale
+            int n = 14;
+            float pitch = (x1 - x0) / n, r = Math.min(pitch * 0.3f, rh * 0.09f);
+            int lit = Math.max(1, Math.round(n * a.ms / (float) max));
+            for (int k = 0; k < n; k++) {
+                p.setColor(k < lit ? (i == 0 ? acc() : fg()) : Theme.alpha(fg(), 0.13f));
+                cv.drawCircle(x0 + pitch * k + pitch / 2f, y + rh * 0.72f, r, p);
+            }
+        }
+    }
+
+    private void focus(Canvas cv, float W, float H) {
+        boolean on = Usage.focusActive;
+        long until = Usage.focusUntil;
+        float m = Math.min(W, H);
+        if (isCircle()) {
+            if (on) {
+                p.setColor(Theme.alpha(acc(), 0.22f));
+                cv.drawCircle(W / 2f, H / 2f, m * 0.4f, p);
+            }
+            Draw.icon(cv, TARGET, W / 2f, H / 2f, m * 0.42f, p, on ? acc() : Theme.alpha(fg(), 0.55f), on ? fg() : acc());
+            return;
+        }
+        Draw.icon(cv, TARGET, H / 2f, H / 2f, H * 0.42f, p, on ? acc() : Theme.alpha(fg(), 0.55f), on ? fg() : acc());
+        float x = H * 0.95f;
+        Draw.label(cv, th, "Focus", x, H * 0.44f, H * 0.17f, fg(), -1, p, W - x - H * 0.2f);
+        String st = !on ? "Spento" : until == Long.MAX_VALUE ? "Attivo"
+                : "Fino alle " + new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", Locale.ITALIAN).format(new Date(until));
+        Draw.label(cv, th, st, x, H * 0.7f, H * 0.13f, on ? acc() : sub(), -1, p, W - x - H * 0.2f);
     }
 
     // ---------- sveglia e ricerca ----------

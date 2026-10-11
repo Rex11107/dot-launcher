@@ -368,7 +368,9 @@ class AppSections extends LinearLayout {
         } else {
             ImageView iv = new ImageView(getContext());
             iv.setImageBitmap(host.iconFor(e.app, s));
-            if (host.badge(e.app) > 0) iv.setForeground(badge());
+            boolean dim = host.dimmed(e.app);
+            if (!dim && host.badge(e.app) > 0) iv.setForeground(badge());
+            if (dim) iv.setAlpha(0.35f);
             icon = iv;
             c.setOnClickListener(v -> host.launchKey(e.app, iv));
             c.setOnLongClickListener(v -> {
@@ -403,7 +405,9 @@ class AppSections extends LinearLayout {
         for (List<Cell> page : cells) {
             for (Cell c : page) {
                 if (c.icon instanceof ImageView && c.entry.app != null) {
-                    c.icon.setForeground(host.badge(c.entry.app) > 0 ? badge() : null);
+                    boolean dim = host.dimmed(c.entry.app);
+                    c.icon.setForeground(!dim && host.badge(c.entry.app) > 0 ? badge() : null);
+                    c.icon.setAlpha(dim ? 0.35f : 1f);
                 } else if (c.icon != null) c.icon.invalidate();
             }
         }

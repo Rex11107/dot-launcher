@@ -71,6 +71,18 @@ public class DotNotifications extends NotificationListenerService {
         }
     }
 
+    /** Non disturbare (solo priorità) acceso o spento; false se l'accesso alle notifiche non è attivo. */
+    static boolean setDnd(boolean on) {
+        DotNotifications s = instance;
+        if (s == null) return false;
+        try {
+            s.requestInterruptionFilter(on ? INTERRUPTION_FILTER_PRIORITY : INTERRUPTION_FILTER_ALL);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     // ---------- ciclo di vita ----------
 
     @Override
