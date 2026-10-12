@@ -7,6 +7,7 @@ public class DotApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+        CrashLog.install(this);
         T.init(this);
     }
 }

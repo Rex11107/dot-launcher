@@ -164,6 +164,7 @@ final class Sections {
 
     /** Categoria per un'app: prima per nome/pacchetto (più preciso), poi per categoria di sistema. */
     static String categorize(HomeActivity.AppEntry a) {
+        if (isWork(a)) return "work";
         String hay = (a.component.getPackageName() + " " + a.label).toLowerCase(Locale.ROOT);
         for (String[] group : WORDS) {
             for (int i = 1; i < group.length; i++) {
@@ -185,8 +186,19 @@ final class Sections {
         }
     }
 
+    /** L'app appartiene al profilo di lavoro (o a un altro profilo che non è quello principale)? */
+    static boolean isWork(HomeActivity.AppEntry a) {
+        return a.user != null && !a.user.equals(android.os.Process.myUserHandle());
+    }
+
     private Section sectionForCat(String cat) {
         for (Section s : list) if (cat.equals(s.cat)) return s;
+        if ("work".equals(cat)) {
+            // la sezione Lavoro nasce da sola la prima volta che compare un'app di lavoro
+            Section w = make("Lavoro", "work", "work");
+            list.add(w);
+            return w;
+        }
         for (Section s : list) if ("misc".equals(s.cat)) return s;
         if (list.isEmpty()) {
             list.add(make("Varie", "shapes", "misc"));
@@ -239,6 +251,23 @@ final class Sections {
             e.app = a.key;
             sectionForCat(categorize(a)).entries.add(e);
             changed = true;
+        }
+        // una volta sola: le app di lavoro già smistate nelle altre sezioni passano in "Lavoro"
+        if (!prefs.getBoolean("workSec", false)) {
+            boolean any = false;
+            for (HomeActivity.AppEntry a : apps) {
+                if (!isWork(a)) continue;
+                any = true;
+                Section cur = sectionOf(a.key);
+                if (cur != null && "work".equals(cur.cat)) continue;
+                removeKey(a.key);
+                Entry e = new Entry();
+                e.app = a.key;
+                sectionForCat("work").entries.add(e);
+                changed = true;
+            }
+            prefs.edit().putBoolean("workSec", true).apply();
+            if (any) changed = true;
         }
         return changed;
     }

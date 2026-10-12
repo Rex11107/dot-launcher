@@ -111,6 +111,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_ICON = 10;
     private static final int REQ_FONT = 11;
     private static final int REQ_ROLE = 12;
+    private static final int REQ_AUTH = 13;
     private static final int HOST_ID = 0x0D07;
 
     private SharedPreferences prefs;
@@ -362,11 +363,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             f.addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED);
             registerReceiver(timeReceiver, f);
             registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            IntentFilter pf = new IntentFilter();
+            pf.addAction(Intent.ACTION_MANAGED_PROFILE_AVAILABLE);
+            pf.addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE);
+            pf.addAction(Intent.ACTION_MANAGED_PROFILE_UNLOCKED);
+            registerReceiver(profileReceiver, pf);
             receiversOn = true;
         }
         started = true;
         Draw.anim = prefs.getBoolean("anim", true) && Motion.systemOn();
         DotNotifications.setListener(this);
+        readQuiet();
         onNotificationsChanged();
         startSensors();
         watchTorch(true);
@@ -376,6 +383,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         consumePendingShortcuts();
         checkUpdate(false);
         refreshUsage();
+        if (prefs.getBoolean("crashNew", false) && onboarding == null) {
+            prefs.edit().putBoolean("crashNew", false).apply();
+            Sheet.confirm(this, th, T.t("Il launcher si è chiuso"),
+                    T.t("Si è verificato un errore e Dot Launcher si è riavviato. Il motivo è salvato solo sul telefono: "
+                            + "puoi vederlo e inviarmelo da Impostazioni → Informazioni → Segnala un problema."),
+                    T.t("Vedi"), this::reportProblem);
+        }
     }
 
     @Override
@@ -401,9 +415,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (receiversOn) {
             unregisterReceiver(timeReceiver);
             unregisterReceiver(batteryReceiver);
+            unregisterReceiver(profileReceiver);
             receiversOn = false;
         }
         started = false;
+        if (pendingAuth == null) authUntil = 0; // uscendo dalla home le app nascoste tornano protette
         DotNotifications.setListener(null);
         if (sensors != null) sensors.stop();
         watchTorch(false);
@@ -1012,9 +1028,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     public void sectionMenu(int idx) {
         if (idx < 0 || idx >= sections.list.size()) return;
         Sections.Section s = sections.list.get(idx);
-        String[] opts = {T.t("Rinomina"), T.t("Cambia icona"), T.t("Sposta a sinistra"), T.t("Sposta a destra"), T.t("Nuova sezione"), T.t("Elimina sezione")};
-        Sheet.list(this, th, s.name, opts, -1, w -> {
+        boolean work = "work".equals(s.cat) && hasWorkProfile();
+        String[] base = {T.t("Rinomina"), T.t("Cambia icona"), T.t("Sposta a sinistra"), T.t("Sposta a destra"), T.t("Nuova sezione"), T.t("Elimina sezione")};
+        String[] opts = base;
+        if (work) {
+            opts = Arrays.copyOf(base, base.length + 1);
+            opts[base.length] = workPaused() ? T.t("Riattiva le app di lavoro") : T.t("Metti in pausa le app di lavoro");
+        }
+        Sheet.list(this, th, T.t(s.name), opts, -1, w -> {
             switch (w) {
+                case 6:
+                    setWorkPaused(!workPaused());
+                    break;
                 case 0:
                     Sheet.input(this, th, T.t("Nome della sezione"), T.t("es. Lavoro"), s.name, n -> {
                         if (n.isEmpty()) return;
@@ -3100,6 +3125,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_AUTH) {
+            Runnable ok = pendingAuth;
+            pendingAuth = null;
+            if (res == RESULT_OK && ok != null) {
+                authUntil = System.currentTimeMillis() + 60000;
+                ok.run();
+            }
+            return;
+        }
         if (req == REQ_EXPORT || req == REQ_IMPORT) {
             if (res != RESULT_OK || data == null || data.getData() == null) return;
             Uri uri = data.getData();
@@ -3574,12 +3608,80 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
     }
 
-    /** L'app è in pausa per il focus? (icona attenuata nel cassetto, nel dock e sulla home) */
+    /** L'app è in pausa (focus o profilo di lavoro sospeso)? Icona attenuata nel cassetto, nel dock e sulla home. */
     public boolean dimmed(String key) {
-        if (!Usage.focusActive || key == null) return false;
+        if (key == null) return false;
         AppEntry a = appsByKey.get(key);
-        return a != null && Usage.focusApps(prefs).contains(a.component.getPackageName());
+        if (a == null) return false;
+        if (a.user != null && quietUsers.contains(a.user)) return true;
+        return Usage.focusActive && Usage.focusApps(prefs).contains(a.component.getPackageName());
     }
+
+    // ---------- profilo di lavoro ----------
+
+    /** Profili (di lavoro) attualmente in pausa. */
+    private final Set<android.os.UserHandle> quietUsers = new HashSet<>();
+
+    private boolean hasWorkProfile() {
+        try {
+            return launcherApps.getProfiles().size() > 1;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private boolean workPaused() {
+        return !quietUsers.isEmpty();
+    }
+
+    /** Rilegge quali profili sono in pausa; true se è cambiato qualcosa. */
+    private boolean readQuiet() {
+        Set<android.os.UserHandle> now = new HashSet<>();
+        try {
+            android.os.UserManager um = userManager();
+            android.os.UserHandle me = android.os.Process.myUserHandle();
+            for (android.os.UserHandle u : launcherApps.getProfiles()) {
+                if (!u.equals(me) && um.isQuietModeEnabled(u)) now.add(u);
+            }
+        } catch (Exception ignored) {
+        }
+        if (now.equals(quietUsers)) return false;
+        quietUsers.clear();
+        quietUsers.addAll(now);
+        return true;
+    }
+
+    private void setWorkPaused(boolean pause) {
+        if (Build.VERSION.SDK_INT < 28) {
+            toast(T.t("Mettere in pausa le app di lavoro richiede Android 9 o successivo"));
+            return;
+        }
+        android.os.UserHandle me = android.os.Process.myUserHandle();
+        try {
+            for (android.os.UserHandle u : launcherApps.getProfiles()) {
+                if (!u.equals(me)) userManager().requestQuietModeEnabled(pause, u);
+            }
+        } catch (SecurityException e) {
+            toast(T.t("Serve che Dot Launcher sia il launcher predefinito"));
+            return;
+        } catch (Exception e) {
+            toast(T.t("Impossibile cambiare lo stato delle app di lavoro"));
+            return;
+        }
+        ui.postDelayed(this::onWorkProfileChanged, 600);
+    }
+
+    private void onWorkProfileChanged() {
+        if (destroyed) return;
+        if (readQuiet()) onNotificationsChanged();
+    }
+
+    private final BroadcastReceiver profileReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context c, Intent i) {
+            onWorkProfileChanged();
+        }
+    };
 
     private void pickFocusApps(Runnable after) {
         pickApps(T.t("App che distraggono"), Usage.focusApps(prefs), sel -> {
@@ -3849,6 +3951,49 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                                 T.t("Apri Accessibilità"), () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
                     }
                 });
+    }
+
+    // =====================================================================
+    // Registro degli errori
+    // =====================================================================
+
+    private static final String ISSUES = "https://github.com/Rex11107/dot-launcher/issues";
+
+    private void reportProblem() {
+        String log = CrashLog.read(this);
+        if (log.isEmpty()) {
+            Sheet.confirm(this, th, T.t("Segnala un problema"),
+                    T.t("Non ci sono errori registrati. Se qualcosa non funziona come dovrebbe, descrivilo in una "
+                            + "segnalazione su GitHub: indica il telefono, la versione e cosa stavi facendo."),
+                    T.t("Apri GitHub"), () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse(ISSUES))));
+            return;
+        }
+        String[] o = {T.t("Copia il registro"), T.t("Condividi il registro"), T.t("Apri le segnalazioni su GitHub"),
+                T.t("Cancella il registro")};
+        Sheet.list(this, th, T.t("Segnala un problema"), o, -1, w -> {
+            switch (w) {
+                case 0: {
+                    android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("Dot Launcher", log));
+                    toast(T.t("Registro copiato: incollalo nella segnalazione"));
+                    break;
+                }
+                case 1: {
+                    Intent i = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                            .putExtra(Intent.EXTRA_SUBJECT, "Dot Launcher " + versionName())
+                            .putExtra(Intent.EXTRA_TEXT, log);
+                    safeStart(Intent.createChooser(i, T.t("Condividi il registro")));
+                    break;
+                }
+                case 2:
+                    safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse(ISSUES)));
+                    break;
+                default:
+                    CrashLog.clear(this);
+                    toast(T.t("Registro cancellato"));
+                    refillSettings();
+            }
+        });
     }
 
     // =====================================================================
@@ -5500,7 +5645,28 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 });
         final int nHidden = hidden().size();
         st.row(SectionIcons.LOCK, T.t("App nascoste"), nHidden == 0 ? T.t("Nessuna") : nHidden + T.n(nHidden, " app nascosta", " app nascoste"),
-                this::manageHidden);
+                () -> withAuth(this::manageHidden));
+        st.toggle(SectionIcons.LOCK, T.t("Proteggi le app nascoste"), T.t("Chiedi impronta, volto o PIN per vederle"),
+                prefs.getBoolean("hiddenLock", false), on -> {
+                    if (!on) {
+                        // per spegnerla bisogna sbloccare: altrimenti chiunque potrebbe toglierla
+                        withAuth(() -> {
+                            prefs.edit().putBoolean("hiddenLock", false).apply();
+                            refillSettings();
+                        });
+                        refillSettings();
+                        return;
+                    }
+                    android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+                    if (km == null || !km.isDeviceSecure()) {
+                        toast(T.t("Imposta prima un blocco schermo (PIN, sequenza o password)"));
+                        refillSettings();
+                        return;
+                    }
+                    prefs.edit().putBoolean("hiddenLock", true).apply();
+                    authUntil = System.currentTimeMillis() + 60000;
+                    refillSettings();
+                });
 
         st.section(T.t("Notifiche e musica"));
         st.row(Draw.BELL, T.t("Accesso alle notifiche"), DotNotifications.active()
@@ -5557,7 +5723,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             prefs.edit().putBoolean("onboarded", false).apply();
             showOnboarding(0);
         });
-        st.row(SectionIcons.CODE, T.t("Codice sorgente"), "github.com/Rex11107/dot-launcher",
+        int nCrash = CrashLog.count(CrashLog.read(this));
+        st.row(SectionIcons.MORE, T.t("Segnala un problema"), nCrash == 0 ? T.t("Nessun errore registrato")
+                : nCrash + T.n(nCrash, " errore registrato", " errori registrati"), this::reportProblem);
+        st.row(SectionIcons.CODE, T.t("Codice sorgente"), "github.com/Rex11107/dot-launcher · GPL-3.0",
                 () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Rex11107/dot-launcher"))));
         st.note(T.t("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. ")
                 + T.t("Il launcher non ha server: nessun dato viene raccolto."));
@@ -5676,6 +5845,72 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             startActivityForResult(i, REQ_IMPORT);
         } catch (Exception e) {
             toast(T.t("Impossibile aprire il selettore di file"));
+        }
+    }
+
+    // ---------- sblocco con impronta o PIN ----------
+
+    private long authUntil;
+    private Runnable pendingAuth;
+
+    /** Esegue {@code ok} solo dopo lo sblocco (se la protezione è attiva). Vale un minuto. */
+    private void withAuth(Runnable ok) {
+        if (!prefs.getBoolean("hiddenLock", false) || System.currentTimeMillis() < authUntil) {
+            ok.run();
+            return;
+        }
+        android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        if (km == null || !km.isDeviceSecure()) {
+            ok.run(); // nessun blocco schermo impostato: non c'è niente con cui verificare
+            return;
+        }
+        if (Build.VERSION.SDK_INT >= 28) {
+            try {
+                android.hardware.biometrics.BiometricPrompt.Builder b = new android.hardware.biometrics.BiometricPrompt.Builder(this)
+                        .setTitle(T.t("App nascoste"))
+                        .setSubtitle(T.t("Sblocca per vederle"));
+                if (Build.VERSION.SDK_INT >= 30) {
+                    b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
+                            | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL);
+                } else if (Build.VERSION.SDK_INT >= 29) {
+                    b.setDeviceCredentialAllowed(true);
+                } else {
+                    b.setNegativeButton(T.t("Usa il PIN"), getMainExecutor(), (d, w) -> confirmCredential(ok));
+                }
+                b.build().authenticate(new android.os.CancellationSignal(), getMainExecutor(),
+                        new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
+                            @Override
+                            public void onAuthenticationSucceeded(android.hardware.biometrics.BiometricPrompt.AuthenticationResult r) {
+                                authUntil = System.currentTimeMillis() + 60000;
+                                ok.run();
+                            }
+
+                            @Override
+                            public void onAuthenticationError(int code, CharSequence msg) {
+                                // annullato o troppi tentativi: non si apre nulla
+                            }
+                        });
+                return;
+            } catch (Exception ignored) {
+                // alcuni telefoni non hanno il riconoscimento biometrico: si passa al PIN
+            }
+        }
+        confirmCredential(ok);
+    }
+
+    @SuppressWarnings("deprecation")
+    private void confirmCredential(Runnable ok) {
+        android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        Intent i = km == null ? null : km.createConfirmDeviceCredentialIntent(T.t("App nascoste"), T.t("Sblocca per vederle"));
+        if (i == null) {
+            ok.run();
+            return;
+        }
+        pendingAuth = ok;
+        try {
+            startActivityForResult(i, REQ_AUTH);
+        } catch (Exception e) {
+            pendingAuth = null;
         }
     }
 

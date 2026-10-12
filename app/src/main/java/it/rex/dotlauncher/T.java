@@ -824,7 +824,32 @@ final class T {
             "Rapida", "Fast",
             "Velocità delle animazioni", "Animation speed",
             "Animazioni di sistema spente", "System animations off",
-            "Android ha la scala animazione a zero: riattivala nelle Opzioni sviluppatore", "Android's animation scale is set to zero: turn it back on in Developer options"
+            "Android ha la scala animazione a zero: riattivala nelle Opzioni sviluppatore", "Android's animation scale is set to zero: turn it back on in Developer options",
+            "Il launcher si è chiuso", "The launcher closed",
+            "Si è verificato un errore e Dot Launcher si è riavviato. Il motivo è salvato solo sul telefono: puoi vederlo e inviarmelo da Impostazioni → Informazioni → Segnala un problema.", "An error occurred and Dot Launcher restarted. The reason is saved only on the phone: you can see it and send it from Settings → About → Report a problem.",
+            "Vedi", "View",
+            "Segnala un problema", "Report a problem",
+            "Nessun errore registrato", "No errors recorded",
+            " errore registrato", " error recorded",
+            " errori registrati", " errors recorded",
+            "Non ci sono errori registrati. Se qualcosa non funziona come dovrebbe, descrivilo in una segnalazione su GitHub: indica il telefono, la versione e cosa stavi facendo.", "No errors are recorded. If something doesn't work as it should, describe it in a GitHub issue: include your phone, the version and what you were doing.",
+            "Apri GitHub", "Open GitHub",
+            "Copia il registro", "Copy the log",
+            "Condividi il registro", "Share the log",
+            "Apri le segnalazioni su GitHub", "Open GitHub issues",
+            "Cancella il registro", "Clear the log",
+            "Registro copiato: incollalo nella segnalazione", "Log copied: paste it in the issue",
+            "Registro cancellato", "Log cleared",
+            "Proteggi le app nascoste", "Protect hidden apps",
+            "Chiedi impronta, volto o PIN per vederle", "Ask for fingerprint, face or PIN to see them",
+            "Imposta prima un blocco schermo (PIN, sequenza o password)", "Set a screen lock first (PIN, pattern or password)",
+            "Sblocca per vederle", "Unlock to see them",
+            "Usa il PIN", "Use PIN",
+            "Riattiva le app di lavoro", "Resume work apps",
+            "Metti in pausa le app di lavoro", "Pause work apps",
+            "Mettere in pausa le app di lavoro richiede Android 9 o successivo", "Pausing work apps requires Android 9 or later",
+            "Serve che Dot Launcher sia il launcher predefinito", "Dot Launcher needs to be the default launcher",
+            "Impossibile cambiare lo stato delle app di lavoro", "Couldn't change the work apps state"
         };
         for (int i = 0; i + 1 < a.length; i += 2) EN.put(a[i], a[i + 1]);
         String[] o = {
@@ -832,7 +857,8 @@ final class T {
             " app in pausa durante il focus", " app paused during focus",
             " app con limite", " app with a limit",
             " app", " app",
-            " app nascosta", " hidden app"
+            " app nascosta", " hidden app",
+            " errore registrato", " error recorded"
         };
         for (int i = 0; i + 1 < o.length; i += 2) EN_ONE.put(o[i], o[i + 1]);
     }
