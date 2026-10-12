@@ -201,7 +201,18 @@ class SettingsScreen extends FrameLayout {
         r.setOnClickListener(v -> {
             sw.on = !sw.on;
             sw.invalidate();
+            v.sendAccessibilityEvent(android.view.accessibility.AccessibilityEvent.TYPE_VIEW_CLICKED);
             v.postDelayed(() -> cb.set(sw.on), 160);
+        });
+        // TalkBack: la riga si comporta come un interruttore e dice se è acceso o spento
+        r.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override
+            public void onInitializeAccessibilityNodeInfo(View host, android.view.accessibility.AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(android.widget.Switch.class.getName());
+                info.setCheckable(true);
+                info.setChecked(sw.on);
+            }
         });
     }
 

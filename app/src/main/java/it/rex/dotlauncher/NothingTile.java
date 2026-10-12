@@ -86,6 +86,73 @@ class NothingTile extends View {
         this.h24 = h24;
     }
 
+    // ---------- accessibilità: cosa legge TalkBack ----------
+
+    @Override
+    public CharSequence getContentDescription() {
+        String name = Widgets.name(item.type);
+        String v = describe();
+        return v == null || v.isEmpty() ? name : name + ": " + v;
+    }
+
+    @Override
+    public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        info.setClassName(android.widget.Button.class.getName());
+    }
+
+    /** Il contenuto del widget in parole. */
+    private String describe() {
+        java.text.DateFormat tf = android.text.format.DateFormat.getTimeFormat(getContext());
+        switch (item.type) {
+            case "clock_dots":
+            case "clock_analog":
+            case "clock_pill":
+            case "clock_ring":
+                return tf.format(new Date());
+            case "date_big":
+            case "date_dot":
+            case "calendar":
+            case "week":
+            case "day":
+                return new SimpleDateFormat("EEEE d MMMM", T.loc()).format(new Date());
+            case "weather":
+            case "weather_week":
+            case "weather_hours":
+                return State.wOk ? State.wTemp + "°, " + T.t(State.describe(State.wCode))
+                        + (State.wCity.isEmpty() ? "" : ", " + State.wCity) : T.t("Tocca per il meteo");
+            case "battery_ring":
+            case "battery_pill":
+            case "battery_dots":
+                return State.battery < 0 ? "" : State.battery + "%" + (State.charging ? ", " + T.t("in carica") : "");
+            case "alarm":
+                return State.nextAlarm.isEmpty() ? T.t("Nessuna sveglia") : State.nextAlarm;
+            case "steps":
+                return State.steps + " " + T.t("passi");
+            case "moon":
+                return T.t(moonName(moonAge()));
+            case "sun":
+                return State.sunrise.isEmpty() ? "" : State.sunrise + " – " + State.sunset;
+            case "counter":
+                return String.valueOf(WData.getLong(item, "n", 0));
+            case "note":
+                return WData.get(item, "t", "");
+            case "proverb":
+                return proverb(item);
+            case "media":
+                return DotNotifications.mActive ? DotNotifications.mTitle + " " + DotNotifications.mArtist
+                        : T.t("Niente in riproduzione");
+            case "usage":
+                return Usage.permitted ? T.t("Oggi: ") + Usage.fmt(Usage.total) : T.t("Tocca per attivare");
+            case "focus":
+                return Usage.focusActive ? T.t("Attivo") : T.t("Spento");
+            case "torch":
+                return State.torchOn ? T.t("Attivo") : T.t("Spento");
+            default:
+                return "";
+        }
+    }
+
     private int bgColor() {
         return item.tone == 1 ? th.tileAlt : item.tone == 2 ? th.accent : th.tile;
     }

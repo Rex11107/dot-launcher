@@ -33,6 +33,13 @@ class AppTile extends View {
     private String cacheLabel, cacheShort = "";
     private float cacheW;
 
+    @Override
+    public CharSequence getContentDescription() {
+        String l = src.labelFor(item.data);
+        int n = src.badge(item.data);
+        return n > 0 ? l + ", " + n + T.n(n, " notifica", " notifiche") : l;
+    }
+
     AppTile(Context c, Item item, Source src, Theme th, boolean labels) {
         super(c);
         this.item = item;

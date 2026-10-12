@@ -368,6 +368,7 @@ class AppSections extends LinearLayout {
         } else {
             ImageView iv = new ImageView(getContext());
             iv.setImageBitmap(host.iconFor(e.app, s));
+            iv.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO); // il nome sotto basta per TalkBack
             boolean dim = host.dimmed(e.app);
             if (!dim && host.badge(e.app) > 0) iv.setForeground(badge());
             if (dim) iv.setAlpha(0.35f);

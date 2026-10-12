@@ -198,6 +198,22 @@ final class Sheet {
         return d;
     }
 
+    /** Pannello con un testo che si aggiorna (es. avanzamento di un download). out[0] riceve il testo. */
+    static Dialog progress(Activity a, Theme th, String title, TextView[] out) {
+        float dp = a.getResources().getDisplayMetrics().density;
+        Dialog d = base(a);
+        LinearLayout box = panel(a, th, title);
+        TextView msg = new TextView(a);
+        msg.setTypeface(Fonts.regular);
+        msg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        msg.setTextColor(th.sub);
+        msg.setPadding(px(dp, 14), 0, px(dp, 14), px(dp, 14));
+        box.addView(msg);
+        out[0] = msg;
+        show(d, box, dp);
+        return d;
+    }
+
     static Dialog input(Activity a, Theme th, String title, String hint, String value, OnText cb) {
         return input(a, th, title, hint, value, false, cb);
     }

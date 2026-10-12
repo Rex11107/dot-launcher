@@ -105,8 +105,28 @@ final class Backup {
                             JSONArray a = new JSONArray(v);
                             JSONArray keep = new JSONArray();
                             for (int j = 0; j < a.length(); j++) {
-                                if ("sys".equals(a.getJSONObject(j).optString("t"))) droppedSys++;
-                                else keep.put(a.getJSONObject(j));
+                                JSONObject it = a.getJSONObject(j);
+                                String type = it.optString("t");
+                                if ("sys".equals(type)) {
+                                    droppedSys++;
+                                    continue;
+                                }
+                                if ("stack".equals(type)) {
+                                    // anche dentro le pile i widget di sistema vanno riaggiunti
+                                    JSONObject st = new JSONObject(it.optString("d", "{}"));
+                                    JSONArray kids = st.optJSONArray("k"), left = new JSONArray();
+                                    if (kids != null) {
+                                        for (int q = 0; q < kids.length(); q++) {
+                                            if ("sys".equals(kids.getJSONObject(q).optString("t"))) droppedSys++;
+                                            else left.put(kids.getJSONObject(q));
+                                        }
+                                    }
+                                    if (left.length() == 0) continue;
+                                    st.put("k", left);
+                                    st.put("i", 0);
+                                    it.put("d", st.toString());
+                                }
+                                keep.put(it);
                             }
                             v = keep.toString();
                         }

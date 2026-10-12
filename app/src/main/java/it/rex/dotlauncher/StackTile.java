@@ -53,6 +53,33 @@ class StackTile extends FrameLayout {
         showDots();
     }
 
+    @Override
+    public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        Item k = currentKid();
+        info.setContentDescription(T.t("Pila di widget") + ", " + (stack.current + 1) + "/" + getChildCount()
+                + (k != null ? ", " + Widgets.name(k.type) : ""));
+        // con TalkBack si cambia widget con le azioni "scorri avanti/indietro"
+        if (getChildCount() > 1) {
+            info.addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_FORWARD);
+            info.addAction(android.view.accessibility.AccessibilityNodeInfo.AccessibilityAction.ACTION_SCROLL_BACKWARD);
+            info.setScrollable(true);
+        }
+    }
+
+    @Override
+    public boolean performAccessibilityAction(int action, android.os.Bundle args) {
+        if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_FORWARD) {
+            go(1);
+            return true;
+        }
+        if (action == android.view.accessibility.AccessibilityNodeInfo.ACTION_SCROLL_BACKWARD) {
+            go(-1);
+            return true;
+        }
+        return super.performAccessibilityAction(action, args);
+    }
+
     Item currentKid() {
         List<Item> kids = stack.kids();
         return kids.isEmpty() ? null : kids.get(stack.current);
@@ -77,6 +104,9 @@ class StackTile extends FrameLayout {
                 break;
             case MotionEvent.ACTION_MOVE: {
                 float dx = ev.getX() - downX, dy = ev.getY() - downY;
+                // un widget di sistema con una lista che può ancora scorrere si tiene il suo gesto
+                View cur = getChildAt(stack.current);
+                if (cur instanceof android.appwidget.AppWidgetHostView && canScrollDeep(cur, dy < 0 ? 1 : -1)) break;
                 if (Math.abs(dy) > slop * 1.5f && Math.abs(dy) > Math.abs(dx) * 1.3f) {
                     swiping = true;
                     getParent().requestDisallowInterceptTouchEvent(true);
@@ -112,6 +142,15 @@ class StackTile extends FrameLayout {
                 return true;
         }
         return true;
+    }
+
+    private static boolean canScrollDeep(View v, int dir) {
+        if (v.canScrollVertically(dir)) return true;
+        if (v instanceof android.view.ViewGroup) {
+            android.view.ViewGroup g = (android.view.ViewGroup) v;
+            for (int i = 0; i < g.getChildCount(); i++) if (canScrollDeep(g.getChildAt(i), dir)) return true;
+        }
+        return false;
     }
 
     /** Passa al widget successivo (dir 1) o precedente (dir -1), a giro. */
