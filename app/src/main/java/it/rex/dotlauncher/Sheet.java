@@ -480,7 +480,9 @@ final class Sheet {
             int sw = d.getContext().getResources().getDisplayMetrics().widthPixels;
             // su tablet e schermi larghi il pannello non si allarga oltre 560dp
             w.setLayout(Math.min(sw - px(dp, 24), px(dp, 560)), ViewGroup.LayoutParams.WRAP_CONTENT);
-            w.setWindowAnimations(android.R.style.Animation_InputMethod); // sale dal basso
+            // stesso stile scelto per i menu: sale dal basso, zoom o dissolvenza
+            w.setWindowAnimations(Motion.menu == 1 ? android.R.style.Animation_Dialog
+                    : Motion.menu == 2 ? android.R.style.Animation_Toast : android.R.style.Animation_InputMethod);
             w.setGravity(Gravity.BOTTOM);
             WindowManager.LayoutParams lp = w.getAttributes();
             lp.y = px(dp, 20);

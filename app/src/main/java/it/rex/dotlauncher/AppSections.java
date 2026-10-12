@@ -400,6 +400,12 @@ class AppSections extends LinearLayout {
         return new BadgeDrawable(th.accent, th.drawerBg | 0xFF000000);
     }
 
+    /** Riapplica l'effetto di passaggio tra le pagine (dopo averlo cambiato nelle impostazioni). */
+    void applyTransition() {
+        pager.applyTransition();
+        pager.invalidate();
+    }
+
     /** Aggiorna solo i pallini di notifica, senza ricostruire le pagine. */
     void updateBadges() {
         for (List<Cell> page : cells) {

@@ -11,15 +11,30 @@ import android.view.animation.PathInterpolator;
  */
 final class Motion {
     /** Pannelli che entrano (cassetto, pagina a sinistra, impostazioni, pagine della guida). */
-    static final long ENTER = 260;
+    static long ENTER = 260;
     /** Pannelli che escono. */
-    static final long EXIT = 180;
+    static long EXIT = 180;
     /** Dissolvenze e cambi di contenuto sul posto. */
-    static final long FADE = 160;
+    static long FADE = 160;
     /** Risposta al tocco (sollevare un'icona, rimbalzo indietro). */
-    static final long QUICK = 120;
+    static long QUICK = 120;
     /** Comparsa con rimbalzo (nuovo elemento sulla home). */
-    static final long POP = 280;
+    static long POP = 280;
+
+    /** Velocità scelta nelle impostazioni: 0 lenta, 1 normale, 2 rapida. */
+    static float factor = 1f;
+
+    static void setSpeed(int s) {
+        factor = s == 0 ? 1.45f : s == 2 ? 0.7f : 1f;
+        ENTER = Math.round(260 * factor);
+        EXIT = Math.round(180 * factor);
+        FADE = Math.round(160 * factor);
+        QUICK = Math.round(120 * factor);
+        POP = Math.round(280 * factor);
+    }
+
+    /** Apertura dei menu: 0 scorrimento, 1 zoom, 2 dissolvenza. */
+    static int menu;
 
     /** Decelerazione marcata: per ciò che entra. */
     static final Interpolator EASE_OUT = new PathInterpolator(0.05f, 0.7f, 0.1f, 1f);

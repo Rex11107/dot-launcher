@@ -802,7 +802,29 @@ final class T {
             " giorno", " day",
             " giorni", " days",
             " widget di sistema va riaggiunto", " system widget needs to be added again",
-            " sblocco", " unlock"
+            " sblocco", " unlock",
+            "Animazioni", "Animations",
+            "Scorrimento", "Slide",
+            "Profondità", "Depth",
+            "Cubo", "Cube",
+            "Dissolvenza", "Fade",
+            "Zoom", "Zoom",
+            "Le pagine scorrono una accanto all'altra", "Pages slide side by side",
+            "La pagina nuova cresce da dietro quella che se ne va", "The new page grows from behind the one leaving",
+            "Le pagine ruotano come le facce di un cubo", "Pages turn like the faces of a cube",
+            "Le pagine restano ferme e si sostituiscono sfumando", "Pages stay still and cross-fade",
+            "Passaggio tra le pagine", "Page transition",
+            "Vale per la home e per il cassetto delle app", "Applies to home and the app drawer",
+            "Cassetto e impostazioni salgono dal basso, la pagina a sinistra arriva di lato", "Drawer and settings rise from the bottom, the left page slides in from the side",
+            "I pannelli si ingrandiscono dal centro", "Panels grow from the center",
+            "I pannelli compaiono sfumando, senza movimento", "Panels fade in, without movement",
+            "Apertura dei menu", "Menu opening",
+            "Lenta", "Slow",
+            "Normale", "Normal",
+            "Rapida", "Fast",
+            "Velocità delle animazioni", "Animation speed",
+            "Animazioni di sistema spente", "System animations off",
+            "Android ha la scala animazione a zero: riattivala nelle Opzioni sviluppatore", "Android's animation scale is set to zero: turn it back on in Developer options"
         };
         for (int i = 0; i + 1 < a.length; i += 2) EN.put(a[i], a[i + 1]);
         String[] o = {

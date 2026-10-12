@@ -234,6 +234,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Draw.ghost = prefs.getBoolean("ghost", true);
         // le animazioni a punti seguono anche la "Scala animazione" di sistema (spente = niente animazioni)
         Draw.anim = prefs.getBoolean("anim", true) && Motion.systemOn();
+        Motion.setSpeed(prefs.getInt("animSpeed", 1));
+        Motion.menu = Math.max(0, Math.min(2, prefs.getInt("menuAnim", 0)));
+        Pager.transition = Math.max(0, Math.min(3, prefs.getInt("pageAnim", 0)));
         th = Theme.build(this, prefs);
         themeSig = Theme.signature(prefs);
         h24 = prefs.getBoolean("h24", DateFormat.is24HourFormat(this));
@@ -577,6 +580,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         exitSearch();
         drawer.animate().cancel();
         homeBox.animate().cancel();
+        menuRest(drawer);
         drawer.setAlpha(0f);
         drawer.setTranslationY(pullRange());
         drawer.setVisibility(View.VISIBLE);
@@ -594,8 +598,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             pullSpeed = 0;
             drawer.animate().cancel();
             drawer.setVisibility(View.GONE);
-            drawer.setAlpha(1f);
-            drawer.setTranslationY(0);
+            menuRest(drawer);
             restoreHome(false);
             if (gestureArmed) twoFinger(ev);
             return;
@@ -1208,10 +1211,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         panelOpen = true;
         panel.animate().cancel();
         if (panel.getVisibility() != View.VISIBLE) {
-            panel.setTranslationX(-Math.max(1, root.getWidth()));
+            menuFrom(panel, -Math.max(1, root.getWidth()), 0);
             panel.setVisibility(View.VISIBLE);
         }
-        panel.animate().translationX(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+        menuIn(panel).start();
         recedeHome(0.97f, root.getWidth() * 0.18f);
         panel.onShown();
     }
@@ -1222,10 +1225,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(panel.getWindowToken(), 0);
         panel.animate().cancel();
-        panel.animate().translationX(-Math.max(1, root.getWidth())).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN)
-                .withEndAction(() -> {
-                    if (!panelOpen) panel.setVisibility(View.GONE);
-                }).start();
+        menuOut(panel, -Math.max(1, root.getWidth()), 0).withEndAction(() -> {
+            if (!panelOpen) panel.setVisibility(View.GONE);
+        }).start();
         if (!drawerOpen && !settingsOpen) restoreHome(true);
     }
 
@@ -1236,7 +1238,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (imm != null) imm.hideSoftInputFromWindow(panel.getWindowToken(), 0);
         panel.setVisibility(View.GONE);
-        panel.setTranslationX(0);
+        menuRest(panel);
         if (!drawerOpen && !settingsOpen) restoreHome(false);
     }
 
@@ -1248,17 +1250,65 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         else exitSearch();
         drawer.animate().cancel();
         if (drawer.getVisibility() != View.VISIBLE) {
-            drawer.setAlpha(0f);
-            drawer.setTranslationY(px(60));
+            menuFrom(drawer, 0, px(60));
             drawer.setVisibility(View.VISIBLE);
         }
-        drawer.animate().alpha(1f).translationY(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+        menuIn(drawer).start();
         recedeHome(0.94f, 0);
         playWave();
     }
 
     // ---------- la home arretra dietro cassetto, pagina a sinistra e impostazioni ----------
 
+
+    // ---------- stile di apertura dei menu (Impostazioni → Animazioni) ----------
+
+    /** Posizione di partenza di un pannello che sta per entrare. dx/dy = da dove arriva nello stile "scorrimento". */
+    private void menuFrom(View v, float dx, float dy) {
+        v.setScaleX(1f);
+        v.setScaleY(1f);
+        v.setTranslationX(0);
+        v.setTranslationY(0);
+        switch (Motion.menu) {
+            case 1: // zoom
+                v.setScaleX(0.9f);
+                v.setScaleY(0.9f);
+                v.setAlpha(0f);
+                break;
+            case 2: // dissolvenza
+                v.setAlpha(0f);
+                break;
+            default: // scorrimento
+                v.setTranslationX(dx);
+                v.setTranslationY(dy);
+                v.setAlpha(dy != 0 ? 0f : 1f);
+        }
+    }
+
+    private android.view.ViewPropertyAnimator menuIn(View v) {
+        return v.animate().alpha(1f).translationX(0).translationY(0).scaleX(1f).scaleY(1f)
+                .setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT);
+    }
+
+    private android.view.ViewPropertyAnimator menuOut(View v, float dx, float dy) {
+        android.view.ViewPropertyAnimator a = v.animate().setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN);
+        switch (Motion.menu) {
+            case 1:
+                return a.alpha(0f).scaleX(0.92f).scaleY(0.92f);
+            case 2:
+                return a.alpha(0f);
+            default:
+                return a.translationX(dx).translationY(dy).alpha(dy != 0 ? 0f : 1f);
+        }
+    }
+
+    private static void menuRest(View v) {
+        v.setAlpha(1f);
+        v.setTranslationX(0);
+        v.setTranslationY(0);
+        v.setScaleX(1f);
+        v.setScaleY(1f);
+    }
 
     private void recedeHome(float scale, float dx) {
         homeBox.animate().cancel();
@@ -1292,7 +1342,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (imm != null) imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
         search.clearFocus();
         drawer.animate().cancel();
-        drawer.animate().alpha(0f).translationY(px(60)).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN)
+        menuOut(drawer, 0, px(60))
                 .withEndAction(() -> {
                     if (drawerOpen) return;
                     drawer.setVisibility(View.GONE);
@@ -1308,8 +1358,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (imm != null) imm.hideSoftInputFromWindow(search.getWindowToken(), 0);
         search.clearFocus();
         drawer.setVisibility(View.GONE);
-        drawer.setAlpha(1f);
-        drawer.setTranslationY(0);
+        menuRest(drawer);
         exitSearch();
         if (!panelOpen && !settingsOpen) restoreHome(false);
     }
@@ -5252,11 +5301,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         settings.bringToFront();
         settings.animate().cancel();
         if (settings.getVisibility() != View.VISIBLE) {
-            settings.setAlpha(0f);
-            settings.setTranslationY(px(40));
+            menuFrom(settings, 0, px(40));
             settings.setVisibility(View.VISIBLE);
         }
-        settings.animate().alpha(1f).translationY(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+        menuIn(settings).start();
         recedeHome(0.95f, 0);
     }
 
@@ -5264,7 +5312,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (settings == null || !settingsOpen) return;
         settingsOpen = false;
         settings.animate().cancel();
-        settings.animate().alpha(0f).translationY(px(40)).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN)
+        menuOut(settings, 0, px(40))
                 .withEndAction(() -> {
                     if (!settingsOpen) settings.setVisibility(View.GONE);
                 }).start();
@@ -5317,8 +5365,50 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 prefs.getBoolean("wall", false), on -> toggle("wall", !on));
         st.toggle(SectionIcons.CHIP, T.t("Punti spenti sui display"), T.t("Si vede la griglia dei puntini spenti"),
                 prefs.getBoolean("ghost", true), on -> toggle("ghost", !on));
+
+        st.section(T.t("Animazioni"));
+        final String[] pageNames = {T.t("Scorrimento"), T.t("Profondità"), T.t("Cubo"), T.t("Dissolvenza")};
+        final String[] pageDesc = {T.t("Le pagine scorrono una accanto all'altra"),
+                T.t("La pagina nuova cresce da dietro quella che se ne va"),
+                T.t("Le pagine ruotano come le facce di un cubo"),
+                T.t("Le pagine restano ferme e si sostituiscono sfumando")};
+        st.row(SectionIcons.GRID, T.t("Passaggio tra le pagine"), pageNames[Pager.transition] + " · " + pageDesc[Pager.transition],
+                () -> Sheet.list(this, th, T.t("Passaggio tra le pagine"), pageNames, Pager.transition, w -> {
+                    prefs.edit().putInt("pageAnim", w).apply();
+                    Pager.transition = w;
+                    pager.applyTransition();
+                    if (secView != null) secView.applyTransition();
+                    refillSettings();
+                    toast(T.t("Vale per la home e per il cassetto delle app"));
+                }));
+        final String[] menuNames = {T.t("Scorrimento"), T.t("Zoom"), T.t("Dissolvenza")};
+        final String[] menuDesc = {T.t("Cassetto e impostazioni salgono dal basso, la pagina a sinistra arriva di lato"),
+                T.t("I pannelli si ingrandiscono dal centro"), T.t("I pannelli compaiono sfumando, senza movimento")};
+        st.row(SectionIcons.SLIDERS, T.t("Apertura dei menu"), menuNames[Motion.menu] + " · " + menuDesc[Motion.menu],
+                () -> Sheet.list(this, th, T.t("Apertura dei menu"), menuNames, Motion.menu, w -> {
+                    prefs.edit().putInt("menuAnim", w).apply();
+                    Motion.menu = w;
+                    // piccola anteprima: le impostazioni si richiudono e si riaprono con il nuovo stile
+                    closeSettings();
+                    ui.postDelayed(() -> {
+                        if (!destroyed) showSettings();
+                    }, Motion.EXIT + 220);
+                }));
+        final String[] speeds = {T.t("Lenta"), T.t("Normale"), T.t("Rapida")};
+        final int speed = Math.max(0, Math.min(2, prefs.getInt("animSpeed", 1)));
+        st.row(Draw.BOLT, T.t("Velocità delle animazioni"), speeds[speed],
+                () -> Sheet.list(this, th, T.t("Velocità delle animazioni"), speeds, speed, w -> {
+                    prefs.edit().putInt("animSpeed", w).apply();
+                    Motion.setSpeed(w);
+                    refillSettings();
+                }));
         st.toggle(SectionIcons.STAR, T.t("Animazioni a punti"), T.t("Cifre che si accendono, onda, ricarica"),
                 prefs.getBoolean("anim", true), on -> toggle("anim", !on));
+        if (!Motion.systemOn()) {
+            st.row(SectionIcons.CHIP, T.t("Animazioni di sistema spente"),
+                    T.t("Android ha la scala animazione a zero: riattivala nelle Opzioni sviluppatore"),
+                    () -> safeStart(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)));
+        }
 
         st.section(T.t("Personalizzazione"));
         final int accC = prefs.getInt("accentC", 0);
