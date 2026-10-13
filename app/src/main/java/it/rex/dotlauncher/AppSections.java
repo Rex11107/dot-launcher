@@ -392,7 +392,7 @@ class AppSections extends LinearLayout {
         tv.setGravity(Gravity.CENTER);
         // le parole lunghe ("Aggiornamento") si dividono in sillabe con il trattino, non a caso
         tv.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_FULL);
-        tv.setBreakStrategy(android.text.Layout.BREAK_STRATEGY_BALANCED);
+        if (android.os.Build.VERSION.SDK_INT >= 29) tv.setBreakStrategy(android.graphics.text.LineBreaker.BREAK_STRATEGY_BALANCED);
         LayoutParams lp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.topMargin = px(6);
         lp.leftMargin = px(2);
