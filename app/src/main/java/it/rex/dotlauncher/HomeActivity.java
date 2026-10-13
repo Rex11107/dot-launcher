@@ -375,16 +375,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         started = true;
         Draw.anim = prefs.getBoolean("anim", true) && Motion.systemOn();
         DotNotifications.setListener(this);
-        readQuiet();
-        onNotificationsChanged();
-        startSensors();
-        watchTorch(true);
-        updateAlarm();
-        refreshTiles(null);
-        maybeRefreshWeather();
-        consumePendingShortcuts();
-        checkUpdate(false);
-        refreshUsage();
+        // Il resto aspetta che il gesto del sistema sia finito. Con un launcher diverso da quello di serie,
+        // scorrendo in su da un'app (Home o app recenti) la home viene riavviata proprio mentre il sistema
+        // anima il gesto: tutto il lavoro fatto qui rubava fotogrammi e il gesto a volte "non prendeva".
+        // Se si passa solo di qui per arrivare alle app recenti, onStop annulla tutto e non si fa nulla.
+        ui.removeCallbacks(wakeWork);
+        ui.postDelayed(wakeWork, WAKE_DELAY_MS);
         if (prefs.getBoolean("crashNew", false) && onboarding == null) {
             prefs.edit().putBoolean("crashNew", false).apply();
             Sheet.confirm(this, th, T.t("Il launcher si è chiuso"),
@@ -397,8 +393,33 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onRestart() {
         super.onRestart();
-        playWave();
+        waveOnWake = true; // l'onda parte dopo il gesto, non durante
     }
+
+    private static final long WAKE_DELAY_MS = 350;
+    private boolean waveOnWake;
+
+    /** Lavoro al ritorno sulla home, rimandato a gesto finito (vedi onStart). */
+    private final Runnable wakeWork = new Runnable() {
+        @Override
+        public void run() {
+            if (!started || destroyed) return;
+            readQuiet();
+            onNotificationsChanged();
+            startSensors();
+            watchTorch(true);
+            updateAlarm();
+            refreshTiles(null);
+            maybeRefreshWeather();
+            consumePendingShortcuts();
+            checkUpdate(false);
+            refreshUsage();
+            if (waveOnWake) {
+                waveOnWake = false;
+                if (hasWindowFocus()) playWave(); // solo se la home è davvero davanti, non dietro le app recenti
+            }
+        }
+    };
 
     @Override
     protected void onResume() {
@@ -410,6 +431,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onStop() {
         super.onStop();
+        ui.removeCallbacks(wakeWork); // passati di qui solo per le app recenti: niente lavoro inutile
+        waveOnWake = false;
         try {
             host.stopListening();
         } catch (Exception ignored) {
