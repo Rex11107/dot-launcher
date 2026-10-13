@@ -1,5 +1,6 @@
 package it.rex.dotlauncher;
 
+import android.annotation.SuppressLint;
 import android.Manifest;
 import android.app.Activity;
 import android.app.ActivityOptions;
@@ -1482,6 +1483,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void expandQuickSettings() {
         try {
+            @SuppressLint("WrongConstant") // servizio nascosto di Android, voluto: non c'è un'alternativa pubblica
             Object sb = getSystemService("statusbar");
             Class.forName("android.app.StatusBarManager").getMethod("expandSettingsPanel").invoke(sb);
         } catch (Exception e) {
@@ -1682,6 +1684,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void expandNotifications() {
         try {
+            @SuppressLint("WrongConstant") // servizio nascosto di Android, voluto: non c'è un'alternativa pubblica
             Object sb = getSystemService("statusbar");
             Class.forName("android.app.StatusBarManager").getMethod("expandNotificationsPanel").invoke(sb);
         } catch (Exception ignored) {
@@ -6375,6 +6378,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void locateAndFetch() {
+        // il permesso si può revocare in qualsiasi momento dalle impostazioni: senza, si chiede la città
+        if (checkSelfPermission(android.Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            askCity();
+            return;
+        }
         LocationManager lm = (LocationManager) getSystemService(LOCATION_SERVICE);
         if (lm == null) return;
         Location best = null;
