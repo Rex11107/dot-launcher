@@ -94,6 +94,9 @@ final class AiClient {
         if ("gemini".equals(p)) return gemini(key, model, history);
         String b = base == null || base.trim().isEmpty() ? defaultBase(p) : base.trim();
         if (b.isEmpty()) throw new Exception(T.t("Manca l'indirizzo del servizio"));
+        // la chiave viaggia nell'intestazione: senza https chiunque sulla stessa rete potrebbe leggerla
+        if (!b.toLowerCase(java.util.Locale.ROOT).startsWith("https://"))
+            throw new Exception(T.t("L'indirizzo del servizio deve iniziare con https://"));
         if (b.endsWith("/")) b = b.substring(0, b.length() - 1);
         return openAiCompatible(b + "/chat/completions", key, model, history, !"chatgpt".equals(p));
     }

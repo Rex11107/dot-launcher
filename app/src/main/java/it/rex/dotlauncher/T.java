@@ -27,6 +27,7 @@ final class T {
             "senza parole.) ", "without words.) ",
             "Personalizzato", "Custom",
             "Manca l'indirizzo del servizio", "The service address is missing",
+            "L'indirizzo del servizio deve iniziare con https://", "The service address must start with https://",
             "Errore ", "Error ",
             "Chiave API non valida o senza permessi (", "API key not valid or without permissions (",
             "Tutte le app", "All apps",

@@ -469,7 +469,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (intent != null && intent.hasExtra("blocked")) {
+        if (intent != null && intent.hasExtra("blocked") && intent.getLongExtra("tok", 0) == DotAccessibility.TOKEN) {
             // riportati qui dal blocco rigido: si chiude ciò che era aperto e si spiega perché
             if (dragSrc >= 0) finishDrag(false);
             exitResize();
@@ -3712,6 +3712,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (intent == null) return;
         String pkg = intent.getStringExtra("blocked");
         if (pkg == null) return;
+        // la home è aperta a tutte le app: si accetta solo la richiesta del nostro servizio
+        if (intent.getLongExtra("tok", 0) != DotAccessibility.TOKEN) {
+            intent.removeExtra("blocked");
+            return;
+        }
         String why = intent.getStringExtra("why");
         intent.removeExtra("blocked");
         AppEntry a = null;

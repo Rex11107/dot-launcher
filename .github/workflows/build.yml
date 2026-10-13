@@ -61,3 +61,48 @@ jobs:
           name: Dot Launcher 2.0.${{ github.run_number }}
           files: DotLauncher.apk
           make_latest: true
+
+      # Controllo del codice: gira dopo la release, quindi non la ritarda e non la blocca mai
+      - name: Android Lint
+        if: always()
+        continue-on-error: true
+        run: |
+          gradle lintRelease --continue > lint.log 2>&1 || true
+          python3 - <<'EOF'
+          import os, collections, xml.etree.ElementTree as ET
+          path = "app/build/reports/lint-results-release.xml"
+          out = open(os.environ["GITHUB_STEP_SUMMARY"], "a")
+          if not os.path.exists(path):
+              out.write("## Android Lint\n\nRapporto non generato: vedi `lint.log` tra gli artefatti.\n")
+              raise SystemExit
+          issues = ET.parse(path).getroot().findall("issue")
+          by_sev = collections.Counter(i.get("severity") for i in issues)
+          by_id = collections.Counter((i.get("severity"), i.get("id"), i.get("category")) for i in issues)
+          out.write("## Android Lint\n\n")
+          out.write(" · ".join(f"**{n}** {s}" for s, n in by_sev.most_common()) or "Nessun problema", )
+          out.write("\n\n| Gravità | Problema | Categoria | Quanti |\n|---|---|---|---|\n")
+          order = {"Fatal": 0, "Error": 1, "Warning": 2, "Information": 3}
+          for (sev, iid, cat), n in sorted(by_id.items(), key=lambda x: (order.get(x[0][0], 9), -x[1])):
+              out.write(f"| {sev} | {iid} | {cat} | {n} |\n")
+          out.write("\nIl rapporto completo è nell'artefatto **lint-report**.\n")
+          # gli errori veri diventano annotazioni visibili nella pagina della build
+          shown = 0
+          for i in issues:
+              if i.get("severity") in ("Fatal", "Error") and shown < 30:
+                  loc = i.find("location")
+                  f = loc.get("file", "").split("/app/", 1)[-1] if loc is not None else ""
+                  line = loc.get("line", "1") if loc is not None else "1"
+                  msg = i.get("message", "").replace("%", "%25").replace("\n", " ")
+                  print(f"::warning file=app/{f},line={line},title=Lint {i.get('id')}::{msg}")
+                  shown += 1
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lint-report
+          path: |
+            app/build/reports/lint-results-release.html
+            app/build/reports/lint-results-release.xml
+            lint.log
+          if-no-files-found: ignore

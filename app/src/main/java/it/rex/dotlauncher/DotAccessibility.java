@@ -28,6 +28,9 @@ public class DotAccessibility extends AccessibilityService {
     private String lastPkg = "";
     private long lastBlock;
 
+    /** Segreto casuale del processo: la home accetta "blocked" solo da qui, non da altre app. */
+    static final long TOKEN = new java.security.SecureRandom().nextLong();
+
     static boolean active() {
         return instance != null;
     }
@@ -101,7 +104,8 @@ public class DotAccessibility extends AccessibilityService {
             Intent i = new Intent(this, HomeActivity.class)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
                     .putExtra("blocked", pkg)
-                    .putExtra("why", why);
+                    .putExtra("why", why)
+                    .putExtra("tok", TOKEN);
             startActivity(i);
         } catch (Exception e) {
             performGlobalAction(GLOBAL_ACTION_HOME);

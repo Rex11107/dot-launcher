@@ -26,8 +26,11 @@ final class Updater {
         File out = new File(c.getCacheDir(), "update.apk");
         String u = url;
         HttpURLConnection con = null;
+        boolean ok = false;
         // GitHub reindirizza al file vero: si seguono i reindirizzamenti a mano (al massimo 5)
         for (int i = 0; i < 5; i++) {
+            // solo https: un reindirizzamento verso http permetterebbe di sostituire l'APK lungo la strada
+            if (!u.startsWith("https://")) throw new Exception("https");
             con = (HttpURLConnection) new URL(u).openConnection();
             con.setInstanceFollowRedirects(false);
             con.setConnectTimeout(15000);
@@ -42,9 +45,10 @@ final class Updater {
                 continue;
             }
             if (code != 200) throw new Exception("HTTP " + code);
+            ok = true;
             break;
         }
-        if (con == null) throw new Exception("no connection");
+        if (!ok) throw new Exception("redirect");
         long total = con.getContentLengthLong();
         try (InputStream in = con.getInputStream(); OutputStream os = new FileOutputStream(out)) {
             byte[] buf = new byte[64 * 1024];
