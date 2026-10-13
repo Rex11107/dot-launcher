@@ -170,6 +170,7 @@ public class WallpaperActivity extends Activity {
                 Bitmap b = WallpaperGen.make(style, sz[0], sz[1], seed);
                 WallpaperManager.getInstance(this).setBitmap(b, null, true, which);
                 Glass.save(this, b);
+                prefs.edit().putInt("wallStyle", style).apply(); // per segnare lo sfondo in uso
                 done();
             } catch (Exception e) {
                 fail();
@@ -235,6 +236,7 @@ public class WallpaperActivity extends Activity {
                     wm.setBitmap(b, null, true, which);
                     Glass.save(this, b);
                 }
+                prefs.edit().putInt("wallStyle", -1).apply(); // foto: nessuno sfondo generato in uso
                 done();
             } catch (Exception e) {
                 fail();
@@ -304,9 +306,24 @@ public class WallpaperActivity extends Activity {
                 else iv.setBackgroundColor(th.tile);
                 card.addView(iv, new FrameLayout.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
-                label.setText(WallpaperGen.NAMES[pos - 1]);
+                // sfumatura scura in fondo: il nome si legge anche sugli sfondi chiari
+                View scrim = new View(WallpaperActivity.this);
+                scrim.setBackground(new android.graphics.drawable.GradientDrawable(
+                        android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                        new int[]{0x00000000, 0x59000000, 0xB3000000}));
+                card.addView(scrim, new FrameLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, Math.round(84 * dp), Gravity.BOTTOM));
+                boolean inUse = prefs.getBoolean("wall", false) && prefs.getInt("wallStyle", -1) == pos - 1;
+                label.setText(inUse ? WallpaperGen.NAMES[pos - 1] + "  ·  " + T.t("in uso") : WallpaperGen.NAMES[pos - 1]);
                 label.setTextColor(0xFFFFFFFF);
-                label.setShadowLayer(6 * dp, 0, 0, 0xCC000000);
+                label.setShadowLayer(4 * dp, 0, 0, 0x99000000);
+                if (inUse) {
+                    android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
+                    ring.setCornerRadius(radius);
+                    ring.setStroke(Math.round(3 * dp), th.accent);
+                    card.setForeground(ring);
+                }
+                card.setContentDescription(label.getText());
             }
             card.addView(label, lp);
             return card;

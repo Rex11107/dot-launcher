@@ -18,7 +18,7 @@ final class WallpaperGen {
             T.t("Puntini"), T.t("Onde scure"), T.t("Sfere"), T.t("Rosso e nero"),
             T.t("Mosaico"), T.t("Pieghe"), T.t("Anelli chiari"), T.t("Puntini chiari"),
             T.t("Cerchi blu"), T.t("Alba arancio"), T.t("Geometrie"), T.t("Ovali"), T.t("Fiore"),
-            T.t("Luci glyph"), T.t("Matrice"), T.t("Griglia"), T.t("Sabbia"), T.t("Tubi"),
+            T.t("Tracce luminose"), T.t("Matrice"), T.t("Griglia"), T.t("Sabbia"), T.t("Tubi"),
             T.t("Pillole"), T.t("Rami"), T.t("Monocromo"),
             T.t("Bolla di vetro"), "Dune", T.t("Onda di punti"), "Aurora", T.t("Mezzatinta"), T.t("Notte a punti"),
             T.t("Carta a strati"), "Bauhaus", T.t("Nebbia colorata"), T.t("Topografia"), T.t("Anello neon"), T.t("Progetto"),
@@ -44,7 +44,7 @@ final class WallpaperGen {
             case 10: geometry(c, w, h, r); break;
             case 11: loops(c, w, h, r); break;
             case 12: flower(c, w, h, r); break;
-            case 13: glyphLights(c, w, h, r); break;
+            case 13: lightTrails(c, w, h, r); break;
             case 14: matrix(c, w, h, r); break;
             case 15: grid(c, w, h, r); break;
             case 16: sand(c, w, h, r); break;
@@ -500,8 +500,8 @@ final class WallpaperGen {
         grain(c, w, h, r, 0.09f);
     }
 
-    // Luci glyph: pannelli scuri, archi concentrici e linee al neon
-    private static void glyphLights(Canvas c, int w, int h, Random r) {
+    // Tracce luminose: pannelli scuri, archi concentrici e linee al neon
+    private static void lightTrails(Canvas c, int w, int h, Random r) {
         boolean white = r.nextFloat() < 0.3f;
         int neon = white ? 0xFFF4F4F4 : 0xFFFF1A1A;
         c.drawColor(0xFF000000);

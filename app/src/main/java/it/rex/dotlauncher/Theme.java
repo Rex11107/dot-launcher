@@ -25,6 +25,8 @@ final class Theme {
     final int iconBg, iconFg, iconBgAlt, iconFgAlt, iconStroke, sheetBg;
     /** Colore leggibile sopra l'accento (bianco, o quasi nero se l'accento è molto chiaro). */
     final int onAccent;
+    /** Accento per il testo: stessa tinta, ma abbastanza chiara (o scura) da leggersi sulle tessere (≥ 4,5:1). */
+    final int accentText;
     final Typeface numFace, labelFace, bodyFace, titleFace;
 
     private Theme(Context c, SharedPreferences p) {
@@ -97,6 +99,25 @@ final class Theme {
         // le icone della barra di stato seguono il tema; una sfumatura dietro le barre garantisce il contrasto
         darkIcons = light;
         onAccent = Color.luminance(accent) > 0.45f ? 0xFF111111 : 0xFFFFFFFF;
+        // le tessere di vetro prendono un po' del colore dello sfondo: si misura su una tessera tinta
+        int ref = blend(0xFF000000 | tile, accent, light ? 0.08f : 0.25f);
+        accentText = textOn(accent, ref, light);
+    }
+
+    /** Rapporto di contrasto WCAG tra due colori opachi. */
+    static double contrast(int a, int b) {
+        double la = Color.luminance(0xFF000000 | a), lb = Color.luminance(0xFF000000 | b);
+        return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+    }
+
+    /** Avvicina il colore al bianco (o al nero nel tema chiaro) quel tanto che basta per 4,5:1 su ref. */
+    private static int textOn(int col, int ref, boolean light) {
+        int target = light ? 0xFF000000 : 0xFFFFFFFF;
+        for (int i = 0; i <= 20; i++) {
+            int c = blend(col, target, i * 0.05f);
+            if (contrast(c, ref) >= 4.5) return 0xFF000000 | c;
+        }
+        return target;
     }
 
     /** Nel tema chiaro un accento troppo luminoso (giallo, azzurro) non si legge: lo si scurisce. */

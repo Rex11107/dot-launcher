@@ -4253,7 +4253,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (act != null) {
                 TextView go = new TextView(this);
                 go.setText("›");
-                go.setTextColor(th.accent);
+                go.setTextColor(th.accentText);
                 go.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
                 go.setPadding(px(10), 0, px(4), 0);
                 row.addView(go);

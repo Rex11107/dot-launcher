@@ -171,6 +171,11 @@ class NothingTile extends View {
         return item.tone == 2 ? th.onAccent : th.accent;
     }
 
+    /** Accento per le scritte: più chiaro del blu pieno, così si legge sulla tessera. */
+    private int accT() {
+        return item.tone == 2 ? th.onAccent : th.accentText;
+    }
+
     private boolean isCircle() {
         return item.w == 1 && item.h == 1;
     }
@@ -367,7 +372,7 @@ class NothingTile extends View {
         String day = new SimpleDateFormat("d", T.loc()).format(d);
         String mo = new SimpleDateFormat("MMMM", T.loc()).format(d);
         Draw.label(cv, th, wd, W / 2f, H * 0.2f, H * 0.075f, fg(), 0, p, W * 0.8f);
-        Draw.big(cv, th, day, W / 2f, H * 0.52f, H * 0.36f, W * 0.8f, acc(), "", acc(), 0, p, false);
+        Draw.big(cv, th, day, W / 2f, H * 0.52f, H * 0.36f, W * 0.8f, accT(), "", acc(), 0, p, false);
         Draw.label(cv, th, mo, W / 2f, H * 0.88f, H * 0.075f, fg(), 0, p, W * 0.8f);
     }
 
@@ -375,7 +380,7 @@ class NothingTile extends View {
         Date d = new Date();
         String wd = new SimpleDateFormat("EEE", T.loc()).format(d).replace(".", "");
         String day = new SimpleDateFormat("d", T.loc()).format(d);
-        Draw.label(cv, th, wd, W / 2f, H * 0.32f, H * 0.11f, acc(), 0, p, W * 0.6f);
+        Draw.label(cv, th, wd, W / 2f, H * 0.32f, H * 0.11f, accT(), 0, p, W * 0.6f);
         Draw.big(cv, th, day, W / 2f, H * 0.58f, H * 0.26f, W * 0.6f, fg(), "", acc(), 0, p, false);
     }
 
@@ -400,7 +405,7 @@ class NothingTile extends View {
         p.setTextAlign(Paint.Align.CENTER);
         p.setTextSize(ts);
         for (int i = 0; i < 7; i++) {
-            p.setColor(i >= 5 ? acc() : sub());
+            p.setColor(i >= 5 ? accT() : sub());
             cv.drawText(wn[i], gx + cw * i + cw / 2f, gy + ch * 0.5f + ts * 0.36f, p);
         }
         for (int dd = 1; dd <= days; dd++) {
@@ -464,7 +469,7 @@ class NothingTile extends View {
         for (int i = 0; i < n; i++) {
             int k = i + 1;
             float x = pad + cw * i + cw / 2f;
-            Draw.label(cv, th, State.dName[k], x, top + H * 0.06f, H * 0.06f, i == 0 ? acc() : sub(), 0, p, cw * 0.9f);
+            Draw.label(cv, th, State.dName[k], x, top + H * 0.06f, H * 0.06f, i == 0 ? accT() : sub(), 0, p, cw * 0.9f);
             Draw.icon(cv, Draw.weatherIcon(State.dCode[k]), x, top + H * 0.2f, H * 0.14f, p, fg(), acc());
             Draw.label(cv, th, State.dMax[k] + "°", x, top + H * 0.38f, H * 0.065f, fg(), 0, p, cw * 0.9f);
         }
@@ -558,7 +563,7 @@ class NothingTile extends View {
 
     private void batteryDots(Canvas cv, float W, float H) {
         float pad = Math.min(W, H) * 0.14f;
-        Draw.big(cv, th, pct() + "%", W - pad, pad + H * 0.05f, H * 0.08f, W * 0.5f, acc(), "", acc(), 1, p, true);
+        Draw.big(cv, th, pct() + "%", W - pad, pad + H * 0.05f, H * 0.08f, W * 0.5f, accT(), "", acc(), 1, p, true);
         int n = 5;
         float gTop = pad + H * 0.18f;
         float size = Math.min(W - pad * 2, H - gTop - pad);
@@ -629,7 +634,7 @@ class NothingTile extends View {
             double a = Math.toRadians(k * 90 - hd);
             float lr = R * 0.6f;
             Draw.big(cv, th, card[k], cx + (float) Math.sin(a) * lr, cy - (float) Math.cos(a) * lr,
-                    R * 0.1f, R * 0.2f, k == 0 ? acc() : sub(), "", acc(), 0, p, true);
+                    R * 0.1f, R * 0.2f, k == 0 ? accT() : sub(), "", acc(), 0, p, true);
         }
         Draw.big(cv, th, deg + "°", cx, cy - R * 0.06f, R * 0.2f, R * 0.7f, fg(), "°", acc(), 0, p, true);
         Draw.label(cv, th, dir, cx, cy + R * 0.25f, R * 0.11f, sub(), 0, p, R);
@@ -648,7 +653,7 @@ class NothingTile extends View {
         int d = WData.daysTo(target);
         String num = d == 0 ? T.t("OGGI") : String.valueOf(Math.abs(d));
         String unit = d == 0 ? title : T.n(Math.abs(d), "giorno", "giorni") + (d < 0 ? T.t(" fa") : "");
-        int numColor = d == 0 ? acc() : fg();
+        int numColor = d == 0 ? accT() : fg();
         if (isCircle()) {
             Draw.big(cv, th, num, W / 2f, H * 0.44f, H * 0.24f, W * 0.62f, numColor, "", acc(), 0, p, true);
             Draw.label(cv, th, d == 0 ? "" : unit, W / 2f, H * 0.74f, H * 0.09f, sub(), 0, p, W * 0.6f);
@@ -658,12 +663,12 @@ class NothingTile extends View {
             float w = Draw.big(cv, th, num, pad, H / 2f, H * 0.38f, W * 0.5f, numColor, "", acc(), -1, p, true);
             float x = pad + w + H * 0.18f, maxW = W - x - pad;
             Draw.label(cv, th, title, x, H * 0.46f, H * 0.16f, fg(), -1, p, maxW);
-            if (d != 0) Draw.label(cv, th, unit, x, H * 0.7f, H * 0.13f, acc(), -1, p, maxW);
+            if (d != 0) Draw.label(cv, th, unit, x, H * 0.7f, H * 0.13f, accT(), -1, p, maxW);
             return;
         }
         Draw.label(cv, th, title, pad, pad + m * 0.08f, m * 0.085f, fg(), -1, p, W - pad * 2);
         Draw.big(cv, th, num, W / 2f, H * 0.5f, H * 0.3f, W - pad * 2, numColor, "", acc(), 0, p, true);
-        if (d != 0) Draw.label(cv, th, unit, W / 2f, H * 0.76f, m * 0.08f, acc(), 0, p, W - pad * 2);
+        if (d != 0) Draw.label(cv, th, unit, W / 2f, H * 0.76f, m * 0.08f, accT(), 0, p, W - pad * 2);
         String date = new SimpleDateFormat("d MMM yyyy", T.loc()).format(new Date(target));
         Draw.label(cv, th, date, W / 2f, H - pad * 0.8f, m * 0.065f, sub(), 0, p, W - pad * 2);
     }
@@ -704,7 +709,7 @@ class NothingTile extends View {
                 float y = pad + rowH * i + rowH / 2f;
                 Draw.label(cv, th, c[0], pad, y - rowH * 0.02f, rowH * 0.22f, fg(), -1, p, W * 0.42f);
                 Draw.label(cv, th, WData.offsetLabel(c[1]), pad, y + rowH * 0.24f, rowH * 0.17f,
-                        night(c[1]) ? acc() : sub(), -1, p, W * 0.42f);
+                        night(c[1]) ? accT() : sub(), -1, p, W * 0.42f);
                 Draw.big(cv, th, zoneTime(c[1]), W - pad, y, rowH * 0.36f, W * 0.48f, fg(), ":", acc(), 1, p, true);
             }
             return;
@@ -719,7 +724,7 @@ class NothingTile extends View {
             Draw.big(cv, th, zoneTime(c[1]), x, tall ? H * 0.52f : H * 0.62f, tall ? H * 0.17f : H * 0.26f,
                     cw * 0.86f, fg(), ":", acc(), 0, p, true);
             if (tall) Draw.label(cv, th, WData.offsetLabel(c[1]), x, H * 0.78f, H * 0.065f,
-                    night(c[1]) ? acc() : sub(), 0, p, cw * 0.9f);
+                    night(c[1]) ? accT() : sub(), 0, p, cw * 0.9f);
         }
     }
 
@@ -755,7 +760,7 @@ class NothingTile extends View {
                     R * 1.3f, fg(), "", acc(), 0, p, true);
             if (!circ) {
                 Draw.label(cv, th, T.t("passi"), cx, cy + m * 0.13f, m * 0.065f, sub(), 0, p, R);
-                Draw.label(cv, th, T.t("obiettivo ") + goal, cx, cy + m * 0.22f, m * 0.05f, acc(), 0, p, R * 1.2f);
+                Draw.label(cv, th, T.t("obiettivo ") + goal, cx, cy + m * 0.22f, m * 0.05f, accT(), 0, p, R * 1.2f);
             }
             return;
         }
@@ -855,7 +860,7 @@ class NothingTile extends View {
         int pct = Math.round(100f * (today - 1) / days);
         Draw.big(cv, th, String.valueOf(c.get(Calendar.YEAR)), pad, pad + head * 0.4f, head * 0.55f, W * 0.5f, fg(), "",
                 acc(), -1, p, true);
-        Draw.big(cv, th, pct + "%", W - pad, pad + head * 0.4f, head * 0.55f, W * 0.4f, acc(), "", acc(), 1, p, true);
+        Draw.big(cv, th, pct + "%", W - pad, pad + head * 0.4f, head * 0.55f, W * 0.4f, accT(), "", acc(), 1, p, true);
         float gx = pad, gy = pad + head, gw = W - pad * 2, gh = H - gy - pad;
         // colonne e righe che riempiono al meglio l'area
         int cols = Math.max(7, (int) Math.round(Math.sqrt(days * gw / gh)));
@@ -880,7 +885,7 @@ class NothingTile extends View {
         float frac = (hr * 60 + min) / 1440f;
         float pad = H * 0.16f;
         Draw.label(cv, th, T.t("Giornata"), pad, H * 0.36f, H * 0.14f, sub(), -1, p, W * 0.5f);
-        Draw.big(cv, th, Math.round(frac * 100) + "%", W - pad, H * 0.3f, H * 0.2f, W * 0.4f, acc(), "", acc(), 1, p, true);
+        Draw.big(cv, th, Math.round(frac * 100) + "%", W - pad, H * 0.3f, H * 0.2f, W * 0.4f, accT(), "", acc(), 1, p, true);
         int n = 24;
         float bw = W - pad * 2, step = bw / n, cy = H * 0.68f;
         for (int i = 0; i < n; i++) {
@@ -1018,7 +1023,7 @@ class NothingTile extends View {
             float x = pad + cw * i + cw / 2f;
             String lab = i == 0 ? "ora" : State.hLabel[k];
             Draw.label(cv, th, lab, x, tall ? H * 0.2f : H * 0.28f, tall ? H * 0.065f : H * 0.13f,
-                    i == 0 ? acc() : sub(), 0, p, cw * 0.9f);
+                    i == 0 ? accT() : sub(), 0, p, cw * 0.9f);
             if (tall) {
                 Draw.icon(cv, Draw.weatherIcon(State.hCode[k]), x, H * 0.38f, Math.min(cw * 0.6f, H * 0.18f), p, fg(), acc());
                 // colonna di puntini proporzionale alla temperatura
@@ -1089,7 +1094,7 @@ class NothingTile extends View {
 
     private void proverb(Canvas cv, float W, float H) {
         float pad = Math.min(W, H) * 0.14f;
-        Draw.label(cv, th, T.t("Proverbio del giorno"), pad, pad + H * 0.06f, Math.min(W, H) * 0.07f, acc(), -1, p, W - pad * 2);
+        Draw.label(cv, th, T.t("Proverbio del giorno"), pad, pad + H * 0.06f, Math.min(W, H) * 0.07f, accT(), -1, p, W - pad * 2);
         android.text.TextPaint tp = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
         tp.setColor(fg());
         tp.setTypeface(th.nuovo ? th.titleFace : Fonts.medium);
@@ -1149,7 +1154,7 @@ class NothingTile extends View {
         for (int i = 0; i < 7; i++) {
             float x = pad + cw * i + cw / 2f;
             boolean today = i == dow;
-            Draw.label(cv, th, names[i], x, H * 0.36f, H * 0.14f, i >= 5 ? acc() : sub(), 0, p, cw);
+            Draw.label(cv, th, names[i], x, H * 0.36f, H * 0.14f, i >= 5 ? accT() : sub(), 0, p, cw);
             if (today) {
                 p.setColor(acc());
                 cv.drawCircle(x, H * 0.64f, Math.min(cw, H) * 0.26f, p);
@@ -1195,7 +1200,7 @@ class NothingTile extends View {
     private void note(Canvas cv, float W, float H) {
         String t = WData.get(item, "t", "");
         float pad = Math.min(W, H) * 0.14f;
-        Draw.label(cv, th, T.t("Nota"), pad, pad + H * 0.04f, Math.min(W, H) * (item.h == 1 ? 0.12f : 0.07f), acc(), -1, p,
+        Draw.label(cv, th, T.t("Nota"), pad, pad + H * 0.04f, Math.min(W, H) * (item.h == 1 ? 0.12f : 0.07f), accT(), -1, p,
                 W * 0.5f);
         android.text.TextPaint tp = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
         tp.setColor(t.isEmpty() ? sub() : fg());
@@ -1459,7 +1464,7 @@ class NothingTile extends View {
         Draw.label(cv, th, "Focus", x, H * 0.44f, H * 0.17f, fg(), -1, p, W - x - H * 0.2f);
         String st = !on ? T.t("Spento") : until == Long.MAX_VALUE ? T.t("Attivo")
                 : T.t("Fino alle ") + new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc()).format(new Date(until));
-        Draw.label(cv, th, st, x, H * 0.7f, H * 0.13f, on ? acc() : sub(), -1, p, W - x - H * 0.2f);
+        Draw.label(cv, th, st, x, H * 0.7f, H * 0.13f, on ? accT() : sub(), -1, p, W - x - H * 0.2f);
     }
 
     // ---------- sveglia e ricerca ----------

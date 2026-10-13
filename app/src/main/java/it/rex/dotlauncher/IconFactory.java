@@ -80,13 +80,12 @@ final class IconFactory {
     }
 
     private static Bitmap makeLocked(Drawable d, int size, String style, boolean red, int mode, Theme th) {
-        if (mode == MODE_ORIGINAL || (COLOR.equals(style) && !red && mode != MODE_GLYPH)) {
-            return original(d, size);
-        }
+        if (mode == MODE_ORIGINAL) return original(d, size); // scelta esplicita per questa app: intatta
+        if (COLOR.equals(style) && !red && mode != MODE_GLYPH) return uniform(d, size, th);
 
         Bitmap mask = glyph(d, size * 2, mode == MODE_GLYPH); // risoluzione doppia per bordi puliti
         Rect box = mask == null ? null : bounds(mask);
-        if (box == null) return original(d, size); // non trasformabile in modo pulito: si lascia com'è
+        if (box == null) return uniform(d, size, th); // non trasformabile in modo pulito: colori originali
 
         int bg, fg;
         if (red) {
@@ -119,6 +118,89 @@ final class IconFactory {
         RectF dst = new RectF((size - w) / 2f, (size - h) / 2f, (size + w) / 2f, (size + h) / 2f);
         p.setColorFilter(new PorterDuffColorFilter(fg, PorterDuff.Mode.SRC_IN));
         c.drawBitmap(mask, box, dst, p);
+        return out;
+    }
+
+    /**
+     * Colori originali, ma con la stessa forma e la stessa misura delle altre icone.
+     * Molti telefoni consegnano le icone già ritagliate e con un margine trasparente:
+     * accanto ai simboli su piastrella sembrerebbero più piccole e di forma diversa.
+     */
+    static Bitmap uniform(Drawable d, int size, Theme th) {
+        Bitmap out = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas c = new Canvas(out);
+        android.graphics.Path shapePath = shapePath(size, 0);
+        Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+
+        // icona adattiva: si disegnano i due strati a tutta forma, con la nostra sagoma
+        if (d instanceof AdaptiveIconDrawable) {
+            AdaptiveIconDrawable a = (AdaptiveIconDrawable) d;
+            int extra = size / 4; // gli strati sono di 108dp, la parte visibile di 72dp
+            c.save();
+            c.clipPath(shapePath);
+            if (a.getBackground() != null) {
+                Drawable b = a.getBackground();
+                b.setBounds(-extra, -extra, size + extra, size + extra);
+                b.draw(c);
+            }
+            if (a.getForeground() != null) {
+                Drawable f = a.getForeground();
+                f.setBounds(-extra, -extra, size + extra, size + extra);
+                f.draw(c);
+            }
+            c.restore();
+            return out;
+        }
+
+        // icona già pronta: si toglie il margine trasparente e si guarda quanto è "piena"
+        int big = size * 2;
+        Bitmap src = original(d, big);
+        int w = big, h = big;
+        int[] px = new int[w * h];
+        src.getPixels(px, 0, w, 0, 0, w, h);
+        int l = w, t = h, r = -1, btm = -1;
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if ((px[y * w + x] >>> 24) > 16) {
+                    if (x < l) l = x;
+                    if (x > r) r = x;
+                    if (y < t) t = y;
+                    if (y > btm) btm = y;
+                }
+            }
+        }
+        if (r < 0) return out;
+        int solid = 0;
+        for (int y = t; y <= btm; y++) for (int x = l; x <= r; x++) if ((px[y * w + x] >>> 24) > 200) solid++;
+        int bw = r - l + 1, bh = btm - t + 1;
+        float fill = solid / (float) (bw * bh);
+        Rect box = new Rect(l, t, r + 1, btm + 1);
+
+        if (fill >= 0.75f && Math.abs(bw - bh) <= Math.max(bw, bh) * 0.12f) {
+            // piastrella piena (quadrata, tonda, squircle): la si allarga a tutta forma
+            float sc = size / (float) Math.min(bw, bh) * 1.04f; // un filo in più copre i bordi sfumati
+            float dw = bw * sc, dh = bh * sc;
+            c.save();
+            c.clipPath(shapePath);
+            c.drawBitmap(src, box, new RectF((size - dw) / 2f, (size - dh) / 2f, (size + dw) / 2f, (size + dh) / 2f), p);
+            c.restore();
+        } else {
+            // logo senza fondo: va sulla piastrella del tema, come i simboli
+            p.setColor(th.iconBg);
+            c.drawPath(shapePath, p);
+            if (th.iconStroke != 0) {
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(Math.max(1f, size / 60f));
+                p.setColor(th.iconStroke);
+                c.drawPath(shapePath(size, p.getStrokeWidth() / 2f), p);
+                p.setStyle(Paint.Style.FILL);
+            }
+            p.setColor(0xFFFFFFFF);
+            float sc = size * 0.66f / Math.max(bw, bh);
+            float dw = bw * sc, dh = bh * sc;
+            c.drawBitmap(src, box, new RectF((size - dw) / 2f, (size - dh) / 2f, (size + dw) / 2f, (size + dh) / 2f), p);
+        }
+        src.recycle();
         return out;
     }
 

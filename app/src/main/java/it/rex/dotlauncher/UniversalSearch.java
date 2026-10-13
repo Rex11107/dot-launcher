@@ -276,7 +276,7 @@ class UniversalSearch extends ScrollView {
         box.addView(m);
         TextView hint = new TextView(act);
         hint.setText(T.t("Tocca per copiare"));
-        hint.setTextColor(th.accent);
+        hint.setTextColor(th.accentText);
         hint.setTypeface(th.bodyFace);
         hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
         box.addView(hint);

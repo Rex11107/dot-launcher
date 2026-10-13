@@ -723,7 +723,7 @@ class LeftPanel extends FrameLayout {
             }
             c.addView(iv, new LinearLayout.LayoutParams(w, ih));
         }
-        TextView src = text((a.source + "  ·  " + ago(a.time)), 11, th.accent);
+        TextView src = text((a.source + "  ·  " + ago(a.time)), 11, th.accentText);
         src.setTypeface(th.labelFace);
         src.setPadding(px(12), px(10), px(12), 0);
         c.addView(src, new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -842,7 +842,7 @@ class LeftPanel extends FrameLayout {
         if (eventsBox == null) return;
         eventsBox.removeAllViews();
         if (act.checkSelfPermission(android.Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
-            TextView t = text(T.t("Tocca qui per vedere i tuoi prossimi eventi"), 14, th.accent);
+            TextView t = text(T.t("Tocca qui per vedere i tuoi prossimi eventi"), 14, th.accentText);
             t.setPadding(px(4), px(6), px(4), px(4));
             t.setOnClickListener(v -> host.requestCalendar());
             eventsBox.addView(t);
@@ -905,7 +905,7 @@ class LeftPanel extends FrameLayout {
             LinearLayout texts = new LinearLayout(act);
             texts.setOrientation(LinearLayout.VERTICAL);
             texts.setPadding(px(12), 0, 0, 0);
-            TextView w = text(th.upperLabels ? when.toUpperCase(T.loc()) : when, 11, diff <= 0 ? th.accent : th.sub);
+            TextView w = text(th.upperLabels ? when.toUpperCase(T.loc()) : when, 11, diff <= 0 ? th.accentText : th.sub);
             w.setTypeface(th.labelFace);
             texts.addView(w);
             TextView t = text(e[1] == null ? T.t("(senza titolo)") : (String) e[1], 15, th.onTile);
