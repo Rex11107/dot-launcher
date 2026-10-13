@@ -1505,6 +1505,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             {"g_pinch", T.t("Pizzica (avvicina le dita)"), "settings"},
     };
 
+    private static String[] gestureIcon(String key) {
+        switch (key) {
+            case "g_up": return SectionIcons.SWIPE_UP;
+            case "g_down": return SectionIcons.SWIPE_DOWN;
+            case "g_dbl": return SectionIcons.DOUBLE_TAP;
+            case "g_two_down": return SectionIcons.TWO_DOWN;
+            case "g_two_up": return SectionIcons.TWO_UP;
+            case "g_pinch": return SectionIcons.PINCH;
+            default: return SectionIcons.STAR;
+        }
+    }
+
     /** {azione, nome} */
     static final String[][] ACTIONS = {
             {"none", T.t("Niente")},
@@ -4142,7 +4154,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 ? (until == Long.MAX_VALUE ? T.t("Attiva") : T.t("Attiva fino alle ") + hhmm(until)) : T.t("Spenta: tocca per iniziare"),
                 this::focusMenu);
         int nf = Usage.focusApps(prefs).size();
-        st.row(SectionIcons.STAR, T.t("App che distraggono"), nf == 0 ? T.t("Nessuna: scegli quali mettere in pausa nel focus")
+        st.row(SectionIcons.BLOCK, T.t("App che distraggono"), nf == 0 ? T.t("Nessuna: scegli quali mettere in pausa nel focus")
                 : nf + T.n(nf, " app in pausa durante il focus", " app in pausa durante il focus"), () -> pickFocusApps(null));
         st.toggle(Draw.BELL, T.t("Non disturbare durante il focus"), T.t("Silenzia le notifiche (serve l'accesso alle notifiche)"),
                 prefs.getBoolean("focusDnd", false), on -> {
@@ -4153,7 +4165,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.row(NothingTile.HOURGLASS, T.t("Limiti giornalieri"), nl == 0 ? T.t("Nessuno") : nl + T.n(nl, " app con limite", " app con limite"),
                 this::limitsMenu);
         int nm = Usage.mindful(prefs).size();
-        st.row(SectionIcons.STAR, T.t("Pausa prima di aprire"), nm == 0 ? T.t("Un respiro di 5 secondi prima delle app che scegli")
+        st.row(SectionIcons.PAUSE, T.t("Pausa prima di aprire"), nm == 0 ? T.t("Un respiro di 5 secondi prima delle app che scegli")
                 : nm + T.n(nm, " app", " app") + T.t(" con un respiro prima di aprirsi"),
                 () -> pickApps(T.t("Pausa prima di aprire"), Usage.mindful(prefs), sel -> {
                     prefs.edit().putStringSet("mindful", sel).apply();
@@ -5877,7 +5889,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.row(SectionIcons.BAG, T.t("Pacchetto di icone"), packLabel(), this::pickIconPack);
         st.row(Draw.PHOTO, T.t("Sfondi"), T.t("Sfondi generati, foto a puntini o a strisce"),
                 () -> startActivity(new Intent(this, WallpaperActivity.class)));
-        st.toggle(SectionIcons.HOME, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
+        st.toggle(Draw.PHOTO, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
                 prefs.getBoolean("wall", false), on -> toggle("wall", !on));
         st.toggle(SectionIcons.CHIP, T.t("Punti spenti sui display"), T.t("Si vede la griglia dei puntini spenti"),
                 prefs.getBoolean("ghost", true), on -> toggle("ghost", !on));
@@ -5918,10 +5930,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     Motion.setSpeed(w);
                     refillSettings();
                 }));
-        st.toggle(SectionIcons.STAR, T.t("Animazioni a punti"), T.t("Cifre che si accendono, onda, ricarica"),
+        st.toggle(SectionIcons.WAVE, T.t("Animazioni a punti"), T.t("Cifre che si accendono, onda, ricarica"),
                 prefs.getBoolean("anim", true), on -> toggle("anim", !on));
         if (!Motion.systemOn()) {
-            st.row(SectionIcons.CHIP, T.t("Animazioni di sistema spente"),
+            st.warn(SectionIcons.WARN, T.t("Animazioni di sistema spente"),
                     T.t("Android ha la scala animazione a zero: riattivala nelle Opzioni sviluppatore"),
                     () -> safeStart(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)));
         }
@@ -5954,11 +5966,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 }));
         final String[] dockL = {T.t("Nascosto"), "3 app", "4 app", "5 app", "6 app"};
         final int dockCur = dockMax() == 0 ? 0 : Math.max(1, Math.min(4, dockMax() - 2));
-        st.row(SectionIcons.HOME, T.t("Dock"), dockL[dockCur], () -> Sheet.list(this, th, T.t("App nel dock"), dockL, dockCur, w -> {
+        st.row(SectionIcons.DOCK, T.t("Dock"), dockL[dockCur], () -> Sheet.list(this, th, T.t("App nel dock"), dockL, dockCur, w -> {
             prefs.edit().putInt("dockMax", w == 0 ? 0 : w + 2).apply();
             recreate();
         }));
-        st.toggle(SectionIcons.HOME, T.t("Sfondo del dock"), T.t("Una pillola dietro le app del dock"),
+        st.toggle(SectionIcons.DOCK, T.t("Sfondo del dock"), T.t("Una pillola dietro le app del dock"),
                 prefs.getBoolean("dockBg", false), on -> toggle("dockBg", !on));
         String font = prefs.getString("font", "");
         st.row(SectionIcons.BOOK, T.t("Carattere"), font.isEmpty() ? T.t("Predefinito (Geist, Doto per le etichette a puntini)")
@@ -5984,9 +5996,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 prefs.getBoolean("labels", false), on -> toggle("labels", !on));
         st.toggle(SettingsScreen.CLOCK, T.t("Orologio a 24 ore"), h24 ? "14:30" : "2:30",
                 h24, on -> toggle("h24", !on));
-        st.toggle(SectionIcons.HOME, T.t("Pagina a sinistra"), T.t("IA, notizie, calendario, attività e note"),
+        st.toggle(SectionIcons.PANEL, T.t("Pagina a sinistra"), T.t("IA, notizie, calendario, attività e note"),
                 prefs.getBoolean("panel", true), on -> toggle("panel", !on));
-        st.row(SectionIcons.STAR, T.t("Aggiungi un widget Dot"), Widgets.TYPES.length + T.t(" widget con anteprima"), () -> {
+        st.row(SectionIcons.WIDGETS, T.t("Aggiungi un widget Dot"), Widgets.TYPES.length + T.t(" widget con anteprima"), () -> {
             closeSettings();
             pickNothingWidget(pager.getCurrent(), 0, 0);
         });
@@ -6053,7 +6065,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.section(T.t("Gesti"));
         for (String[] g : GESTURES) {
             final String key = g[0], name = g[1];
-            st.row(SectionIcons.STAR, name, actionLabel(gestureAction(key)), () -> chooseGesture(key, name));
+            st.row(gestureIcon(key), name, actionLabel(gestureAction(key)), () -> chooseGesture(key, name));
         }
         st.row(SectionIcons.LOCK, T.t("Servizio per i gesti di sistema"), DotAccessibility.active()
                         ? T.t("Attivo: blocco schermo, screenshot, recenti") : T.t("Spento: serve per bloccare lo schermo e altro"),

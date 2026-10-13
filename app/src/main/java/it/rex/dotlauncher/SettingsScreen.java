@@ -85,6 +85,9 @@ class SettingsScreen extends FrameLayout {
 
         scroll = new ScrollView(a);
         scroll.setVerticalScrollBarEnabled(false);
+        // ciò che scorre sotto il titolo sfuma invece di restare tagliato a metà
+        scroll.setVerticalFadingEdgeEnabled(true);
+        scroll.setFadingEdgeLength(px(28));
         col = new LinearLayout(a);
         col.setOrientation(LinearLayout.VERTICAL);
         col.setPadding(px(16), px(4), px(16), px(32));
@@ -216,6 +219,50 @@ class SettingsScreen extends FrameLayout {
         });
     }
 
+    /** Avviso: un riquadro a parte, color ambra, che non si confonde con le impostazioni. */
+    void warn(String[] icon, String title, String text, Runnable act) {
+        final int amber = th.light ? 0xFFB26A00 : 0xFFFFB547;
+        LinearLayout r = new LinearLayout(this.act);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        r.setGravity(Gravity.CENTER_VERTICAL);
+        r.setPadding(px(14), px(14), px(14), px(14));
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(Theme.alpha(amber, th.light ? 0.10f : 0.12f));
+        bg.setStroke(Math.max(1, px(1)), Theme.alpha(amber, 0.45f));
+        bg.setCornerRadius(px(22));
+        r.setBackground(bg);
+        ImageView iv = new ImageView(this.act);
+        iv.setImageBitmap(SectionIcons.bitmap(icon, px(40), amber, amber, Theme.alpha(amber, 0.16f)));
+        r.addView(iv, new LinearLayout.LayoutParams(px(40), px(40)));
+        LinearLayout texts = new LinearLayout(this.act);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(px(14), 0, px(8), 0);
+        TextView t = new TextView(this.act);
+        t.setText(title);
+        t.setTextColor(th.onTile);
+        t.setTypeface(th.bodyFace);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        texts.addView(t);
+        TextView v = new TextView(this.act);
+        v.setText(text);
+        v.setTextColor(th.sub);
+        v.setTypeface(th.bodyFace);
+        v.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        texts.addView(v);
+        r.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        TextView chev = new TextView(this.act);
+        chev.setText("›");
+        chev.setTextColor(th.sub);
+        chev.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+        r.addView(chev);
+        r.setOnClickListener(x -> act.run());
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = px(10);
+        col.addView(r, lp);
+        group = null; // le voci successive aprono un nuovo gruppo
+    }
+
     /** Testo piccolo in fondo a un gruppo. */
     void note(String text) {
         TextView t = new TextView(act);
@@ -259,6 +306,16 @@ class SettingsScreen extends FrameLayout {
             r.set(0, 0, W, H);
             p.setColor(on ? th.accent : Theme.alpha(th.onTile, th.light ? 0.15f : 0.2f));
             cv.drawRoundRect(r, H / 2f, H / 2f, p);
+            if (!on) {
+                // spento: un bordo visibile, così l'interruttore non sparisce nella riga
+                float sw = Math.max(1f, dp * 1.5f);
+                p.setStyle(Paint.Style.STROKE);
+                p.setStrokeWidth(sw);
+                p.setColor(Theme.alpha(th.onTile, th.light ? 0.4f : 0.45f));
+                r.inset(sw / 2f, sw / 2f);
+                cv.drawRoundRect(r, r.height() / 2f, r.height() / 2f, p);
+                p.setStyle(Paint.Style.FILL);
+            }
             float rad = H * 0.32f;
             float x = H / 2f + (W - H) * pos;
             p.setColor(on ? th.onAccent : th.sub);

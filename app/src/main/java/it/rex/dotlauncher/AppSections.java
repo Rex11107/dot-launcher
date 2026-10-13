@@ -313,7 +313,8 @@ class AppSections extends LinearLayout {
         TextView t = new TextView(getContext());
         t.setText(title);
         t.setTextColor(th.onTile);
-        t.setSingleLine(true);
+        // maxLines e non singleLine: con singleLine il testo non si rimpicciolisce e viene tagliato
+        t.setMaxLines(1);
         t.setEllipsize(TextUtils.TruncateAt.END);
         if (th.dots) {
             t.setTypeface(Fonts.dot);
@@ -389,6 +390,9 @@ class AppSections extends LinearLayout {
         tv.setMaxLines(2);
         tv.setEllipsize(TextUtils.TruncateAt.END);
         tv.setGravity(Gravity.CENTER);
+        // le parole lunghe ("Aggiornamento") si dividono in sillabe con il trattino, non a caso
+        tv.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_FULL);
+        tv.setBreakStrategy(android.text.Layout.BREAK_STRATEGY_BALANCED);
         LayoutParams lp = new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.topMargin = px(6);
         lp.leftMargin = px(2);
