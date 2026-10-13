@@ -12,9 +12,7 @@ final class Draw {
     static final String[] SUN = {
             "....#....", ".#.....#.", "...###...", "..#####..", "#.##R##.#",
             "..#####..", "...###...", ".#.....#.", "....#...."};
-    static final String[] PARTLY = {
-            ".....R...", "..R.....R", "....RRR..", "...RRRRR.", "..##RRR..", ".####.##.", ".########", "#########", ".#######."
-    };
+    static final String[] PARTLY = {"R..R..R..", ".RRRRR...", "RRRRRR...", ".RR.##...", "R.######.", ".########", "#########", ".#######.", "........."};
     static final String[] CLOUD = {
             ".........", "..##.....", ".####.##.", ".########", "#########",
             "#########", ".#######.", ".........", "........."};
@@ -27,15 +25,11 @@ final class Draw {
     static final String[] FOG = {
             "#######..", ".........", "..#######", ".........", "#########",
             ".........", ".#######.", ".........", "........."};
-    static final String[] STORM = {
-            "..##.....", ".####.##.", ".########", "#########", ".###R###.",
-            "....RR...", "...RR....", "....R....", "...R....."};
+    static final String[] STORM = {"...###...", ".#######.", "#########", "#########", ".##RR###.", "...RR....", "..RRRR...", "....RR...", "....R...."};
     static final String[] BELL = {
             "....#....", "...###...", "..#####..", "..#####..", "..#####..",
             ".#######.", "#########", ".........", "....R...."};
-    static final String[] BOLT = {
-            "....###..", "...###...", "..###....", ".######..", "...####..", "...###...", "..##.....", ".#.......", "........."
-    };
+    static final String[] BOLT = {"....###..", "...###...", "..###....", ".#######.", "....###..", "...###...", "..###....", ".##......", "........."};
     static final String[] SEARCH = {
             "..###....", ".#...#...", "#.....#..", "#.....#..", "#.....#..",
             ".#...#...", "..###.#..", ".......#.", "........#"};
@@ -200,10 +194,24 @@ final class Draw {
     }
 
     static void icon(Canvas cv, String[] pat, float cx, float cy, float size, Paint p, int color, int accent) {
-        int n = pat.length;
-        float pitch = size / n;
-        float x0 = cx - size / 2f;
-        float y0 = cy - size / 2f;
+        int n = pat.length, w = 0;
+        int minX = Integer.MAX_VALUE, maxX = -1, minY = Integer.MAX_VALUE, maxY = -1;
+        for (int row = 0; row < n; row++) {
+            String r0 = pat[row];
+            w = Math.max(w, r0.length());
+            for (int col = 0; col < r0.length(); col++) {
+                if (r0.charAt(col) == '.') continue;
+                minX = Math.min(minX, col);
+                maxX = Math.max(maxX, col);
+                minY = Math.min(minY, row);
+                maxY = Math.max(maxY, row);
+            }
+        }
+        if (maxX < 0) return;
+        float pitch = size / Math.max(n, w);
+        // si centra il disegno vero, non la griglia: righe o colonne vuote su un lato non lo spostano più
+        float x0 = cx - (minX + maxX + 1) * pitch / 2f;
+        float y0 = cy - (minY + maxY + 1) * pitch / 2f;
         float r = pitch * 0.4f;
         p.setStyle(Paint.Style.FILL);
         for (int row = 0; row < n; row++) {

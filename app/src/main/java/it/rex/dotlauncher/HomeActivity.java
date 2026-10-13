@@ -5954,7 +5954,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.row(SectionIcons.BAG, T.t("Pacchetto di icone"), packLabel(), this::pickIconPack);
         st.row(Draw.PHOTO, T.t("Sfondi"), T.t("Sfondi generati, foto a puntini o a strisce"),
                 () -> startActivity(new Intent(this, WallpaperActivity.class)));
-        st.toggle(Draw.PHOTO, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
+        st.toggle(SectionIcons.PHONE, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
                 prefs.getBoolean("wall", false), on -> toggle("wall", !on));
         st.toggle(SectionIcons.CHIP, T.t("Punti spenti sui display"), T.t("Si vede la griglia dei puntini spenti"),
                 prefs.getBoolean("ghost", true), on -> toggle("ghost", !on));
