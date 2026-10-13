@@ -261,6 +261,8 @@ class AppSections extends LinearLayout {
         plus.setImageBitmap(SectionIcons.bitmap(SectionIcons.PLUS, px(96), th.onTile, th.accent,
                 Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f)));
         plus.setOnClickListener(v -> host.newSection());
+        // TalkBack legge una volta sola "Nuova sezione" (il testo qui sotto), non anche un pulsante senza nome
+        plus.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
         col.addView(plus, new LayoutParams(px(96), px(96)));
         TextView t = new TextView(getContext());
         t.setText(T.t("Nuova sezione"));
@@ -323,20 +325,20 @@ class AppSections extends LinearLayout {
         }
         t.setAutoSizeTextTypeUniformWithConfiguration(18, th.dots ? 36 : 32, 1, TypedValue.COMPLEX_UNIT_SP);
         r.addView(t, new LayoutParams(0, px(48), 1f));
-        int s = px(42);
+        int s = px(48); // area di tocco 48dp, simbolo della stessa misura di prima
         ImageView search = new ImageView(getContext());
         search.setImageBitmap(SectionIcons.bitmap(SectionIcons.SEARCH, s, th.onTile, th.accent, 0));
-        search.setPadding(px(9), px(9), px(9), px(9));
+        search.setPadding(px(12), px(12), px(12), px(12));
         search.setOnClickListener(v -> host.search());
         search.setContentDescription(T.t("Cerca"));
         r.addView(search, new LayoutParams(s, s));
         ImageView more = new ImageView(getContext());
         more.setImageBitmap(SectionIcons.bitmap(SectionIcons.MORE, s, th.onTile, th.accent, 0));
-        more.setPadding(px(9), px(9), px(9), px(9));
+        more.setPadding(px(12), px(12), px(12), px(12));
         more.setOnClickListener(v -> menu.run());
         more.setContentDescription(T.t("Menu della sezione"));
         LayoutParams ml = new LayoutParams(s, s);
-        ml.leftMargin = px(4);
+        ml.leftMargin = 0;
         r.addView(more, ml);
         return r;
     }

@@ -28,7 +28,14 @@ class FolderTile extends View {
     float lastX, lastY;
 
     @Override
-    public CharSequence getContentDescription() {
+    public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        info.setContentDescription(a11yText());
+        info.setClassName(android.widget.Button.class.getName());
+    }
+
+    /** Cosa legge TalkBack: calcolato al momento, così dice sempre lo stato attuale. */
+    CharSequence a11yText() {
         int n = apps(item).size();
         return T.t("Cartella") + " " + name(item) + ", " + n + T.n(n, " app", " app");
     }

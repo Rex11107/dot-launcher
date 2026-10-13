@@ -334,9 +334,9 @@ class LeftPanel extends FrameLayout {
 
     private ImageView iconButton(String[] pat, View.OnClickListener l, String desc) {
         ImageView iv = new ImageView(act);
-        int s = px(38);
+        int s = px(48); // area di tocco 48dp, il simbolo resta della stessa misura
         iv.setImageBitmap(SectionIcons.bitmap(pat, s, th.onTile, th.accent, 0));
-        iv.setPadding(px(9), px(9), px(9), px(9));
+        iv.setPadding(px(14), px(14), px(14), px(14));
         iv.setOnClickListener(l);
         iv.setContentDescription(desc);
         iv.setLayoutParams(new LinearLayout.LayoutParams(s, s));

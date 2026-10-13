@@ -88,8 +88,8 @@ class NothingTile extends View {
 
     // ---------- accessibilità: cosa legge TalkBack ----------
 
-    @Override
-    public CharSequence getContentDescription() {
+    /** Cosa legge TalkBack: calcolato al momento, così dice sempre lo stato attuale. */
+    CharSequence a11yText() {
         String name = Widgets.name(item.type);
         String v = describe();
         return v == null || v.isEmpty() ? name : name + ": " + v;
@@ -98,6 +98,7 @@ class NothingTile extends View {
     @Override
     public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
         super.onInitializeAccessibilityNodeInfo(info);
+        info.setContentDescription(a11yText());
         info.setClassName(android.widget.Button.class.getName());
     }
 
@@ -771,7 +772,8 @@ class NothingTile extends View {
         float barW = W - pad * 2, step = barW / n;
         int lit = Math.round(frac * n);
         for (int i = 0; i < n; i++) {
-            p.setColor(i < lit ? acc() : Theme.alpha(fg(), 0.15f));
+            // i punti accesi sono l'informazione: blu chiaro, ben distinto dalla tessera (non il blu pieno)
+            p.setColor(i < lit ? accT() : Theme.alpha(fg(), 0.15f));
             cv.drawCircle(pad + step * i + step / 2f, H * 0.78f, Math.min(step * 0.32f, H * 0.045f), p);
         }
     }

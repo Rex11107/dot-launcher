@@ -34,7 +34,14 @@ class AppTile extends View {
     private float cacheW;
 
     @Override
-    public CharSequence getContentDescription() {
+    public void onInitializeAccessibilityNodeInfo(android.view.accessibility.AccessibilityNodeInfo info) {
+        super.onInitializeAccessibilityNodeInfo(info);
+        info.setContentDescription(a11yText());
+        info.setClassName(android.widget.Button.class.getName());
+    }
+
+    /** Cosa legge TalkBack: calcolato al momento, così dice sempre lo stato attuale. */
+    CharSequence a11yText() {
         String l = src.labelFor(item.data);
         int n = src.badge(item.data);
         return n > 0 ? l + ", " + n + T.n(n, " notifica", " notifiche") : l;
@@ -72,7 +79,9 @@ class AppTile extends View {
             String l = src.labelFor(item.data);
             if (l == null) l = "";
             p.setTypeface(th.bodyFace);
-            p.setTextSize(m * 0.13f);
+            // segue la dimensione del testo scelta nelle impostazioni di Android (entro un limite, per starci)
+            float fs = Math.max(0.85f, Math.min(1.3f, getResources().getConfiguration().fontScale));
+            p.setTextSize(m * 0.13f * fs);
             p.setColor(th.wall ? 0xFFFFFFFF : th.onTile);
             if (th.wall) p.setShadowLayer(m * 0.03f, 0, 0, 0x99000000);
             // il nome accorciato si calcola una volta sola per nome e larghezza
