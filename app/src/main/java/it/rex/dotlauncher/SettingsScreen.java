@@ -199,7 +199,7 @@ class SettingsScreen extends FrameLayout {
     /** Voce con interruttore. */
     void toggle(String[] icon, String title, String desc, boolean on, OnToggle cb) {
         LinearLayout r = baseRow(icon, title, desc);
-        Switch sw = new Switch(act, on);
+        PillSwitch sw = new PillSwitch(act, th, on);
         r.addView(sw, new LinearLayout.LayoutParams(px(48), px(28)));
         r.setOnClickListener(v -> {
             sw.on = !sw.on;
@@ -280,46 +280,5 @@ class SettingsScreen extends FrameLayout {
         g.setColor(Theme.alpha(th.onTile, 0.08f));
         s.addState(new int[]{android.R.attr.state_pressed}, g);
         return s;
-    }
-
-    /** Interruttore a pillola con il puntino che scorre. */
-    private class Switch extends View {
-        boolean on;
-        private float pos;
-        private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF r = new RectF();
-
-        Switch(Context c, boolean on) {
-            super(c);
-            this.on = on;
-            pos = on ? 1f : 0f;
-        }
-
-        @Override
-        protected void onDraw(Canvas cv) {
-            float target = on ? 1f : 0f;
-            if (Math.abs(pos - target) > 0.01f) {
-                pos += (target - pos) * 0.35f;
-                postInvalidateOnAnimation();
-            } else pos = target;
-            float W = getWidth(), H = getHeight();
-            r.set(0, 0, W, H);
-            p.setColor(on ? th.accent : Theme.alpha(th.onTile, th.light ? 0.15f : 0.2f));
-            cv.drawRoundRect(r, H / 2f, H / 2f, p);
-            if (!on) {
-                // spento: un bordo visibile, così l'interruttore non sparisce nella riga
-                float sw = Math.max(1f, dp * 1.5f);
-                p.setStyle(Paint.Style.STROKE);
-                p.setStrokeWidth(sw);
-                p.setColor(Theme.alpha(th.onTile, th.light ? 0.4f : 0.45f));
-                r.inset(sw / 2f, sw / 2f);
-                cv.drawRoundRect(r, r.height() / 2f, r.height() / 2f, p);
-                p.setStyle(Paint.Style.FILL);
-            }
-            float rad = H * 0.32f;
-            float x = H / 2f + (W - H) * pos;
-            p.setColor(on ? th.onAccent : th.sub);
-            cv.drawCircle(x, H / 2f, rad, p);
-        }
     }
 }

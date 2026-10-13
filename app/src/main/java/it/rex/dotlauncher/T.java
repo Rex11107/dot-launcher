@@ -693,6 +693,8 @@ final class T {
             "Fiore", "Flower",
             "Tracce luminose", "Light trails",
             "in uso", "in use",
+            "Tocca un blocco per mostrarlo o nasconderlo, usa le frecce per cambiarne l'ordine.", "Tap a block to show or hide it, use the arrows to change the order.",
+            "Togli completate", "Clear completed",
             "Matrice", "Matrix",
             "Sabbia", "Sand",
             "Tubi", "Tubes",

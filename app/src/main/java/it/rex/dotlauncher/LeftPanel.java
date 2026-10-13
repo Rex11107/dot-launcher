@@ -227,35 +227,83 @@ class LeftPanel extends FrameLayout {
         showNews();
     }
 
+    /** Blocchi della pagina: interruttore per mostrarli, frecce per riordinarli. */
     private void editBlocks() {
-        List<String> ord = order();
-        Set<String> off = off();
-        String[] labels = new String[ord.size()];
-        for (int i = 0; i < labels.length; i++) {
-            labels[i] = (off.contains(ord.get(i)) ? "○  " : "●  ") + blockName(ord.get(i));
-        }
-        Sheet.list(act, th, T.t("Blocchi della pagina"), labels, -1, w -> {
-            String b = ord.get(w);
-            boolean hidden = off.contains(b);
-            String[] opts = {hidden ? T.t("Mostra") : T.t("Nascondi"), T.t("Sposta su"), T.t("Sposta giù")};
-            Sheet.list(act, th, blockName(b), opts, -1, o -> {
-                if (o == 0) {
-                    if (hidden) off.remove(b);
-                    else off.add(b);
-                    prefs.edit().putString("panelOff", TextUtils.join(",", off)).apply();
-                } else {
-                    int i = ord.indexOf(b), j = o == 1 ? i - 1 : i + 1;
-                    if (j >= 0 && j < ord.size()) {
-                        ord.remove(i);
-                        ord.add(j, b);
-                        prefs.edit().putString("panelOrder", TextUtils.join(",", ord)).apply();
+        LinearLayout list = new LinearLayout(act);
+        list.setOrientation(LinearLayout.VERTICAL);
+        Runnable[] fill = new Runnable[1];
+        fill[0] = () -> {
+            list.removeAllViews();
+            List<String> ord = order();
+            Set<String> off = off();
+            for (int i = 0; i < ord.size(); i++) {
+                final String b = ord.get(i);
+                final int idx = i;
+                LinearLayout row = new LinearLayout(act);
+                row.setOrientation(LinearLayout.HORIZONTAL);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.setPadding(px(10), px(4), px(6), px(4));
+                row.setMinimumHeight(px(56));
+                ImageView up = arrow(SectionIcons.ARROW_UP, idx > 0, T.t("Sposta su") + ": " + blockName(b), () -> move(idx, idx - 1, fill[0]));
+                ImageView down = arrow(SectionIcons.ARROW_DOWN, idx < ord.size() - 1, T.t("Sposta giù") + ": " + blockName(b),
+                        () -> move(idx, idx + 1, fill[0]));
+                row.addView(up, new LinearLayout.LayoutParams(px(40), px(40)));
+                row.addView(down, new LinearLayout.LayoutParams(px(40), px(40)));
+                TextView name = text(blockName(b), 16, off.contains(b) ? th.sub : th.onTile);
+                name.setPadding(px(10), 0, px(10), 0);
+                row.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                PillSwitch sw = new PillSwitch(act, th, !off.contains(b));
+                row.addView(sw, new LinearLayout.LayoutParams(px(48), px(28)));
+                row.setOnClickListener(v -> {
+                    Set<String> o2 = off();
+                    if (o2.contains(b)) o2.remove(b);
+                    else o2.add(b);
+                    prefs.edit().putString("panelOff", TextUtils.join(",", o2)).apply();
+                    sw.set(!o2.contains(b));
+                    name.setTextColor(o2.contains(b) ? th.sub : th.onTile);
+                    rebuild();
+                    onShown();
+                });
+                // TalkBack: la riga è un interruttore
+                row.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+                    @Override
+                    public void onInitializeAccessibilityNodeInfo(View host, android.view.accessibility.AccessibilityNodeInfo info) {
+                        super.onInitializeAccessibilityNodeInfo(host, info);
+                        info.setClassName(android.widget.Switch.class.getName());
+                        info.setCheckable(true);
+                        info.setChecked(sw.on);
                     }
-                }
-                rebuild();
-                onShown();
-                editBlocks();
-            });
-        });
+                });
+                list.addView(row);
+            }
+        };
+        fill[0].run();
+        TextView hint = text(T.t("Tocca un blocco per mostrarlo o nasconderlo, usa le frecce per cambiarne l'ordine."), 13, th.sub);
+        hint.setPadding(px(10), px(10), px(10), 0);
+        list.addView(hint);
+        Sheet.custom(act, th, T.t("Blocchi della pagina"), list);
+    }
+
+    private void move(int from, int to, Runnable refill) {
+        List<String> ord = order();
+        if (to < 0 || to >= ord.size()) return;
+        String b = ord.remove(from);
+        ord.add(to, b);
+        prefs.edit().putString("panelOrder", TextUtils.join(",", ord)).apply();
+        rebuild();
+        onShown();
+        refill.run();
+    }
+
+    private ImageView arrow(String[] pat, boolean enabled, String desc, Runnable go) {
+        ImageView iv = new ImageView(act);
+        iv.setImageBitmap(SectionIcons.bitmap(pat, px(40), enabled ? th.onTile : Theme.alpha(th.onTile, 0.2f), th.accent, 0));
+        iv.setPadding(px(11), px(11), px(11), px(11));
+        iv.setContentDescription(desc);
+        iv.setEnabled(enabled);
+        if (enabled) iv.setOnClickListener(v -> go.run());
+        else iv.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        return iv;
     }
 
     // ---------- elementi grafici comuni ----------
@@ -647,6 +695,9 @@ class LeftPanel extends FrameLayout {
         newsScroll.setHorizontalScrollBarEnabled(false);
         newsStrip = new LinearLayout(act);
         newsStrip.setOrientation(LinearLayout.HORIZONTAL);
+        // schede allineate in alto (non sulla riga di testo) e ognuna alta quanto il suo contenuto
+        newsStrip.setBaselineAligned(false);
+        newsStrip.setGravity(Gravity.TOP);
         newsScroll.addView(newsStrip);
         c.addView(newsScroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
@@ -728,11 +779,11 @@ class LeftPanel extends FrameLayout {
         src.setPadding(px(12), px(10), px(12), 0);
         c.addView(src, new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT));
         TextView title = text(a.title, 14, th.onTile);
-        title.setMaxLines(a.image.isEmpty() ? 7 : 3);
+        title.setMaxLines(a.image.isEmpty() ? 5 : 3);
         title.setEllipsize(TextUtils.TruncateAt.END);
         title.setPadding(px(12), px(4), px(12), px(12));
         c.addView(title, new LinearLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT));
-        c.setMinimumHeight(a.image.isEmpty() ? px(150) : 0);
+        // senza immagine la scheda è alta quanto il titolo: niente mezza scheda vuota
         c.setOnClickListener(v -> host.startSafe(new Intent(Intent.ACTION_VIEW, Uri.parse(a.link))));
         c.setOnLongClickListener(v -> {
             Intent s = new Intent(Intent.ACTION_SEND);
@@ -929,7 +980,17 @@ class LeftPanel extends FrameLayout {
     // =====================================================================
 
     private View tasksBlock() {
-        LinearLayout c = card(T.t("Attività"), iconButton(SectionIcons.CLOSE, v -> clearDone(), T.t("Togli le completate")));
+        // "Togli completate" compare solo quando c'è qualcosa da togliere, e dice cosa fa
+        TextView clear = text("", 13, th.accentText);
+        clear.setPadding(px(12), px(8), px(12), px(8));
+        clear.setMinHeight(px(40));
+        clear.setGravity(Gravity.CENTER_VERTICAL);
+        GradientDrawable cbg = new GradientDrawable();
+        cbg.setCornerRadius(px(20));
+        cbg.setColor(Theme.alpha(th.accent, 0.14f));
+        clear.setBackground(cbg);
+        clear.setOnClickListener(v -> clearDone());
+        LinearLayout c = card(T.t("Attività"), clear);
         LinearLayout list = new LinearLayout(act);
         list.setOrientation(LinearLayout.VERTICAL);
         c.addView(list);
@@ -937,6 +998,13 @@ class LeftPanel extends FrameLayout {
         render[0] = () -> {
             list.removeAllViews();
             JSONArray a = tasks();
+            int nDone = 0;
+            for (int i = 0; i < a.length(); i++) {
+                JSONObject o = a.optJSONObject(i);
+                if (o != null && o.optBoolean("d")) nDone++;
+            }
+            clear.setVisibility(nDone > 0 ? View.VISIBLE : View.GONE);
+            clear.setText(T.t("Togli completate") + " (" + nDone + ")");
             for (int i = 0; i < a.length(); i++) {
                 JSONObject o = a.optJSONObject(i);
                 if (o == null) continue;

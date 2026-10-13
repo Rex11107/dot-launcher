@@ -1278,9 +1278,10 @@ class NothingTile extends View {
         return out;
     }
 
+    // due note unite, 12×12 e senza righe o colonne vuote: così sta al centro del riquadro
     static final String[] NOTE = {
-            "....#####", "....#...#", "....#...#", "....#...#", "....#...#",
-            ".###..###", "####.####", ".##...##.", "........."};
+            "....#######R", "....########", "....#......#", "....#......#", "....#......#", "....#......#",
+            "....#......#", "..###....###", ".####...####", "#####..#####", "#####..#####", ".###....###."};
 
     private void media(Canvas cv, float W, float H) {
         float m = Math.min(W, H);
