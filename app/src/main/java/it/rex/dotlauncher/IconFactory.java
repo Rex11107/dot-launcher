@@ -31,6 +31,8 @@ final class IconFactory {
     static final int MODE_GLYPH = 2;
 
     private static final float GLYPH = 0.50f; // lato del simbolo rispetto al cerchio
+    /** Icone a colori: un po' più piccole della piastrella, perché un colore pieno pesa più di un simbolo. */
+    private static final float COLOR_SIZE = 0.80f;
 
     /** Forma delle icone: 0 cerchio, 1 squircle, 2 quadrato arrotondato, 3 quadrato. */
     static int shape = 0;
@@ -133,19 +135,22 @@ final class IconFactory {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
 
         // icona adattiva: si disegnano i due strati a tutta forma, con la nostra sagoma
+        int inner = Math.round(size * COLOR_SIZE), off = (size - inner) / 2;
+        android.graphics.Path innerPath = shapePath(inner, 0);
+        innerPath.offset(off, off);
         if (d instanceof AdaptiveIconDrawable) {
             AdaptiveIconDrawable a = (AdaptiveIconDrawable) d;
-            int extra = size / 4; // gli strati sono di 108dp, la parte visibile di 72dp
+            int extra = inner / 4; // gli strati sono di 108dp, la parte visibile di 72dp
             c.save();
-            c.clipPath(shapePath);
+            c.clipPath(innerPath);
             if (a.getBackground() != null) {
                 Drawable b = a.getBackground();
-                b.setBounds(-extra, -extra, size + extra, size + extra);
+                b.setBounds(off - extra, off - extra, off + inner + extra, off + inner + extra);
                 b.draw(c);
             }
             if (a.getForeground() != null) {
                 Drawable f = a.getForeground();
-                f.setBounds(-extra, -extra, size + extra, size + extra);
+                f.setBounds(off - extra, off - extra, off + inner + extra, off + inner + extra);
                 f.draw(c);
             }
             c.restore();
@@ -178,10 +183,10 @@ final class IconFactory {
 
         if (fill >= 0.75f && Math.abs(bw - bh) <= Math.max(bw, bh) * 0.12f) {
             // piastrella piena (quadrata, tonda, squircle): la si allarga a tutta forma
-            float sc = size / (float) Math.min(bw, bh) * 1.04f; // un filo in più copre i bordi sfumati
+            float sc = inner / (float) Math.min(bw, bh) * 1.04f; // un filo in più copre i bordi sfumati
             float dw = bw * sc, dh = bh * sc;
             c.save();
-            c.clipPath(shapePath);
+            c.clipPath(innerPath);
             c.drawBitmap(src, box, new RectF((size - dw) / 2f, (size - dh) / 2f, (size + dw) / 2f, (size + dh) / 2f), p);
             c.restore();
         } else {
