@@ -217,15 +217,49 @@ public class DotNotifications extends NotificationListenerService {
             if (mArtist.isEmpty() && md != null) mArtist = str(md.getString(MediaMetadata.METADATA_KEY_ALBUM));
             Bitmap art = md == null ? null : md.getBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART);
             if (art == null && md != null) art = md.getBitmap(MediaMetadata.METADATA_KEY_ART);
-            mArt = art;
+            // copertina di ripiego del lettore (nota su fondo bianco): meglio la nostra, in tinta col widget
+            mArt = art == null || placeholderArt(art) ? null : art;
         }
         UI.post(() -> {
             if (listener != null) listener.onMediaChanged();
         });
     }
 
+    /** "<unknown>" è il segnaposto di Android per i brani senza artista: non va mostrato. */
     private static String str(String s) {
-        return s == null ? "" : s;
+        if (s == null) return "";
+        String t = s.trim();
+        return t.equalsIgnoreCase("<unknown>") || t.equalsIgnoreCase("unknown") ? "" : t;
+    }
+
+    /**
+     * Copertina generica: quasi tutta di un solo colore e con pochissime tinte
+     * (es. la nota rossa su fondo bianco che alcuni lettori usano quando il brano non ha copertina).
+     * Si guarda l'immagine rimpicciolita: un fondo unico più una sola tinta per il simbolo.
+     */
+    static boolean placeholderArt(Bitmap art) {
+        try {
+            Bitmap s = Bitmap.createScaledBitmap(art, 24, 24, true);
+            int[] px = new int[24 * 24];
+            s.getPixels(px, 0, 24, 0, 0, 24, 24);
+            java.util.HashMap<Integer, Integer> hist = new java.util.HashMap<>();
+            for (int c : px) {
+                int k = ((c >> 20) & 0xF) << 8 | ((c >> 12) & 0xF) << 4 | ((c >> 4) & 0xF); // 4 bit per canale
+                Integer v = hist.get(k);
+                hist.put(k, v == null ? 1 : v + 1);
+            }
+            int top = 0, second = 0;
+            for (int v : hist.values()) {
+                if (v > top) {
+                    second = top;
+                    top = v;
+                } else if (v > second) second = v;
+            }
+            // un fondo che copre metà immagine e, con il simbolo, quasi tutto il resto
+            return top >= px.length * 0.5f && top + second >= px.length * 0.75f;
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     /** 1 indietro, 2 play/pausa, 3 avanti. */

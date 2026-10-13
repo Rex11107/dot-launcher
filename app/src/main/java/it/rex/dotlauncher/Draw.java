@@ -67,6 +67,10 @@ final class Draw {
         return Math.max(c, 1);
     }
 
+    private static final float DENSITY = android.content.res.Resources.getSystem().getDisplayMetrics().density;
+    /** Distanza minima tra i puntini (dp) perché valga la pena disegnare quelli spenti: cifre alte almeno ~21dp. */
+    private static final float GHOST_MIN_DP = 3f;
+
     /** Effetto display: si vedono anche i punti spenti della griglia. */
     static boolean ghost = true;
     /** Animazioni a punti (cifre che si accendono, ricarica, onda). */
@@ -86,7 +90,9 @@ final class Draw {
                      int color, String accentChars, int accent, float[] progress) {
         String t = DotTextView.normalize(text);
         float r = pitch * 0.39f;
-        boolean showGhost = ghost && pitch >= 5f;
+        // i punti spenti aiutano solo nelle cifre grandi: in quelle piccole (meteo orario, fusi orari)
+        // si confondono con quelli accesi e le rendono illeggibili
+        boolean showGhost = ghost && pitch >= GHOST_MIN_DP * DENSITY;
         int ghostColor = Theme.alpha(color, 0.12f);
         p.setStyle(Paint.Style.FILL);
         for (int i = 0; i < t.length(); i++) {

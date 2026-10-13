@@ -806,7 +806,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dock = new LinearLayout(this);
         dock.setOrientation(LinearLayout.HORIZONTAL);
         dock.setGravity(Gravity.CENTER);
-        home.addView(dock, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(76)));
+        // stesso margine laterale dei widget (16dp): la pillola del dock non tocca i bordi dello schermo
+        LinearLayout.LayoutParams dockLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(76));
+        dockLp.leftMargin = px(16);
+        dockLp.rightMargin = px(16);
+        home.addView(dock, dockLp);
 
         root.addView(home, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
@@ -2921,25 +2925,38 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             });
             return;
         }
-        String[] opts = {T.t("Widget Dot"), T.t("Widget di sistema"), T.t("Aggiungi app"), T.t("Sfondi"), T.t("Impostazioni"),
-                T.t("Aggiungi pagina"), T.t("Rimuovi questa pagina"), T.t("Launcher predefinito")};
-        Sheet.list(this, th, "Home", opts, -1, w -> {
+        // prima ciò che si aggiunge, poi aspetto e impostazioni; la rimozione in fondo, in rosso
+        List<String> opts = new ArrayList<>(Arrays.asList(T.t("Widget Dot"), T.t("Widget di sistema"),
+                T.t("Aggiungi app"), T.t("Aggiungi pagina"), T.t("Sfondi"), T.t("Impostazioni"), T.t("Launcher predefinito")));
+        List<String[]> icons = new ArrayList<>(Arrays.asList(SectionIcons.WIDGETS, SectionIcons.PHONE, SectionIcons.PLUS,
+                SectionIcons.PAGE_ADD, Draw.PHOTO, SectionIcons.GEAR, SectionIcons.HOME));
+        if (pages > 1) {
+            opts.add(Sheet.DANGER + T.t("Rimuovi questa pagina"));
+            icons.add(SectionIcons.CLOSE);
+        }
+        Bitmap[] bm = new Bitmap[icons.size()];
+        for (int i = 0; i < bm.length; i++) {
+            boolean danger = i == 7;
+            int col0 = danger ? (th.light ? 0xFFC0161D : 0xFFFF6B6B) : th.onTile;
+            bm[i] = SectionIcons.bitmap(icons.get(i), px(26), col0, danger ? col0 : th.accent, 0);
+        }
+        Sheet.list(this, th, "Home", opts.toArray(new String[0]), bm, -1, w -> {
             switch (w) {
                 case 0: pickNothingWidget(page, col, row); break;
                 case 1: pickSysWidget(page, col, row); break;
                 case 2: pickAppForHome(page, col, row); break;
-                case 3: startActivity(new Intent(this, WallpaperActivity.class)); break;
-                case 4: showSettings(); break;
-                case 5:
+                case 3:
                     pages++;
                     saveLayout();
                     buildPages();
                     pager.postDelayed(() -> pager.snapTo(pages - 1), 120);
                     break;
-                case 6: removePage(page); break;
-                default: safeStart(new Intent(Settings.ACTION_HOME_SETTINGS)); break;
+                case 4: startActivity(new Intent(this, WallpaperActivity.class)); break;
+                case 5: showSettings(); break;
+                case 6: safeStart(new Intent(Settings.ACTION_HOME_SETTINGS)); break;
+                default: removePage(page); break;
             }
-        });
+        }, null);
     }
 
     private void chooseTone(Item it) {
@@ -3064,26 +3081,51 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 name.setTextColor(th.onTile);
                 name.setTypeface(th.bodyFace);
                 name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
-                row2.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
-                for (int[] sz : sizes) {
+                // con più di due misure il nome sta sopra e le misure sotto: niente nomi spezzati su due righe
+                LinearLayout chips = row2;
+                if (sizes.length > 2) {
+                    row2.addView(name, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT));
+                    row2.setOrientation(LinearLayout.VERTICAL);
+                    row2.setGravity(Gravity.START);
+                    chips = new LinearLayout(this);
+                    chips.setOrientation(LinearLayout.HORIZONTAL);
+                    chips.setPadding(0, px(8), 0, 0);
+                    row2.addView(chips);
+                } else {
+                    row2.addView(name, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+                }
+                // misure sempre dalla più piccola alla più grande; quella predefinita (tocco sulla scheda) è evidenziata
+                final int[] def = sizes[0];
+                int[][] ordered = sizes.clone();
+                java.util.Arrays.sort(ordered, (x, y) -> x[0] * x[1] != y[0] * y[1]
+                        ? Integer.compare(x[0] * x[1], y[0] * y[1]) : Integer.compare(x[0], y[0]));
+                boolean firstChip = true;
+                for (int[] sz : ordered) {
                     TextView chip = new TextView(this);
                     chip.setText(sz[0] + "×" + sz[1]);
                     chip.setTypeface(th.labelFace);
-                    chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                    chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
                     chip.setTextColor(th.onTile);
-                    chip.setPadding(px(10), px(5), px(10), px(5));
+                    chip.setGravity(Gravity.CENTER);
+                    chip.setMinHeight(px(40));
+                    chip.setMinWidth(px(48));
+                    chip.setPadding(px(10), px(8), px(10), px(8));
                     GradientDrawable cb = new GradientDrawable();
-                    cb.setCornerRadius(px(14));
+                    cb.setCornerRadius(px(20));
                     cb.setColor(Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f));
+                    if (sz == def) cb.setStroke(Math.max(1, px(1.5f)), th.accent);
                     chip.setBackground(cb);
+                    chip.setContentDescription(Widgets.name(type) + " " + sz[0] + " × " + sz[1]);
                     chip.setOnClickListener(v -> {
                         if (dlg[0] != null) dlg[0].dismiss();
                         choice.pick(type, sz);
                     });
                     LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
                             ViewGroup.LayoutParams.WRAP_CONTENT);
-                    cl.leftMargin = px(6);
-                    row2.addView(chip, cl);
+                    cl.leftMargin = chips == row2 || !firstChip ? px(6) : 0;
+                    firstChip = false;
+                    chips.addView(chip, cl);
                 }
                 card.addView(row2);
                 card.setOnClickListener(v -> {
@@ -4486,7 +4528,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             prefs.edit().putBoolean("dockInit", true).apply();
         }
         // su schermi stretti (o con "dimensione display" grande) le icone si rimpiccioliscono per starci tutte
-        int avail = getResources().getDisplayMetrics().widthPixels - px(16);
+        int avail = getResources().getDisplayMetrics().widthPixels - px(16 * 2 + 16);
         int size = Math.max(px(36), Math.min(px(54 * AppTile.SCALE), avail / Math.max(1, keys.size()) - px(18)));
         for (String k : keys) {
             AppEntry a = appsByKey.get(k);

@@ -28,6 +28,9 @@ final class Sheet {
         void text(String value);
     }
 
+    /** Prefisso per le voci che cancellano qualcosa: si mostrano in rosso. */
+    static final String DANGER = "!!";
+
     /** Elenco di scelte. selected >= 0 mostra il pallino rosso sulla scelta attuale. */
     static Dialog list(Activity a, Theme th, String title, String[] items, int selected, OnPick cb) {
         return list(a, th, title, items, null, selected, cb, null);
@@ -55,11 +58,12 @@ final class Sheet {
                 il.rightMargin = px(dp, 14);
                 row.addView(iv, il);
             }
+            boolean danger = items[i].startsWith(DANGER);
             TextView tv = new TextView(a);
-            tv.setText(T.t(items[i]));
+            tv.setText(T.t(danger ? items[i].substring(DANGER.length()) : items[i]));
             tv.setTypeface(Fonts.regular);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-            tv.setTextColor(th.onTile);
+            tv.setTextColor(danger ? (th.light ? 0xFFC0161D : 0xFFFF6B6B) : th.onTile);
             row.addView(tv, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
             if (selected >= 0) {
                 View dot = new View(a);
