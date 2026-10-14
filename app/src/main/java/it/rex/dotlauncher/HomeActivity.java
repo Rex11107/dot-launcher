@@ -4221,13 +4221,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         int nf = Usage.focusApps(prefs).size();
         st.row(SectionIcons.BLOCK, T.t("App che distraggono"), nf == 0 ? T.t("Nessuna: scegli quali mettere in pausa nel focus")
                 : nf + T.n(nf, " app in pausa durante il focus", " app in pausa durante il focus"), () -> pickFocusApps(null));
-        st.toggle(Draw.BELL, T.t("Non disturbare durante il focus"), T.t("Silenzia le notifiche (serve l'accesso alle notifiche)"),
+        st.toggle(SectionIcons.DND, T.t("Non disturbare durante il focus"), T.t("Silenzia le notifiche (serve l'accesso alle notifiche)"),
                 prefs.getBoolean("focusDnd", false), on -> {
                     prefs.edit().putBoolean("focusDnd", on).apply();
                     if (on && !DotNotifications.active()) askNotificationAccess();
                 });
         int nl = Usage.limited(prefs).size();
-        st.row(NothingTile.HOURGLASS, T.t("Limiti giornalieri"), nl == 0 ? T.t("Nessuno") : nl + T.n(nl, " app con limite", " app con limite"),
+        st.row(SectionIcons.TIMER, T.t("Limiti giornalieri"), nl == 0 ? T.t("Nessuno") : nl + T.n(nl, " app con limite", " app con limite"),
                 this::limitsMenu);
         int nm = Usage.mindful(prefs).size();
         st.row(SectionIcons.PAUSE, T.t("Pausa prima di aprire"), nm == 0 ? T.t("Un respiro di 5 secondi prima delle app che scegli")
@@ -5930,7 +5930,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
         st.section(T.t("Aspetto"));
         String lang = prefs.getString("lang", "auto");
-        st.row(SectionIcons.GLOBE, T.t("Lingua"), "it".equals(lang) ? "Italiano" : "en".equals(lang) ? "English"
+        st.row(SectionIcons.LANG, T.t("Lingua"), "it".equals(lang) ? "Italiano" : "en".equals(lang) ? "English"
                 : T.t("Automatica (lingua del telefono)"), () -> {
             String[] vals = {"auto", "it", "en"};
             Sheet.list(this, th, T.t("Lingua"), new String[]{T.t("Automatica (lingua del telefono)"), "Italiano", "English"},
@@ -5947,14 +5947,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 : "grey".equals(mode) ? T.t("Scuro (grigio)") : T.t("Extra scuro (nero)"), () -> choose(T.t("Tema"),
                 new String[]{T.t("Extra scuro (nero)"), T.t("Scuro (grigio)"), T.t("Chiaro"), T.t("Automatico")},
                 new String[]{"dark", "grey", "light", "auto"}, "mode", mode));
-        st.row(SectionIcons.GRID, T.t("Icone"), IconFactory.INVERSE.equals(icons) ? T.t("Invertite")
+        st.row(SectionIcons.SHAPES, T.t("Icone"), IconFactory.INVERSE.equals(icons) ? T.t("Invertite")
                 : IconFactory.COLOR.equals(icons) ? T.t("A colori (originali)") : T.t("Monocromatiche"), () -> choose(T.t("Icone"),
                 new String[]{T.t("Monocromatiche"), T.t("Invertite"), T.t("A colori")},
                 new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons));
         st.row(SectionIcons.BAG, T.t("Pacchetto di icone"), packLabel(), this::pickIconPack);
         st.row(Draw.PHOTO, T.t("Sfondi"), T.t("Sfondi generati, foto a puntini o a strisce"),
                 () -> startActivity(new Intent(this, WallpaperActivity.class)));
-        st.toggle(SectionIcons.PHONE, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
+        st.toggle(SectionIcons.WALL, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
                 prefs.getBoolean("wall", false), on -> toggle("wall", !on));
         st.toggle(SectionIcons.CHIP, T.t("Punti spenti sui display"), T.t("Si vede la griglia dei puntini spenti"),
                 prefs.getBoolean("ghost", true), on -> toggle("ghost", !on));
@@ -5965,7 +5965,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 T.t("La pagina nuova cresce da dietro quella che se ne va"),
                 T.t("Le pagine ruotano come le facce di un cubo"),
                 T.t("Le pagine restano ferme e si sostituiscono sfumando")};
-        st.row(SectionIcons.GRID, T.t("Passaggio tra le pagine"), pageNames[Pager.transition] + " · " + pageDesc[Pager.transition],
+        st.row(SectionIcons.PAGES, T.t("Passaggio tra le pagine"), pageNames[Pager.transition] + " · " + pageDesc[Pager.transition],
                 () -> Sheet.list(this, th, T.t("Passaggio tra le pagine"), pageNames, Pager.transition, w -> {
                     prefs.edit().putInt("pageAnim", w).apply();
                     Pager.transition = w;
@@ -6005,7 +6005,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
         st.section(T.t("Personalizzazione"));
         final int accC = prefs.getInt("accentC", 0);
-        st.row(SectionIcons.PALETTE, T.t("Colore d'accento"), accentName(accC), this::chooseAccent);
+        st.row(SectionIcons.DROP, T.t("Colore d'accento"), accentName(accC), this::chooseAccent);
         final String[] shapes = {T.t("Cerchio"), "Squircle", T.t("Quadrato arrotondato"), T.t("Quadrato")};
         st.row(SectionIcons.SHAPES, T.t("Forma delle icone"), shapes[IconFactory.shape], () ->
                 Sheet.list(this, th, T.t("Forma delle icone"), shapes, IconFactory.shape, w -> {
@@ -6017,14 +6017,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         int sIdx = 1;
         for (int i = 0; i < scaleV.length; i++) if (Math.abs(scaleV[i] - AppTile.SCALE) < 0.02f) sIdx = i;
         final int curScale = sIdx;
-        st.row(SectionIcons.GRID, T.t("Dimensione delle icone"), scales[curScale], () ->
+        st.row(SectionIcons.RESIZE, T.t("Dimensione delle icone"), scales[curScale], () ->
                 Sheet.list(this, th, T.t("Dimensione delle icone"), scales, curScale, w -> {
                     prefs.edit().putFloat("iconScale", scaleV[w]).apply();
                     recreate();
                 }));
         final String[] rowsL = {T.t("Automatiche"), T.t("4 righe"), T.t("5 righe"), T.t("6 righe"), T.t("7 righe"), T.t("8 righe")};
         final int rowsCur = TileGrid.ROWS == 0 ? 0 : Math.max(0, Math.min(5, TileGrid.ROWS - 3));
-        st.row(SectionIcons.CHART, T.t("Righe della home"), rowsL[rowsCur] + T.t(" · celle quadrate, centrate se servono"), () ->
+        st.row(SectionIcons.ROWS, T.t("Righe della home"), rowsL[rowsCur] + T.t(" · celle quadrate, centrate se servono"), () ->
                 Sheet.list(this, th, T.t("Righe della home"), rowsL, rowsCur, w -> {
                     prefs.edit().putInt("rows", w == 0 ? 0 : w + 3).apply();
                     recreate();
@@ -6038,7 +6038,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.toggle(SectionIcons.DOCK, T.t("Sfondo del dock"), T.t("Una pillola dietro le app del dock"),
                 prefs.getBoolean("dockBg", false), on -> toggle("dockBg", !on));
         String font = prefs.getString("font", "");
-        st.row(SectionIcons.BOOK, T.t("Carattere"), font.isEmpty() ? T.t("Predefinito (Geist, Doto per le etichette a puntini)")
+        st.row(SectionIcons.FONT, T.t("Carattere"), font.isEmpty() ? T.t("Predefinito (Geist, Doto per le etichette a puntini)")
                 : T.t("Personalizzato"), () -> Sheet.list(this, th, T.t("Carattere"),
                 new String[]{T.t("Predefinito"), T.t("Scegli un file .ttf o .otf…")}, font.isEmpty() ? 0 : -1, w -> {
                     if (w == 1) pickFont();
@@ -6049,9 +6049,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         recreate();
                     }
                 }));
-        st.toggle(SectionIcons.PHONE, T.t("Nascondi la barra di stato"), T.t("Riappare scorrendo dal bordo in alto"),
+        st.toggle(SectionIcons.STATUS, T.t("Nascondi la barra di stato"), T.t("Riappare scorrendo dal bordo in alto"),
                 prefs.getBoolean("hideStatus", false), on -> toggle("hideStatus", !on));
-        st.toggle(SectionIcons.LOCK, T.t("Blocca la home"), T.t("Niente spostamenti o rimozioni per errore"),
+        st.toggle(SectionIcons.PUSHPIN, T.t("Blocca la home"), T.t("Niente spostamenti o rimozioni per errore"),
                 locked(), this::setLocked);
 
         st.section("Home");
@@ -6092,9 +6092,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     refreshDrawer();
                 });
         final int nHidden = hidden().size();
-        st.row(SectionIcons.LOCK, T.t("App nascoste"), nHidden == 0 ? T.t("Nessuna") : nHidden + T.n(nHidden, " app nascosta", " app nascoste"),
+        st.row(SectionIcons.EYE_OFF, T.t("App nascoste"), nHidden == 0 ? T.t("Nessuna") : nHidden + T.n(nHidden, " app nascosta", " app nascoste"),
                 () -> withAuth(this::manageHidden));
-        st.toggle(SectionIcons.LOCK, T.t("Proteggi le app nascoste"), T.t("Chiedi impronta, volto o PIN per vederle"),
+        st.toggle(SectionIcons.SHIELD, T.t("Proteggi le app nascoste"), T.t("Chiedi impronta, volto o PIN per vederle"),
                 prefs.getBoolean("hiddenLock", false), on -> {
                     if (!on) {
                         // per spegnerla bisogna sbloccare: altrimenti chiunque potrebbe toglierla
@@ -6119,7 +6119,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.section(T.t("Notifiche e musica"));
         st.row(Draw.BELL, T.t("Accesso alle notifiche"), DotNotifications.active()
                 ? T.t("Attivo: pallini, anteprime e musica") : T.t("Spento: tocca per attivarlo"), this::askNotificationAccess);
-        st.toggle(Draw.BELL, T.t("Pallini di notifica"), T.t("Un punto sulle icone delle app con notifiche"),
+        st.toggle(SectionIcons.BADGE, T.t("Pallini di notifica"), T.t("Un punto sulle icone delle app con notifiche"),
                 prefs.getBoolean("badges", true), on -> {
                     prefs.edit().putBoolean("badges", on).apply();
                     onNotificationsChanged();
@@ -6132,7 +6132,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             final String key = g[0], name = g[1];
             st.row(gestureIcon(key), name, actionLabel(gestureAction(key)), () -> chooseGesture(key, name));
         }
-        st.row(SectionIcons.LOCK, T.t("Servizio per i gesti di sistema"), DotAccessibility.active()
+        st.row(SectionIcons.A11Y, T.t("Servizio per i gesti di sistema"), DotAccessibility.active()
                         ? T.t("Attivo: blocco schermo, screenshot, recenti") : T.t("Spento: serve per bloccare lo schermo e altro"),
                 () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
 
@@ -6164,7 +6164,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
         st.section(T.t("Informazioni"));
         st.row(SectionIcons.BOOK, T.t("Guida"), T.t("Dove trovare ogni funzione, con scorciatoie"), this::showGuide);
-        st.row(SectionIcons.CHIP, T.t("Versione ") + versionName(), T.t("Tocca per cercare aggiornamenti"), () -> checkUpdate(true));
+        st.row(SectionIcons.INFO, T.t("Versione ") + versionName(), T.t("Tocca per cercare aggiornamenti"), () -> checkUpdate(true));
         st.row(SectionIcons.HOME, T.t("Launcher predefinito"), T.t("Scegli Dot Launcher come schermata Home"),
                 this::requestDefaultLauncher);
         st.row(SectionIcons.STAR, T.t("Configurazione guidata"), T.t("Rivedi lingua, stile, icone e permessi"), () -> {
