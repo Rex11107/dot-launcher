@@ -29,6 +29,7 @@ import java.util.List;
 public class DotAlarmService extends Service {
     static final String ACTION_START = "it.rex.dotlauncher.ALARM_START";
     static final String ACTION_STOP = "it.rex.dotlauncher.ALARM_STOP";
+    static final String ACTION_SNOOZE = "it.rex.dotlauncher.ALARM_SNOOZE";
     private static final String CHANNEL = "dot_alarm";
     private static final int NOTIF_ID = 4711;
     private static final long MAX_RING_MS = 10 * 60000L;   // dopo 10 minuti di suono si ferma da sola
@@ -38,6 +39,8 @@ public class DotAlarmService extends Service {
     static volatile DotAlarms.Alarm active;
     static volatile long dawnStart, ringAt;
     static volatile boolean ringing, running;
+    /** Posticipo con "luce piena": lo schermo resta al massimo fino al nuovo suono. */
+    static volatile boolean fullLight, snoozed;
 
     private final Handler h = new Handler(Looper.getMainLooper());
     private MediaPlayer player;
@@ -62,6 +65,10 @@ public class DotAlarmService extends Service {
         if (ACTION_STOP.equals(a)) {
             stopAlarm();
             return START_NOT_STICKY;
+        }
+        if (ACTION_SNOOZE.equals(a)) {
+            snooze();
+            return START_REDELIVER_INTENT;
         }
         startForegroundNow();
         int id = intent.getIntExtra(DotAlarms.EXTRA_ID, -1);
@@ -93,6 +100,8 @@ public class DotAlarmService extends Service {
         ringAt = ring;
         ringing = false;
         running = true;
+        fullLight = false;
+        snoozed = false;
 
         PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
         if (pm != null) {
@@ -103,6 +112,44 @@ public class DotAlarmService extends Service {
         h.postDelayed(this::startRinging, Math.max(0, ring - now));
         // se Android chiude il servizio mentre suona, lo riavvia con la stessa sveglia (che riprende subito)
         return START_REDELIVER_INTENT;
+    }
+
+    /**
+     * Posticipa: si ferma il suono e si riprova dopo "snooze" minuti. Un evento di sicurezza nell'AlarmManager
+     * fa suonare comunque la sveglia anche se Android chiudesse il servizio nel frattempo.
+     */
+    private void snooze() {
+        DotAlarms.Alarm al = active;
+        if (al == null || !running) return;
+        int min = al.snooze > 0 ? al.snooze : 5;
+        long now = System.currentTimeMillis(), ring = now + min * 60000L;
+        stopEffects();
+        DotAlarms.snoozeBackup(this, al.id, ring);
+        if (al.snoozeMode == 2) {
+            // schermo spento fino al suono: il servizio si ferma, ci pensa l'evento di sicurezza
+            running = false;
+            ringing = false;
+            active = null;
+            if (wake != null && wake.isHeld()) wake.release();
+            wake = null;
+            if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE);
+            else stopForeground(true);
+            stopSelf();
+            return;
+        }
+        // 0: l'alba riparte da capo durante il posticipo; 1: luce piena fino al nuovo suono
+        dawnStart = now;
+        ringAt = ring;
+        ringing = false;
+        snoozed = true;
+        fullLight = al.snoozeMode == 1;
+        if (wake != null && wake.isHeld()) wake.release();
+        PowerManager pm = (PowerManager) getSystemService(POWER_SERVICE);
+        if (pm != null) {
+            wake = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "dot:alarm");
+            wake.acquire(min * 60000L + MAX_RING_MS + 60000L);
+        }
+        h.postDelayed(this::startRinging, ring - now);
     }
 
     private DotAlarms.Alarm firstAlarm() {
@@ -133,6 +180,8 @@ public class DotAlarmService extends Service {
                 new Intent(this, DotAlarmActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK), fl);
         PendingIntent stop = PendingIntent.getService(this, 11,
                 new Intent(this, DotAlarmService.class).setAction(ACTION_STOP), fl);
+        PendingIntent snz = PendingIntent.getService(this, 12,
+                new Intent(this, DotAlarmService.class).setAction(ACTION_SNOOZE), fl);
         Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL)
                 : new Notification.Builder(this);
         b.setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
@@ -144,6 +193,7 @@ public class DotAlarmService extends Service {
                 .setOngoing(true)
                 .setContentIntent(full)
                 .setFullScreenIntent(full, true)
+                .addAction(new Notification.Action.Builder(null, T.t("Posticipa"), snz).build())
                 .addAction(new Notification.Action.Builder(null, T.t("Ferma"), stop).build());
         Notification n = b.build();
         try {
@@ -247,6 +297,9 @@ public class DotAlarmService extends Service {
     void stopAlarm() {
         DotAlarms.Alarm al = active;
         stopEffects();
+        DotAlarms.cancelSnooze(this);
+        fullLight = false;
+        snoozed = false;
         running = false;
         ringing = false;
         active = null;
@@ -271,6 +324,14 @@ public class DotAlarmService extends Service {
         running = false;
         if (wake != null && wake.isHeld()) wake.release();
         super.onDestroy();
+    }
+
+    /** Dalla schermata della sveglia: pulsante Posticipa. */
+    static void snooze(Context c) {
+        try {
+            c.startService(new Intent(c, DotAlarmService.class).setAction(ACTION_SNOOZE));
+        } catch (Exception ignored) {
+        }
     }
 
     /** Dalla schermata della sveglia: pulsante Ferma. */

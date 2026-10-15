@@ -158,13 +158,17 @@ public class AlarmsActivity extends Activity {
             st.row(SettingsScreen.CLOCK, when, in + dawn, () -> {
                 if (a != null) edit(a);
             });
+            if (a != null) st.custom(nextButtons(a.id));
         }
 
         st.section(T.t("Sveglie"));
         List<DotAlarms.Alarm> list = DotAlarms.load(this);
         for (DotAlarms.Alarm a : list) {
             String title = fmt(a.hour, a.minute) + (a.name.isEmpty() ? "" : "  ·  " + a.name);
-            String val = (a.on ? "" : T.t("Spenta") + " · ") + daysLabel(a.days)
+            long now0 = System.currentTimeMillis();
+            String mod = a.skipAt > now0 ? T.t("prossima saltata") + " · "
+                    : a.shiftAt > now0 ? T.t("prossima ") + (a.shiftMin > 0 ? "+" : "") + a.shiftMin + " min · " : "";
+            String val = (a.on ? "" : T.t("Spenta") + " · ") + mod + daysLabel(a.days)
                     + (a.wake > 0 ? " · " + T.t("alba ") + a.wake + " min" : "");
             st.row(a.on ? SettingsScreen.CLOCK : SectionIcons.PAUSE, title, val, () -> edit(a));
         }
@@ -188,6 +192,44 @@ public class AlarmsActivity extends Activity {
                 T.t("Suona tra 5 minuti: spegni lo schermo e non toccare il telefono. È la prova più vicina a una notte vera"),
                 () -> runTest(5));
         st.note(T.t("La logica della sveglia riprende Fossify Clock e FakeDawn, progetti liberi con licenza GPL-3.0."));
+    }
+
+    /** −5 min, +5 min, Salta e Ripristina: valgono solo per la prossima sveglia, le ripetizioni restano uguali. */
+    private View nextButtons(int id) {
+        LinearLayout r = new LinearLayout(this);
+        r.setOrientation(LinearLayout.HORIZONTAL);
+        boolean changed = DotAlarms.hasChanges(this);
+        String[] labels = {"−5 min", "+5 min", T.t("Salta"), T.t("Ripristina")};
+        String[] desc = {T.t("Anticipa di 5 minuti la prossima sveglia"), T.t("Ritarda di 5 minuti la prossima sveglia"),
+                T.t("Salta la prossima sveglia"), T.t("Annulla le modifiche alla prossima sveglia")};
+        for (int i = 0; i < 4; i++) {
+            final int k = i;
+            boolean enabled = i < 3 || changed;
+            TextView t = new TextView(this);
+            t.setText(labels[i]);
+            t.setGravity(Gravity.CENTER);
+            t.setTypeface(th.bodyFace);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            t.setTextColor(enabled ? th.onTile : Theme.alpha(th.onTile, 0.35f));
+            t.setMinHeight(px(48));
+            t.setContentDescription(desc[i]);
+            GradientDrawable g = new GradientDrawable();
+            g.setCornerRadius(px(16));
+            g.setStroke(Math.max(1, px(1)), Theme.alpha(th.onTile, enabled ? 0.35f : 0.15f));
+            t.setBackground(g);
+            t.setEnabled(enabled);
+            t.setOnClickListener(v -> {
+                if (k == 0) DotAlarms.shiftNext(this, id, -5);
+                else if (k == 1) DotAlarms.shiftNext(this, id, 5);
+                else if (k == 2) DotAlarms.skipNext(this, id);
+                else DotAlarms.resetNext(this);
+                build();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+            lp.leftMargin = i == 0 ? 0 : px(6);
+            r.addView(t, lp);
+        }
+        return r;
     }
 
     private String dayWord(long t) {
@@ -319,6 +361,30 @@ public class AlarmsActivity extends Activity {
             a.vibrate = on;
             commit();
         });
+
+        st.section(T.t("Posticipa"));
+        final int[] snz = {0, 3, 5, 10, 15, 20};
+        String[] sl = new String[snz.length];
+        int ssel = 2;
+        for (int i = 0; i < snz.length; i++) {
+            sl[i] = snz[i] == 0 ? T.t("Spento") : snz[i] + " min";
+            if (snz[i] == a.snooze) ssel = i;
+        }
+        final int fs = ssel;
+        st.row(SectionIcons.PAUSE, T.t("Durata del posticipo"), sl[fs], () ->
+                Sheet.list(this, th, T.t("Durata del posticipo"), sl, fs, w -> {
+                    a.snooze = snz[w];
+                    commit();
+                }));
+        if (a.snooze > 0) {
+            String[] ml = {T.t("L'alba riparte da capo"), T.t("Luce piena fino al suono"), T.t("Schermo spento fino al suono")};
+            int msel = Math.max(0, Math.min(2, a.snoozeMode));
+            st.row(Draw.SUN, T.t("Durante il posticipo"), ml[msel], () ->
+                    Sheet.list(this, th, T.t("Durante il posticipo"), ml, msel, w -> {
+                        a.snoozeMode = w;
+                        commit();
+                    }));
+        }
 
         st.section("");
         st.row(SectionIcons.CLOSE, T.t("Elimina la sveglia"), "", () ->

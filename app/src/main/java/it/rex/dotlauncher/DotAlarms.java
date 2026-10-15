@@ -49,11 +49,17 @@ final class DotAlarms {
         int volume = 80;           // volume massimo del suono, %
         boolean vibrate = true;
         String sound = "";         // vuoto = suoneria di sveglia del telefono
+        int snooze = 5;            // minuti di posticipo; 0 = niente posticipo
+        int snoozeMode = 0;        // durante il posticipo: 0 alba di nuovo, 1 luce piena, 2 schermo spento
+        long skipAt;               // la ripetizione con questo suono (originale) si salta
+        long shiftAt;              // la ripetizione con questo suono (originale) si sposta di shiftMin minuti
+        int shiftMin;
 
         JSONObject json() throws Exception {
             return new JSONObject().put("id", id).put("h", hour).put("m", minute).put("d", days)
                     .put("n", name).put("on", on).put("w", wake).put("c", color).put("b", bright)
-                    .put("v", volume).put("vi", vibrate).put("s", sound);
+                    .put("v", volume).put("vi", vibrate).put("s", sound)
+                    .put("sn", snooze).put("sm", snoozeMode).put("sk", skipAt).put("sa", shiftAt).put("sh", shiftMin);
         }
 
         static Alarm from(JSONObject o) {
@@ -70,6 +76,11 @@ final class DotAlarms {
             a.volume = o.optInt("v", 80);
             a.vibrate = o.optBoolean("vi", true);
             a.sound = o.optString("s", "");
+            a.snooze = o.optInt("sn", 5);
+            a.snoozeMode = o.optInt("sm", 0);
+            a.skipAt = o.optLong("sk", 0);
+            a.shiftAt = o.optLong("sa", 0);
+            a.shiftMin = o.optInt("sh", 0);
             return a;
         }
 
@@ -77,21 +88,30 @@ final class DotAlarms {
             return (int) Long.parseLong(COLORS[color][1], 16);
         }
 
-        /** Prossimo suono (non l'inizio dell'alba) a partire da "dopo". */
+        /** Prossimo suono (non l'inizio dell'alba) a partire da "dopo", con salti e spostamenti. */
         long nextRing(long after) {
+            long[] o = nextOccurrence(after);
+            return o == null ? -1 : o[1];
+        }
+
+        /** {suono originale, suono effettivo} della prossima ripetizione, oppure null. */
+        long[] nextOccurrence(long after) {
             Calendar c = Calendar.getInstance();
             c.setTimeInMillis(after);
             c.set(Calendar.SECOND, 0);
             c.set(Calendar.MILLISECOND, 0);
             c.set(Calendar.HOUR_OF_DAY, hour);
             c.set(Calendar.MINUTE, minute);
-            for (int i = 0; i < 8; i++) {
-                // l'alba deve poter partire nel futuro: se il suono è troppo vicino si passa al giorno dopo
-                if (c.getTimeInMillis() - wake * 60000L > after
-                        && (days == 0 || (days & (1 << dayIndex(c))) != 0)) return c.getTimeInMillis();
+            for (int i = 0; i < 9; i++) {
+                long orig = c.getTimeInMillis();
+                boolean day = days == 0 || (days & (1 << dayIndex(c))) != 0;
                 c.add(Calendar.DAY_OF_YEAR, 1);
+                if (!day || orig == skipAt) continue;
+                long t = orig == shiftAt ? orig + shiftMin * 60000L : orig;
+                // l'alba deve poter partire nel futuro: se il suono è troppo vicino si passa al giorno dopo
+                if (t - wake * 60000L > after) return new long[]{orig, t};
             }
-            return -1;
+            return null;
         }
     }
 
@@ -193,6 +213,73 @@ final class DotAlarms {
         } else {
             am.cancel(trigger(c, 4, 0, 0, false));
         }
+    }
+
+    /** Posticipo: un evento di sicurezza all'ora del nuovo suono, anche se il servizio venisse chiuso. */
+    static void snoozeBackup(Context c, int id, long ring) {
+        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+        try {
+            am.setAlarmClock(new AlarmManager.AlarmClockInfo(ring, show(c)), trigger(c, 5, id, ring, false));
+        } catch (SecurityException ignored) {
+        }
+    }
+
+    static void cancelSnooze(Context c) {
+        AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
+        if (am != null) am.cancel(trigger(c, 5, 0, 0, false));
+    }
+
+    /** −5/+5 minuti per la prossima ripetizione di una sveglia (le altre restano com'erano). */
+    static void shiftNext(Context c, int id, int delta) {
+        List<Alarm> l = load(c);
+        long now = System.currentTimeMillis();
+        for (Alarm a : l) {
+            if (a.id != id) continue;
+            long[] o = a.nextOccurrence(now);
+            if (o == null) return;
+            if (a.shiftAt == o[0]) a.shiftMin = Math.max(-120, Math.min(120, a.shiftMin + delta));
+            else {
+                a.shiftAt = o[0];
+                a.shiftMin = delta;
+            }
+            if (a.shiftMin == 0) a.shiftAt = 0;
+        }
+        save(c, l);
+    }
+
+    /** Salta la prossima ripetizione di una sveglia. */
+    static void skipNext(Context c, int id) {
+        List<Alarm> l = load(c);
+        long now = System.currentTimeMillis();
+        for (Alarm a : l) {
+            if (a.id != id) continue;
+            long[] o = a.nextOccurrence(now);
+            if (o == null) return;
+            a.skipAt = o[0];
+            if (a.shiftAt == o[0]) a.shiftAt = 0;
+        }
+        save(c, l);
+    }
+
+    /** Annulla salti e spostamenti ancora da venire. */
+    static void resetNext(Context c) {
+        List<Alarm> l = load(c);
+        long now = System.currentTimeMillis();
+        for (Alarm a : l) {
+            if (a.skipAt > now) a.skipAt = 0;
+            if (a.shiftAt > now) {
+                a.shiftAt = 0;
+                a.shiftMin = 0;
+            }
+        }
+        save(c, l);
+    }
+
+    static boolean hasChanges(Context c) {
+        long now = System.currentTimeMillis();
+        for (Alarm a : load(c)) if (a.skipAt > now || a.shiftAt > now) return true;
+        return false;
     }
 
     /** Prova: una sveglia vera tra "minutes" minuti, con 30 secondi di alba. */

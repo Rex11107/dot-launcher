@@ -12,7 +12,6 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.text.format.DateFormat;
-import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
 
@@ -48,7 +47,62 @@ public class DotAlarmActivity extends Activity {
         dp = getResources().getDisplayMetrics().density;
         SystemBars.edgeToEdge(getWindow(), false);
         sky = new Sky(this);
-        setContentView(sky);
+        android.widget.FrameLayout root = new android.widget.FrameLayout(this);
+        root.addView(sky);
+        android.widget.LinearLayout bar = new android.widget.LinearLayout(this);
+        bar.setOrientation(android.widget.LinearLayout.VERTICAL);
+        bar.setGravity(android.view.Gravity.CENTER_HORIZONTAL);
+        snoozeBtn = button(T.t("Posticipa"), 26, 84);
+        snoozeBtn.setOnClickListener(v -> {
+            DotAlarmService.snooze(this);
+            v.postDelayed(() -> {
+                if (!DotAlarmService.running) finish(); // posticipo a schermo spento
+            }, 400);
+        });
+        stopBtn = button(T.t("Ferma"), 20, 64);
+        stopBtn.setOnClickListener(v -> stopAll());
+        android.widget.LinearLayout.LayoutParams sl = new android.widget.LinearLayout.LayoutParams(
+                Math.round(320 * dp), android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        bar.addView(snoozeBtn, sl);
+        android.widget.LinearLayout.LayoutParams tl = new android.widget.LinearLayout.LayoutParams(
+                Math.round(220 * dp), android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        tl.topMargin = Math.round(18 * dp);
+        bar.addView(stopBtn, tl);
+        android.widget.FrameLayout.LayoutParams bl = new android.widget.FrameLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.BOTTOM);
+        bl.bottomMargin = Math.round(96 * dp);
+        root.addView(bar, bl);
+        setContentView(root);
+    }
+
+    private android.widget.TextView snoozeBtn, stopBtn;
+
+    private android.widget.TextView button(String text, int sp, int minH) {
+        android.widget.TextView b = new android.widget.TextView(this);
+        b.setText(text);
+        b.setGravity(android.view.Gravity.CENTER);
+        b.setTypeface(th.bodyFace);
+        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, sp);
+        b.setMinHeight(Math.round(minH * dp));
+        return b;
+    }
+
+    /** Colori dei pulsanti: chiari sul cielo scuro, scuri quando l'alba è piena. */
+    private void styleButtons(boolean dark) {
+        int fg = dark ? 0xFFFFF4E6 : 0xFF2A1408;
+        DotAlarms.Alarm al = DotAlarmService.active;
+        boolean canSnooze = al != null && al.snooze > 0 && DotAlarmService.ringing;
+        snoozeBtn.setVisibility(canSnooze ? View.VISIBLE : View.GONE);
+        if (al != null) snoozeBtn.setText(T.t("Posticipa") + " · " + al.snooze + " min");
+        for (android.widget.TextView b : new android.widget.TextView[]{snoozeBtn, stopBtn}) {
+            b.setTextColor(fg);
+            android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+            g.setCornerRadius(48 * dp);
+            if (b == snoozeBtn) g.setColor(dark ? 0x40FFFFFF : 0x40000000);
+            else g.setStroke(Math.round(2 * dp), dark ? 0x99FFFFFF : 0x99000000);
+            b.setBackground(g);
+        }
     }
 
     @Override
@@ -77,6 +131,7 @@ public class DotAlarmActivity extends Activity {
             lp.screenBrightness = Math.max(0.01f, target * p);
             getWindow().setAttributes(lp);
             sky.invalidate();
+            styleButtons(p < 0.55f);
             h.postDelayed(this, 250);
         }
     };
@@ -84,7 +139,7 @@ public class DotAlarmActivity extends Activity {
     /** 0 = inizio dell'alba, 1 = ora del suono. */
     static float progress() {
         long span = DotAlarmService.ringAt - DotAlarmService.dawnStart;
-        if (span <= 0 || DotAlarmService.ringing) return 1f;
+        if (span <= 0 || DotAlarmService.ringing || DotAlarmService.fullLight) return 1f;
         float p = (System.currentTimeMillis() - DotAlarmService.dawnStart) / (float) span;
         return Math.max(0f, Math.min(1f, p));
     }
@@ -110,11 +165,10 @@ public class DotAlarmActivity extends Activity {
     /** Il cielo: un sole che sale dal basso e schiarisce tutto lo schermo. */
     private class Sky extends View {
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final android.graphics.RectF btn = new android.graphics.RectF();
 
         Sky(Context c) {
             super(c);
-            setContentDescription(T.t("Sveglia. Tocca due volte per fermarla"));
+            setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO); // i pulsanti veri sono sotto
         }
 
         @Override
@@ -145,34 +199,9 @@ public class DotAlarmActivity extends Activity {
             p.setTextSize(18 * dp);
             p.setAlpha(200);
             String sub = DotAlarmService.ringing ? (al != null && !al.name.isEmpty() ? al.name : T.t("Sveglia"))
-                    : T.t("Alba in corso");
+                    : DotAlarmService.snoozed ? T.t("Posticipata") : T.t("Alba in corso");
             cv.drawText(sub, W / 2f, H * 0.34f + 40 * dp, p);
             p.setAlpha(255);
-
-            // pulsante Ferma, grande e in basso
-            float bw = Math.min(W - 64 * dp, 320 * dp), bh = 72 * dp;
-            btn.set(W / 2f - bw / 2f, H - 150 * dp - bh, W / 2f + bw / 2f, H - 150 * dp);
-            p.setColor(dark ? 0x33FFFFFF : 0x33000000);
-            cv.drawRoundRect(btn, bh / 2f, bh / 2f, p);
-            p.setColor(fg);
-            p.setTextSize(22 * dp);
-            cv.drawText(T.t("Ferma"), W / 2f, btn.centerY() + 8 * dp, p);
-        }
-
-        @Override
-        public boolean onTouchEvent(MotionEvent e) {
-            if (e.getAction() == MotionEvent.ACTION_UP && btn.contains(e.getX(), e.getY())) {
-                performClick();
-                return true;
-            }
-            return true;
-        }
-
-        @Override
-        public boolean performClick() {
-            super.performClick();
-            stopAll(); // anche con TalkBack: doppio tocco ovunque ferma la sveglia
-            return true;
         }
     }
 
