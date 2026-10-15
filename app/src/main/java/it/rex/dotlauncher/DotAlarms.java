@@ -54,12 +54,14 @@ final class DotAlarms {
         long skipAt;               // la ripetizione con questo suono (originale) si salta
         long shiftAt;              // la ripetizione con questo suono (originale) si sposta di shiftMin minuti
         int shiftMin;
+        int volUp, volDown;        // tasti del volume sulla sveglia: 0 regolano il volume, 1 posticipa, 2 ferma
 
         JSONObject json() throws Exception {
             return new JSONObject().put("id", id).put("h", hour).put("m", minute).put("d", days)
                     .put("n", name).put("on", on).put("w", wake).put("c", color).put("b", bright)
                     .put("v", volume).put("vi", vibrate).put("s", sound)
-                    .put("sn", snooze).put("sm", snoozeMode).put("sk", skipAt).put("sa", shiftAt).put("sh", shiftMin);
+                    .put("sn", snooze).put("sm", snoozeMode).put("sk", skipAt).put("sa", shiftAt).put("sh", shiftMin)
+                    .put("vu", volUp).put("vd", volDown);
         }
 
         static Alarm from(JSONObject o) {
@@ -81,6 +83,8 @@ final class DotAlarms {
             a.skipAt = o.optLong("sk", 0);
             a.shiftAt = o.optLong("sa", 0);
             a.shiftMin = o.optInt("sh", 0);
+            a.volUp = o.optInt("vu", 0);
+            a.volDown = o.optInt("vd", 0);
             return a;
         }
 
@@ -326,7 +330,7 @@ final class DotAlarms {
     }
 
     static Uri soundUri(Context c, Alarm a) {
-        if (a != null && !a.sound.isEmpty()) return Uri.parse(a.sound);
+        if (a != null && !a.sound.isEmpty() && !AmbientSound.is(a.sound)) return Uri.parse(a.sound);
         Uri u = RingtoneManager.getActualDefaultRingtoneUri(c, RingtoneManager.TYPE_ALARM);
         if (u == null) u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM);
         if (u == null) u = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE);

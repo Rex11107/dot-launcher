@@ -44,6 +44,11 @@ public class DotAlarmService extends Service {
 
     private final Handler h = new Handler(Looper.getMainLooper());
     private MediaPlayer player;
+    private AmbientSound ambient;
+
+    private boolean soundOn() {
+        return player != null || ambient != null;
+    }
     private Vibrator vibrator;
     private PowerManager.WakeLock wake;
     private int savedAlarmVolume = -1;
@@ -219,7 +224,7 @@ public class DotAlarmService extends Service {
     private void startSound(DotAlarms.Alarm al, final int from, final int to, final long rampMs) {
         final AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         try {
-            if (player == null) {
+            if (!soundOn()) {
                 if (am != null) {
                     if (savedAlarmVolume < 0) savedAlarmVolume = am.getStreamVolume(AudioManager.STREAM_ALARM);
                     am.setStreamVolume(AudioManager.STREAM_ALARM, from, 0);
@@ -231,19 +236,33 @@ public class DotAlarmService extends Service {
                         am.requestAudioFocus(focus);
                     }
                 }
-                player = new MediaPlayer();
-                player.setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
-                player.setDataSource(this, DotAlarms.soundUri(this, al));
-                player.setLooping(true);
-                player.prepare();
-                player.setVolume(1f, 1f);
-                player.start();
+                if (AmbientSound.is(al.sound)) {
+                    // onde, pioggia o campanelle generate al momento
+                    ambient = new AmbientSound(al.sound, true);
+                    ambient.start();
+                } else {
+                    player = new MediaPlayer();
+                    player.setAudioAttributes(new AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                    player.setDataSource(this, DotAlarms.soundUri(this, al));
+                    player.setLooping(true);
+                    player.prepare();
+                    player.setVolume(1f, 1f);
+                    player.start();
+                }
             }
         } catch (Exception e) {
+            // file non più disponibile o suono non valido: si ripiega sulla suoneria della sveglia del telefono
             if (player != null) player.release();
             player = null;
+            if (ambient != null) ambient.stop();
+            ambient = null;
+            if (!al.sound.isEmpty()) {
+                DotAlarms.Alarm fallback = new DotAlarms.Alarm();
+                fallback.volume = al.volume;
+                startSound(fallback, from, to, rampMs);
+            }
             return;
         }
         if (am == null || to <= from || rampMs <= 0) return;
@@ -252,7 +271,7 @@ public class DotAlarmService extends Service {
         ramp = new Runnable() {
             @Override
             public void run() {
-                if (player == null) return;
+                if (!soundOn()) return;
                 float k = Math.min(1f, (System.currentTimeMillis() - t0) / (float) rampMs);
                 int v = from + Math.round((to - from) * k);
                 try {
@@ -283,7 +302,7 @@ public class DotAlarmService extends Service {
         ringing = true;
         AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         int target = targetVolume(am, al);
-        if (player == null) {
+        if (!soundOn()) {
             // senza alba (o dopo un posticipo): si parte da un terzo del volume e si arriva al massimo in un minuto
             startSound(al, Math.max(1, Math.round(target * 0.35f)), target, FADE_MS);
         } else if (am != null) {
@@ -313,6 +332,10 @@ public class DotAlarmService extends Service {
             }
             player.release();
             player = null;
+        }
+        if (ambient != null) {
+            ambient.stop();
+            ambient = null;
         }
         if (vibrator != null) {
             vibrator.cancel();

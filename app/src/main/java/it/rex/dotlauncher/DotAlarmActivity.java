@@ -146,6 +146,24 @@ public class DotAlarmActivity extends Activity {
         return Math.max(0f, Math.min(1f, p));
     }
 
+    /** Tasti del volume: come scelto nella sveglia (niente, posticipa o ferma). */
+    @Override
+    public boolean onKeyDown(int keyCode, android.view.KeyEvent event) {
+        if (keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP || keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN) {
+            DotAlarms.Alarm al = DotAlarmService.active;
+            int act = al == null ? 0 : keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP ? al.volUp : al.volDown;
+            if (act == 1 && DotAlarmService.ringing && al.snooze > 0) {
+                snoozeBtn.performClick();
+                return true;
+            }
+            if (act == 2) {
+                stopAll();
+                return true;
+            }
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
     @Override
     public void onBackPressed() {
         // la sveglia si ferma solo con il pulsante, per non spegnerla per sbaglio

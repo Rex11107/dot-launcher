@@ -34,7 +34,8 @@ import java.util.List;
 
 /** Dot Sveglia: elenco delle sveglie, modifica, lista di controllo e scelta dell'app per il widget. */
 public class AlarmsActivity extends Activity {
-    private static final int REQ_SOUND = 41, REQ_NOTIF = 42;
+    private static final int REQ_SOUND = 41, REQ_NOTIF = 42, REQ_FILE = 43;
+    private AmbientSound preview;
     private static final int PAGE_LIST = 0, PAGE_EDIT = 1, PAGE_CHECK = 2;
 
     private SharedPreferences prefs;
@@ -361,6 +362,17 @@ public class AlarmsActivity extends Activity {
             a.vibrate = on;
             commit();
         });
+        String[] keyActs = {T.t("Regolano il volume"), T.t("Posticipa"), T.t("Ferma")};
+        st.row(SectionIcons.ARROW_UP, T.t("Tasto volume su"), keyActs[Math.max(0, Math.min(2, a.volUp))], () ->
+                Sheet.list(this, th, T.t("Tasto volume su"), keyActs, a.volUp, w -> {
+                    a.volUp = w;
+                    commit();
+                }));
+        st.row(SectionIcons.ARROW_DOWN, T.t("Tasto volume giù"), keyActs[Math.max(0, Math.min(2, a.volDown))], () ->
+                Sheet.list(this, th, T.t("Tasto volume giù"), keyActs, a.volDown, w -> {
+                    a.volDown = w;
+                    commit();
+                }));
 
         st.section(T.t("Posticipa"));
         final int[] snz = {0, 3, 5, 10, 15, 20};
@@ -430,6 +442,16 @@ public class AlarmsActivity extends Activity {
     }
 
     private String soundName(DotAlarms.Alarm a) {
+        String amb = AmbientSound.name(a.sound);
+        if (amb != null) return amb;
+        if (a.sound.startsWith("content://") && !a.sound.contains("/media/") ) {
+            // file scelto dal telefono: si mostra il nome del file
+            try (android.database.Cursor cu = getContentResolver().query(Uri.parse(a.sound),
+                    new String[]{android.provider.OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+                if (cu != null && cu.moveToFirst()) return cu.getString(0);
+            } catch (Exception ignored) {
+            }
+        }
         try {
             Ringtone r = RingtoneManager.getRingtone(this, DotAlarms.soundUri(this, a));
             String t = r == null ? null : r.getTitle(this);
@@ -439,7 +461,50 @@ public class AlarmsActivity extends Activity {
         return T.t("Suoneria della sveglia");
     }
 
+    /** Suono: suoneria del telefono, un suono ambientale (con anteprima) o un file audio tuo. */
     private void pickSound(DotAlarms.Alarm a) {
+        String[] opts = new String[AmbientSound.TYPES.length + 2];
+        opts[0] = T.t("Suoneria del telefono…");
+        for (int i = 0; i < AmbientSound.TYPES.length; i++) opts[i + 1] = T.t(AmbientSound.TYPES[i][1]);
+        opts[opts.length - 1] = T.t("File audio…");
+        int sel = -1;
+        for (int i = 0; i < AmbientSound.TYPES.length; i++) if (AmbientSound.TYPES[i][0].equals(a.sound)) sel = i + 1;
+        Sheet.list(this, th, T.t("Suono della sveglia"), opts, sel, w -> {
+            stopPreview();
+            if (w == 0) pickRingtone(a);
+            else if (w == opts.length - 1) {
+                Intent f = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("audio/*");
+                try {
+                    startActivityForResult(f, REQ_FILE);
+                } catch (Exception e) {
+                    Toast.makeText(this, T.t("Nessuna app per scegliere file"), Toast.LENGTH_SHORT).show();
+                }
+            } else {
+                a.sound = AmbientSound.TYPES[w - 1][0];
+                commit();
+                // anteprima di 6 secondi al volume dei contenuti multimediali
+                preview = new AmbientSound(a.sound, false);
+                preview.start();
+                st.postDelayed(this::stopPreview, 6000);
+                Toast.makeText(this, T.t("Anteprima: 6 secondi"), Toast.LENGTH_SHORT).show();
+            }
+        });
+    }
+
+    private void stopPreview() {
+        if (preview != null) {
+            preview.stop();
+            preview = null;
+        }
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        stopPreview();
+    }
+
+    private void pickRingtone(DotAlarms.Alarm a) {
         Intent i = new Intent(RingtoneManager.ACTION_RINGTONE_PICKER)
                 .putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, RingtoneManager.TYPE_ALARM)
                 .putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, T.t("Suono della sveglia"))
@@ -457,6 +522,17 @@ public class AlarmsActivity extends Activity {
     @SuppressWarnings("deprecation")
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_FILE && res == RESULT_OK && data != null && data.getData() != null && editing != null) {
+            Uri u = data.getData();
+            try {
+                // il permesso di leggere il file resta anche dopo il riavvio del telefono
+                getContentResolver().takePersistableUriPermission(u, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            } catch (Exception ignored) {
+            }
+            editing.sound = u.toString();
+            commit();
+            return;
+        }
         if (req != REQ_SOUND || res != RESULT_OK || data == null || editing == null) return;
         Uri u = data.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI);
         editing.sound = u == null || RingtoneManager.isDefault(u) ? "" : u.toString();
