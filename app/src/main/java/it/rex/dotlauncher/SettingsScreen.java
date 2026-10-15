@@ -40,7 +40,14 @@ class SettingsScreen extends FrameLayout {
     private final LinearLayout col;
     private LinearLayout group;
 
+    private final LinearLayout bar;
+
     SettingsScreen(Activity a, Theme th, Runnable onBack) {
+        this(a, th, null, onBack);
+    }
+
+    /** title null = "Impostazioni". */
+    SettingsScreen(Activity a, Theme th, String titleText, Runnable onBack) {
         super(a);
         this.act = a;
         this.th = th;
@@ -51,7 +58,7 @@ class SettingsScreen extends FrameLayout {
         outer.setOrientation(LinearLayout.VERTICAL);
         addView(outer, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
-        LinearLayout bar = new LinearLayout(a);
+        bar = new LinearLayout(a);
         bar.setOrientation(LinearLayout.HORIZONTAL);
         bar.setGravity(Gravity.CENTER_VERTICAL);
         bar.setPadding(px(8), px(8), px(16), px(8));
@@ -68,11 +75,11 @@ class SettingsScreen extends FrameLayout {
             dt.setFitWidth(true, 3.4f * dp);
             dt.setColor(th.onTile);
             dt.setAccent(".", th.accent);
-            dt.setText(T.t("IMPOSTAZIONI."));
+            dt.setText(titleText == null ? T.t("IMPOSTAZIONI.") : titleText.toUpperCase(T.loc()) + ".");
             title = dt;
         } else {
             TextView tv = new TextView(a);
-            tv.setText(T.t("Impostazioni"));
+            tv.setText(titleText == null ? T.t("Impostazioni") : titleText);
             tv.setTextColor(th.onTile);
             tv.setTypeface(th.titleFace);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
@@ -93,6 +100,23 @@ class SettingsScreen extends FrameLayout {
         col.setPadding(px(16), px(4), px(16), px(32));
         scroll.addView(col);
         outer.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+    }
+
+    /** Elemento in alto a destra, accanto al titolo. */
+    void setAction(View v) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.leftMargin = px(8);
+        bar.addView(v, lp);
+    }
+
+    /** Una vista libera nell'elenco; le voci successive aprono un nuovo gruppo. */
+    void custom(View v) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = px(10);
+        col.addView(v, lp);
+        group = null;
     }
 
     private int px(float v) {

@@ -2135,8 +2135,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "clock_pill":
             case "clock_ring":
             case "world_clock":
-            case "alarm":
                 safeStart(new Intent(AlarmClock.ACTION_SHOW_ALARMS));
+                break;
+            case "alarm":
+                // Dot Sveglia, l'Orologio o un'altra app: lo si sceglie in alto a destra nella pagina Sveglia
+                AlarmsActivity.openFromWidget(this);
                 break;
             case "date_big":
             case "date_dot":
@@ -2591,10 +2594,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void updateAlarm() {
         try {
-            AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
-            AlarmManager.AlarmClockInfo info = am == null ? null : am.getNextAlarmClock();
-            State.nextAlarm = info == null ? "" : new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc())
-                    .format(new Date(info.getTriggerTime()));
+            long when;
+            if (DotAlarms.enabled(this)) {
+                long[] n = DotAlarms.next(this);
+                when = n == null ? -1 : n[1];
+            } else {
+                AlarmManager am = (AlarmManager) getSystemService(ALARM_SERVICE);
+                AlarmManager.AlarmClockInfo info = am == null ? null : am.getNextAlarmClock();
+                when = info == null ? -1 : info.getTriggerTime();
+            }
+            State.nextAlarm = when < 0 ? "" : new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc())
+                    .format(new Date(when));
         } catch (Exception e) {
             State.nextAlarm = "";
         }
@@ -6124,6 +6134,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     prefs.edit().putBoolean("badges", on).apply();
                     onNotificationsChanged();
                 });
+
+        st.section(T.t("Sveglia"));
+        st.row(SettingsScreen.CLOCK, T.t("Sveglia del widget"), DotAlarms.enabled(this)
+                ? T.t("Dot Sveglia, con l'alba") : T.t("App di sistema o un'altra app"),
+                () -> safeStart(new Intent(this, AlarmsActivity.class)));
 
         wellbeingSettings(st);
 
