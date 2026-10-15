@@ -73,7 +73,8 @@ final class AmbientSound {
     private void loop() {
         short[] buf = new short[RATE / 10];
         Random r = new Random();
-        double t = 0, brown = 0, lp = 0, lp2 = 0, drop = 0, dropLp = 0;
+        double t = 0, brown = 0, lp = 0, drop = 0;
+        double hpX = 0, hpY = 0, dHpX = 0, dHpY = 0, mod = 1, modTarget = 1, modT = 0;
         // campanelle: fino a 6 note che suonano insieme
         double[] freq = new double[6], amp = new double[6], ph = new double[6];
         double[] scale = {523.25, 587.33, 659.25, 783.99, 880.00, 1046.5, 1174.7, 1318.5};
@@ -102,12 +103,23 @@ final class AmbientSound {
                         break;
                     }
                     case RAIN: {
-                        lp += (white - lp) * 0.35;
-                        lp2 += (lp - lp2) * 0.5;
-                        if (r.nextDouble() < 25.0 / RATE) drop = 0.6 + r.nextDouble() * 0.4; // una goccia
-                        drop *= 0.996;
-                        dropLp += (white * drop - dropLp) * 0.7;
-                        v = (lp2 * 0.35 + dropLp * 0.5) * 1.7;
+                        // fruscio continuo e luminoso (passa-alto ~500 Hz, poi passa-basso morbido)
+                        hpY = 0.86 * (hpY + white - hpX);
+                        hpX = white;
+                        lp += (hpY - lp) * 0.75;
+                        // tante gocce piccolissime (1-2 ms), con ampiezze molto diverse: niente "botti"
+                        if (r.nextDouble() < 380.0 / RATE) drop += Math.pow(r.nextDouble(), 3) * 0.9;
+                        drop *= 0.965;
+                        double dw = (r.nextDouble() * 2 - 1) * drop;
+                        dHpY = 0.7 * (dHpY + dw - dHpX);
+                        dHpX = dw;
+                        // l'intensità varia piano, come la pioggia vera
+                        if (t >= modT) {
+                            modTarget = 0.8 + r.nextDouble() * 0.4;
+                            modT = t + 3 + r.nextDouble() * 4;
+                        }
+                        mod += (modTarget - mod) * 0.00002;
+                        v = Math.tanh((lp * 0.22 + dHpY * 0.9) * mod * 1.3);
                         break;
                     }
                     default: { // campanelle
