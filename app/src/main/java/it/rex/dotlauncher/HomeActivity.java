@@ -528,6 +528,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void handleBack() {
         if (onboarding != null) return; // la configurazione guidata si chiude con "Salta" o "Inizia"
+        if (StepsPopup.dismiss()) return;
         if (resizer != null) exitResize();
         else if (settingsOpen) closeSettings();
         else if (panelOpen) closePanel();
@@ -2174,6 +2175,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 break;
             case "steps":
                 if (!SensorHub.stepPermission(this)) askStepPermission();
+                else if (it.view != null) StepsPopup.show(this, root, it.view, th, prefs, this::editStepGoal, this::editStride);
                 else editStepGoal();
                 break;
             case "photo": {
@@ -2576,6 +2578,44 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (Build.VERSION.SDK_INT >= 29) {
             requestPermissions(new String[]{"android.permission.ACTIVITY_RECOGNITION"}, REQ_STEPS);
         }
+    }
+
+    /** Lunghezza del passo (dall'altezza o in cm) e unità della distanza. */
+    private void editStride() {
+        String unit = prefs.getString("distUnit", "auto");
+        String[] opts = {T.t("Calcola dalla mia altezza…"), T.t("Lunghezza del passo: ") + Math.round(StepsPopup.stride(prefs) * 100) + " cm…",
+                T.t("Unità: ") + ("km".equals(unit) ? T.t("chilometri") : "mi".equals(unit) ? T.t("miglia") : T.t("automatica"))};
+        Sheet.list(this, th, T.t("Distanza"), opts, -1, w -> {
+            if (w == 0) {
+                Sheet.input(this, th, T.t("Altezza in cm"), T.t("es. 175"), "", v -> {
+                    try {
+                        int h = Integer.parseInt(v.replaceAll("[^0-9]", ""));
+                        if (h < 100 || h > 230) throw new NumberFormatException();
+                        float st = Math.round(h * 0.415f) / 100f; // regola comune: passo ≈ 41,5% dell'altezza
+                        prefs.edit().putFloat("stride", st).apply();
+                        toast(T.t("Passo stimato: ") + Math.round(st * 100) + " cm");
+                    } catch (NumberFormatException e) {
+                        toast(T.t("Scrivi l'altezza in centimetri, es. 175"));
+                    }
+                });
+            } else if (w == 1) {
+                Sheet.input(this, th, T.t("Lunghezza del passo in cm"), T.t("es. 75"),
+                        String.valueOf(Math.round(StepsPopup.stride(prefs) * 100)), v -> {
+                    try {
+                        int cm = Integer.parseInt(v.replaceAll("[^0-9]", ""));
+                        if (cm < 30 || cm > 150) throw new NumberFormatException();
+                        prefs.edit().putFloat("stride", cm / 100f).apply();
+                    } catch (NumberFormatException e) {
+                        toast(T.t("Scrivi un numero tra 30 e 150"));
+                    }
+                });
+            } else {
+                String[] u = {T.t("Automatica (dalla lingua del telefono)"), T.t("Chilometri"), T.t("Miglia")};
+                String[] keys = {"auto", "km", "mi"};
+                int sel = "km".equals(unit) ? 1 : "mi".equals(unit) ? 2 : 0;
+                Sheet.list(this, th, T.t("Unità della distanza"), u, sel, k -> prefs.edit().putString("distUnit", keys[k]).apply());
+            }
+        });
     }
 
     private void editStepGoal() {
@@ -6171,6 +6211,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.section(T.t("Meteo e sensori"));
         st.row(Draw.SUN, T.t("Città per il meteo"), city.isEmpty() ? T.t("Posizione automatica") : city, this::askCity);
         st.row(Draw.STEPS, T.t("Obiettivo di passi"), State.stepGoal + T.t(" passi al giorno"), this::editStepGoal);
+        st.row(Draw.STEPS, T.t("Distanza"), T.t("Passo di ") + Math.round(StepsPopup.stride(prefs) * 100) + " cm · "
+                + (StepsPopup.miles(prefs) ? T.t("miglia") : T.t("chilometri")), this::editStride);
 
         st.section("Backup");
         st.row(SectionIcons.DOWNLOAD, T.t("Esporta la configurazione"), T.t("Home, cassetto, impostazioni (senza chiavi API)"),
