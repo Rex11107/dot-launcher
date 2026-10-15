@@ -109,6 +109,7 @@ public class DotAlarmService extends Service {
             wake.acquire(Math.max(0, ring - now) + MAX_RING_MS + 60000L);
         }
         openScreen();
+        startDawnSound();
         h.postDelayed(this::startRinging, Math.max(0, ring - now));
         // se Android chiude il servizio mentre suona, lo riavvia con la stessa sveglia (che riprende subito)
         return START_REDELIVER_INTENT;
@@ -204,58 +205,93 @@ public class DotAlarmService extends Service {
         }
     }
 
-    private void startRinging() {
-        DotAlarms.Alarm al = active;
-        if (al == null || !running) return;
-        ringing = true;
+    /** Volume massimo scelto, come gradino del volume Sveglie del telefono. */
+    private int targetVolume(AudioManager am, DotAlarms.Alarm al) {
+        int top = am == null ? 0 : am.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+        return Math.max(1, Math.round(top * al.volume / 100f));
+    }
+
+    /**
+     * Avvia il suono (se non è già partito) e fa salire il volume Sveglie del telefono da "from" a "to" in "rampMs".
+     * Il volume sale sul volume di sistema e non sul lettore: sul lettore partiva quasi muto e su alcuni telefoni
+     * (Honor) non si sentiva. Alla fine della sveglia il volume torna com'era.
+     */
+    private void startSound(DotAlarms.Alarm al, final int from, final int to, final long rampMs) {
+        final AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
         try {
-            // Il volume sale sul volume delle sveglie del telefono, non sul lettore: sul lettore partiva quasi muto
-            // e su alcuni telefoni (Honor) non si sentiva finché non si alzava il volume a mano.
-            // Si parte da circa un terzo del volume scelto, si arriva al massimo in un minuto e alla fine
-            // si rimette il volume com'era.
-            final AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-            final int top = am == null ? 0 : am.getStreamMaxVolume(AudioManager.STREAM_ALARM);
-            final int target = Math.max(1, Math.round(top * al.volume / 100f));
-            final int from = Math.max(1, Math.round(target * 0.35f));
-            if (am != null) {
-                savedAlarmVolume = am.getStreamVolume(AudioManager.STREAM_ALARM);
-                am.setStreamVolume(AudioManager.STREAM_ALARM, from, 0);
-                // la musica eventualmente in riproduzione si ferma mentre suona la sveglia
-                focus = new android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                        .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build())
-                        .build();
-                am.requestAudioFocus(focus);
-            }
-            player = new MediaPlayer();
-            player.setAudioAttributes(new AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ALARM)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
-            player.setDataSource(this, DotAlarms.soundUri(this, al));
-            player.setLooping(true);
-            player.prepare();
-            player.setVolume(1f, 1f);
-            player.start();
-            final long t0 = System.currentTimeMillis();
-            if (am != null && target > from) {
-                h.post(new Runnable() {
-                    @Override
-                    public void run() {
-                        if (player == null) return;
-                        float k = Math.min(1f, (System.currentTimeMillis() - t0) / (float) FADE_MS);
-                        int v = from + Math.round((target - from) * k);
-                        try {
-                            if (am.getStreamVolume(AudioManager.STREAM_ALARM) < v) {
-                                am.setStreamVolume(AudioManager.STREAM_ALARM, v, 0);
-                            }
-                        } catch (Exception ignored) {
-                        }
-                        if (k < 1f) h.postDelayed(this, 1000);
+            if (player == null) {
+                if (am != null) {
+                    if (savedAlarmVolume < 0) savedAlarmVolume = am.getStreamVolume(AudioManager.STREAM_ALARM);
+                    am.setStreamVolume(AudioManager.STREAM_ALARM, from, 0);
+                    if (focus == null) {
+                        // la musica eventualmente in riproduzione si ferma mentre suona la sveglia
+                        focus = new android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                                .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build())
+                                .build();
+                        am.requestAudioFocus(focus);
                     }
-                });
+                }
+                player = new MediaPlayer();
+                player.setAudioAttributes(new AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build());
+                player.setDataSource(this, DotAlarms.soundUri(this, al));
+                player.setLooping(true);
+                player.prepare();
+                player.setVolume(1f, 1f);
+                player.start();
             }
         } catch (Exception e) {
             if (player != null) player.release();
             player = null;
+            return;
+        }
+        if (am == null || to <= from || rampMs <= 0) return;
+        final long t0 = System.currentTimeMillis();
+        h.removeCallbacks(ramp);
+        ramp = new Runnable() {
+            @Override
+            public void run() {
+                if (player == null) return;
+                float k = Math.min(1f, (System.currentTimeMillis() - t0) / (float) rampMs);
+                int v = from + Math.round((to - from) * k);
+                try {
+                    // si alza soltanto: se lo hai alzato tu con i tasti, resta come l'hai messo
+                    if (am.getStreamVolume(AudioManager.STREAM_ALARM) < v) am.setStreamVolume(AudioManager.STREAM_ALARM, v, 0);
+                } catch (Exception ignored) {
+                }
+                if (k < 1f) h.postDelayed(this, 1000);
+            }
+        };
+        h.post(ramp);
+    }
+
+    private Runnable ramp = () -> {};
+
+    /** Alba con suono: luce e suono partono insieme, piano, e arrivano al massimo all'ora della sveglia. */
+    private void startDawnSound() {
+        DotAlarms.Alarm al = active;
+        if (al == null || !running) return;
+        long span = ringAt - System.currentTimeMillis();
+        if (span < 3000) return; // nessuna alba: il suono parte all'ora della sveglia
+        startSound(al, 1, targetVolume((AudioManager) getSystemService(AUDIO_SERVICE), al), span);
+    }
+
+    private void startRinging() {
+        DotAlarms.Alarm al = active;
+        if (al == null || !running) return;
+        ringing = true;
+        AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+        int target = targetVolume(am, al);
+        if (player == null) {
+            // senza alba (o dopo un posticipo): si parte da un terzo del volume e si arriva al massimo in un minuto
+            startSound(al, Math.max(1, Math.round(target * 0.35f)), target, FADE_MS);
+        } else if (am != null) {
+            h.removeCallbacks(ramp);
+            try {
+                if (am.getStreamVolume(AudioManager.STREAM_ALARM) < target) am.setStreamVolume(AudioManager.STREAM_ALARM, target, 0);
+            } catch (Exception ignored) {
+            }
         }
         if (al.vibrate) {
             vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);

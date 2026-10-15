@@ -128,10 +128,12 @@ public class DotAlarmActivity extends Activity {
             float p = progress();
             float target = al == null ? 1f : Math.max(0.05f, al.bright / 100f);
             WindowManager.LayoutParams lp = getWindow().getAttributes();
-            lp.screenBrightness = Math.max(0.01f, target * p);
+            // curva lenta all'inizio: l'occhio percepisce la luminosità in modo non lineare, così il massimo
+            // arriva davvero alla fine dell'alba e non a metà
+            lp.screenBrightness = Math.max(0.01f, target * (float) Math.pow(p, 2.2));
             getWindow().setAttributes(lp);
             sky.invalidate();
-            styleButtons(p < 0.55f);
+            styleButtons(Math.pow(p, 1.4) < 0.55);
             h.postDelayed(this, 250);
         }
     };
@@ -176,7 +178,7 @@ public class DotAlarmActivity extends Activity {
             float W = getWidth(), H = getHeight();
             DotAlarms.Alarm al = DotAlarmService.active;
             int end = al == null ? 0xFFFFB15C : al.endColor();
-            float t = progress();
+            float t = (float) Math.pow(progress(), 1.4); // anche i colori arrivano pieni solo alla fine
             int sky = t < 0.5f ? mix(DEEP, MID, t * 2f) : mix(MID, end, (t - 0.5f) * 2f);
             int top = mix(0xFF000000, sky, 0.35f + 0.65f * t);
             cv.drawColor(top);
