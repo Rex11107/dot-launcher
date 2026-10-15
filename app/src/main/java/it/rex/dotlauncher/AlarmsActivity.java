@@ -182,8 +182,11 @@ public class AlarmsActivity extends Activity {
             page = PAGE_CHECK;
             build();
         });
-        st.row(SectionIcons.PLAY, T.t("Prova completa"),
-                T.t("Suona tra 1 minuto, con 30 secondi di alba: spegni lo schermo e aspetta"), this::runTest);
+        st.row(SectionIcons.PLAY, T.t("Prova breve"),
+                T.t("Suona tra 1 minuto, con 30 secondi di alba: spegni lo schermo e aspetta"), () -> runTest(1));
+        st.row(SectionIcons.PLAY, T.t("Prova lunga"),
+                T.t("Suona tra 5 minuti: spegni lo schermo e non toccare il telefono. È la prova più vicina a una notte vera"),
+                () -> runTest(5));
         st.note(T.t("La logica della sveglia riprende Fossify Clock e FakeDawn, progetti liberi con licenza GPL-3.0."));
     }
 
@@ -441,8 +444,11 @@ public class AlarmsActivity extends Activity {
                     build();
                 });
         st.section(T.t("Verifica"));
-        st.row(SectionIcons.PLAY, T.t("Prova completa"),
-                T.t("Suona tra 1 minuto: spegni lo schermo e aspetta"), this::runTest);
+        st.row(SectionIcons.PLAY, T.t("Prova breve"),
+                T.t("Suona tra 1 minuto, con 30 secondi di alba: spegni lo schermo e aspetta"), () -> runTest(1));
+        st.row(SectionIcons.PLAY, T.t("Prova lunga"),
+                T.t("Suona tra 5 minuti: spegni lo schermo e non toccare il telefono. È la prova più vicina a una notte vera"),
+                () -> runTest(5));
     }
 
     private void open(Intent i) {
@@ -483,15 +489,17 @@ public class AlarmsActivity extends Activity {
         open2(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:" + getPackageName())));
     }
 
-    private void runTest() {
+    private void runTest(int minutes) {
         if (!DotAlarms.exactOk(this)) {
             Toast.makeText(this, T.t("Prima attiva \"Sveglie e promemoria\""), Toast.LENGTH_LONG).show();
             page = PAGE_CHECK;
             build();
             return;
         }
-        DotAlarms.test(this);
-        Toast.makeText(this, T.t("Prova programmata: suona tra 1 minuto. Spegni lo schermo."), Toast.LENGTH_LONG).show();
+        DotAlarms.test(this, minutes);
+        Toast.makeText(this, minutes == 1 ? T.t("Prova programmata: suona tra 1 minuto. Spegni lo schermo.")
+                : T.t("Prova programmata: suona tra 5 minuti. Spegni lo schermo e non toccare il telefono."),
+                Toast.LENGTH_LONG).show();
     }
 
     // ---------- quale app apre il widget ----------

@@ -195,11 +195,11 @@ final class DotAlarms {
         }
     }
 
-    /** Prova: una sveglia vera tra un minuto, con 30 secondi di alba. */
-    static void test(Context c) {
+    /** Prova: una sveglia vera tra "minutes" minuti, con 30 secondi di alba. */
+    static void test(Context c, int minutes) {
         AlarmManager am = (AlarmManager) c.getSystemService(Context.ALARM_SERVICE);
         if (am == null) return;
-        long ring = System.currentTimeMillis() + 60000L;
+        long ring = System.currentTimeMillis() + minutes * 60000L;
         try {
             am.setAlarmClock(new AlarmManager.AlarmClockInfo(ring, show(c)), trigger(c, 2, -1, ring, true));
         } catch (SecurityException ignored) {
