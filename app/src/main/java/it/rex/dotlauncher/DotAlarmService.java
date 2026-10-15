@@ -44,6 +44,7 @@ public class DotAlarmService extends Service {
     private Vibrator vibrator;
     private PowerManager.WakeLock wake;
     private int savedAlarmVolume = -1;
+    private android.media.AudioFocusRequest focus;
 
     @Override
     public IBinder onBind(Intent i) {
@@ -158,11 +159,22 @@ public class DotAlarmService extends Service {
         if (al == null || !running) return;
         ringing = true;
         try {
-            AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-            if (am != null && am.getStreamVolume(AudioManager.STREAM_ALARM) == 0) {
-                // volume delle sveglie a zero: la sveglia non si sentirebbe. Si alza a metà e poi si rimette com'era
-                savedAlarmVolume = 0;
-                am.setStreamVolume(AudioManager.STREAM_ALARM, am.getStreamMaxVolume(AudioManager.STREAM_ALARM) / 2, 0);
+            // Il volume sale sul volume delle sveglie del telefono, non sul lettore: sul lettore partiva quasi muto
+            // e su alcuni telefoni (Honor) non si sentiva finché non si alzava il volume a mano.
+            // Si parte da circa un terzo del volume scelto, si arriva al massimo in un minuto e alla fine
+            // si rimette il volume com'era.
+            final AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
+            final int top = am == null ? 0 : am.getStreamMaxVolume(AudioManager.STREAM_ALARM);
+            final int target = Math.max(1, Math.round(top * al.volume / 100f));
+            final int from = Math.max(1, Math.round(target * 0.35f));
+            if (am != null) {
+                savedAlarmVolume = am.getStreamVolume(AudioManager.STREAM_ALARM);
+                am.setStreamVolume(AudioManager.STREAM_ALARM, from, 0);
+                // la musica eventualmente in riproduzione si ferma mentre suona la sveglia
+                focus = new android.media.AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
+                        .setAudioAttributes(new AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM).build())
+                        .build();
+                am.requestAudioFocus(focus);
             }
             player = new MediaPlayer();
             player.setAudioAttributes(new AudioAttributes.Builder()
@@ -171,23 +183,26 @@ public class DotAlarmService extends Service {
             player.setDataSource(this, DotAlarms.soundUri(this, al));
             player.setLooping(true);
             player.prepare();
-            player.setVolume(0.05f, 0.05f);
+            player.setVolume(1f, 1f);
             player.start();
             final long t0 = System.currentTimeMillis();
-            final float max = Math.max(0.05f, al.volume / 100f);
-            h.post(new Runnable() {
-                @Override
-                public void run() {
-                    if (player == null) return;
-                    float k = Math.min(1f, (System.currentTimeMillis() - t0) / (float) FADE_MS);
-                    float v = 0.05f + (max - 0.05f) * k;
-                    try {
-                        player.setVolume(v, v);
-                    } catch (Exception ignored) {
+            if (am != null && target > from) {
+                h.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (player == null) return;
+                        float k = Math.min(1f, (System.currentTimeMillis() - t0) / (float) FADE_MS);
+                        int v = from + Math.round((target - from) * k);
+                        try {
+                            if (am.getStreamVolume(AudioManager.STREAM_ALARM) < v) {
+                                am.setStreamVolume(AudioManager.STREAM_ALARM, v, 0);
+                            }
+                        } catch (Exception ignored) {
+                        }
+                        if (k < 1f) h.postDelayed(this, 1000);
                     }
-                    if (k < 1f) h.postDelayed(this, 500);
-                }
-            });
+                });
+            }
         } catch (Exception e) {
             if (player != null) player.release();
             player = null;
@@ -219,8 +234,12 @@ public class DotAlarmService extends Service {
         }
         if (savedAlarmVolume >= 0) {
             AudioManager am = (AudioManager) getSystemService(AUDIO_SERVICE);
-            if (am != null) am.setStreamVolume(AudioManager.STREAM_ALARM, savedAlarmVolume, 0);
+            if (am != null) {
+                am.setStreamVolume(AudioManager.STREAM_ALARM, savedAlarmVolume, 0);
+                if (focus != null) am.abandonAudioFocusRequest(focus);
+            }
             savedAlarmVolume = -1;
+            focus = null;
         }
     }
 

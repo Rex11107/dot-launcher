@@ -42,6 +42,8 @@ public class DotAlarmActivity extends Activity {
                     | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
         }
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        // i tasti del volume regolano la sveglia, non la musica
+        setVolumeControlStream(android.media.AudioManager.STREAM_ALARM);
         th = Theme.build(this, getSharedPreferences("dot", MODE_PRIVATE));
         dp = getResources().getDisplayMetrics().density;
         SystemBars.edgeToEdge(getWindow(), false);
