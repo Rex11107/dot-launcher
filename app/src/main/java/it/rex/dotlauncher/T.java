@@ -693,6 +693,8 @@ final class T {
             "Fiore", "Flower",
             "Tracce luminose", "Light trails",
             "in uso", "in use",
+            "✓ Concesso automaticamente", "✓ Granted automatically",
+            "Già a posto: Android lo concede da solo alle app sveglia.", "Already set: Android grants it automatically to alarm apps.",
             "Prima di usare Dot Sveglia", "Before using Dot Alarm",
             "Dot Sveglia è nuova e un launcher non è un'app sveglia: su alcuni telefoni il risparmio energetico può ritardarla o bloccarla. Perché suoni sempre servono alcune impostazioni, diverse da telefono a telefono: le trovi nella lista di controllo. Finché non hai fatto una prova completa, tieni anche una sveglia di riserva nell'Orologio.", "Dot Alarm is new, and a launcher isn't an alarm app: on some phones battery saving can delay or block it. To make sure it always rings, a few settings are needed, and they differ from phone to phone: you'll find them in the checklist. Until you've done a full test, keep a backup alarm in the Clock app too.",
             "Ho capito", "Got it",

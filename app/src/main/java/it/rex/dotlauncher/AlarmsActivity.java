@@ -404,9 +404,17 @@ public class AlarmsActivity extends Activity {
         st.note(T.t("Queste impostazioni dipendono dal telefono. Senza, Android o il risparmio energetico possono "
                 + "ritardare o bloccare la sveglia. Torna qui dopo ogni passaggio: lo stato si aggiorna da solo."));
         st.section(T.t("Android"));
-        st.row(SettingsScreen.CLOCK, T.t("Sveglie e promemoria"), state(DotAlarms.exactOk(this)), () -> {
-            if (Build.VERSION.SDK_INT >= 31) open(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM,
-                    Uri.parse("package:" + getPackageName())));
+        // Da Android 13 il permesso arriva da USE_EXACT_ALARM: concesso all'installazione e non modificabile,
+        // per questo nella pagina di sistema l'interruttore è grigio. Si apre la pagina solo se serve davvero.
+        boolean auto = Build.VERSION.SDK_INT >= 33 && DotAlarms.exactOk(this);
+        st.row(SettingsScreen.CLOCK, T.t("Sveglie e promemoria"),
+                auto ? T.t("✓ Concesso automaticamente") : state(DotAlarms.exactOk(this)), () -> {
+            if (DotAlarms.exactOk(this)) {
+                Toast.makeText(this, T.t("Già a posto: Android lo concede da solo alle app sveglia."),
+                        Toast.LENGTH_LONG).show();
+            } else if (Build.VERSION.SDK_INT >= 31) {
+                open(new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM, Uri.parse("package:" + getPackageName())));
+            }
         });
         st.row(Draw.BELL, T.t("Notifiche"), state(DotAlarms.notifOk(this)), () -> {
             if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
