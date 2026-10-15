@@ -52,16 +52,21 @@ public class DotAlarmService extends Service {
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        String a = intent == null ? ACTION_START : intent.getAction();
+        if (intent == null) {
+            // riavviato da Android senza dati: meglio non suonare a caso
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        String a = intent.getAction();
         if (ACTION_STOP.equals(a)) {
             stopAlarm();
             return START_NOT_STICKY;
         }
         startForegroundNow();
-        int id = intent == null ? -1 : intent.getIntExtra(DotAlarms.EXTRA_ID, -1);
-        boolean test = intent != null && intent.getBooleanExtra(DotAlarms.EXTRA_TEST, false);
-        long ring = intent == null ? 0 : intent.getLongExtra(DotAlarms.EXTRA_RING, 0);
-        if (running && active != null && active.id == id && !test) return START_STICKY; // alba già in corso
+        int id = intent.getIntExtra(DotAlarms.EXTRA_ID, -1);
+        boolean test = intent.getBooleanExtra(DotAlarms.EXTRA_TEST, false);
+        long ring = intent.getLongExtra(DotAlarms.EXTRA_RING, 0);
+        if (running && active != null && active.id == id && !test) return START_REDELIVER_INTENT; // alba già in corso
 
         DotAlarms.Alarm al = test ? null : DotAlarms.find(this, id);
         if (al == null) {
@@ -95,7 +100,8 @@ public class DotAlarmService extends Service {
         }
         openScreen();
         h.postDelayed(this::startRinging, Math.max(0, ring - now));
-        return START_STICKY;
+        // se Android chiude il servizio mentre suona, lo riavvia con la stessa sveglia (che riprende subito)
+        return START_REDELIVER_INTENT;
     }
 
     private DotAlarms.Alarm firstAlarm() {
