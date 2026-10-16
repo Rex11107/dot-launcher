@@ -241,6 +241,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Motion.menu = Math.max(0, Math.min(2, prefs.getInt("menuAnim", 0)));
         Pager.transition = Math.max(0, Math.min(3, prefs.getInt("pageAnim", 0)));
         BadgeDrawable.configure(prefs);
+        Freq.on = "freq".equals(prefs.getString("drawerOrder", "alpha"));
         th = Theme.build(this, prefs);
         themeSig = Theme.signature(prefs);
         h24 = prefs.getBoolean("h24", DateFormat.is24HourFormat(this));
@@ -417,6 +418,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             consumePendingShortcuts();
             checkUpdate(false);
             refreshUsage();
+            refreshFreq();
             if (waveOnWake) {
                 waveOnWake = false;
                 if (hasWindowFocus()) playWave(); // solo se la home è davvero davanti, non dietro le app recenti
@@ -1111,6 +1113,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public Set<String> hiddenKeys() {
         return hidden();
+    }
+
+    @Override
+    public boolean hiddenSearch() {
+        return prefs.getBoolean("hiddenSearch", false);
+    }
+
+    @Override
+    public boolean hiddenOpen() {
+        return !prefs.getBoolean("hiddenLock", false) || System.currentTimeMillis() < authUntil;
+    }
+
+    @Override
+    public void unlockHidden(Runnable ok) {
+        withAuth(ok);
     }
 
     @Override
@@ -3896,6 +3913,20 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         mindfulThenLaunch(a, v);
     }
 
+    /** Animazione di apertura scelta nelle impostazioni: 0 zoom, 1 rivelazione circolare, 2 dissolvenza, 3 nessuna. */
+    private Bundle openAnim(View v) {
+        switch (Math.max(0, Math.min(3, prefs.getInt("openAnim", 0)))) {
+            case 1:
+                return ActivityOptions.makeClipRevealAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+            case 2:
+                return ActivityOptions.makeCustomAnimation(this, android.R.anim.fade_in, android.R.anim.fade_out).toBundle();
+            case 3:
+                return ActivityOptions.makeCustomAnimation(this, R.anim.dot_open_none, R.anim.dot_open_none).toBundle();
+            default:
+                return ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+        }
+    }
+
     private void launchNow(AppEntry a, View v) {
         if (a == null) return;
         if (v != null && !v.isAttachedToWindow()) v = null;
@@ -3905,7 +3936,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (v != null && v.getWidth() > 0) {
                 r = new Rect();
                 v.getGlobalVisibleRect(r);
-                opts = ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+                opts = openAnim(v);
             }
             launcherApps.startMainActivity(a.component, a.user, r, opts);
         } catch (Exception e) {
@@ -4074,6 +4105,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             Usage.refreshToday(getApplicationContext());
             ui.post(() -> {
                 if (!destroyed) refreshTiles("usage");
+            });
+        });
+    }
+
+    /** Ordine "Più usate": ricalcola le aperture recenti al massimo ogni mezz'ora, mai mentre il cassetto è aperto. */
+    private void refreshFreq() {
+        if (!Freq.on || !Freq.stale() || !Usage.granted(this)) return;
+        bg(appExec, () -> {
+            boolean changed = Freq.compute(getApplicationContext());
+            ui.post(() -> {
+                if (destroyed || !changed) return;
+                drawerDirty = true; // si riordina alla prossima apertura, non sotto il dito
             });
         });
     }
@@ -5798,7 +5841,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (v != null && v.getWidth() > 0) {
                 r = new Rect();
                 v.getGlobalVisibleRect(r);
-                opts = ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+                opts = openAnim(v);
             }
             launcherApps.startShortcut(p[0], p[1], r, opts, u);
         } catch (Exception e) {
@@ -5906,6 +5949,38 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         toast(T.t("Scorciatoia aggiunta alla home"));
     }
 
+    /** Azione di risposta diretta di una notifica (con campo di testo libero), oppure null. */
+    static android.app.Notification.Action replyAction(android.app.Notification no) {
+        if (no.actions == null) return null;
+        android.app.Notification.Action any = null;
+        for (android.app.Notification.Action ac : no.actions) {
+            android.app.RemoteInput[] ins = ac.getRemoteInputs();
+            if (ins == null || ac.actionIntent == null) continue;
+            boolean free = false;
+            for (android.app.RemoteInput ri : ins) if (ri.getAllowFreeFormInput()) free = true;
+            if (!free) continue;
+            if (Build.VERSION.SDK_INT >= 28 && ac.getSemanticAction() == android.app.Notification.Action.SEMANTIC_ACTION_REPLY) return ac;
+            if (any == null) any = ac;
+        }
+        return any;
+    }
+
+    /** Invia il testo all'app come se si rispondesse dalla tendina delle notifiche. */
+    private void sendReply(android.app.Notification.Action ac, String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        try {
+            android.app.RemoteInput[] ins = ac.getRemoteInputs();
+            Bundle res = new Bundle();
+            for (android.app.RemoteInput ri : ins) if (ri.getAllowFreeFormInput()) res.putCharSequence(ri.getResultKey(), text.trim());
+            Intent fill = new Intent();
+            android.app.RemoteInput.addResultsToIntent(ins, fill, res);
+            ac.actionIntent.send(this, 0, fill);
+            toast(T.t("Risposta inviata"));
+        } catch (Exception e) {
+            toast(T.t("Risposta non inviata: apri l'app per rispondere"));
+        }
+    }
+
     /** Mostra il menu di un'app con le azioni rapide in cima. */
     private Dialog showMenuWithShortcuts(String title, AppEntry a, List<String> labels, List<Runnable> acts) {
         // notifiche dell'app in cima al menu (se l'accesso alle notifiche è attivo)
@@ -5920,8 +5995,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 i++;
                 ns = new ArrayList<>(); // le singole notifiche non si mostrano
             }
+            int shown = 0; // le righe "Rispondi" non contano tra le 3 notifiche mostrate
             for (android.service.notification.StatusBarNotification n : ns) {
-                if (i >= 3) break;
+                if (shown++ >= 3) break;
                 android.os.Bundle ex = n.getNotification().extras;
                 CharSequence t = ex.getCharSequence(android.app.Notification.EXTRA_TITLE);
                 CharSequence x = ex.getCharSequence(android.app.Notification.EXTRA_TEXT);
@@ -5937,6 +6013,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     }
                 });
                 i++;
+                // risposta diretta, se l'app la offre (messaggi, email…)
+                final android.app.Notification.Action reply = replyAction(n.getNotification());
+                if (reply != null) {
+                    final String who = t == null ? a.label : t.toString();
+                    labels.add(i, "↩  " + T.t("Rispondi a ") + who);
+                    acts.add(i, () -> Sheet.input(this, th, T.t("Rispondi a ") + who, T.t("Scrivi la risposta"), "", true,
+                            txt -> sendReply(reply, txt)));
+                    i++;
+                }
             }
             if (!ns.isEmpty()) {
                 labels.add(i, T.t("Cancella le notifiche (") + ns.size() + ")");
@@ -6141,9 +6226,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 new String[]{T.t("Extra scuro (nero)"), T.t("Scuro (grigio)"), T.t("Chiaro"), T.t("Automatico")},
                 new String[]{"dark", "grey", "light", "auto"}, "mode", mode));
         st.row(SectionIcons.SHAPES, T.t("Icone"), IconFactory.INVERSE.equals(icons) ? T.t("Invertite")
-                : IconFactory.COLOR.equals(icons) ? T.t("A colori (originali)") : T.t("Monocromatiche"), () -> choose(T.t("Icone"),
-                new String[]{T.t("Monocromatiche"), T.t("Invertite"), T.t("A colori")},
-                new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons));
+                : IconFactory.COLOR.equals(icons) ? T.t("A colori (originali)")
+                : IconFactory.TINTED.equals(icons) ? T.t("Tinte: simbolo nel colore d'accento")
+                : IconFactory.CLEAR.equals(icons) ? T.t("Trasparenti: solo il simbolo e un bordo sottile")
+                : T.t("Monocromatiche"), () -> choose(T.t("Icone"),
+                new String[]{T.t("Monocromatiche"), T.t("Invertite"), T.t("A colori"), T.t("Tinte"), T.t("Trasparenti")},
+                new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR, IconFactory.TINTED, IconFactory.CLEAR},
+                "icons", icons));
         st.row(SectionIcons.BAG, T.t("Pacchetto di icone"), packLabel(), this::pickIconPack);
         st.row(Draw.PHOTO, T.t("Sfondi"), T.t("Sfondi generati, foto a puntini o a strisce"),
                 () -> startActivity(new Intent(this, WallpaperActivity.class)));
@@ -6179,6 +6268,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     ui.postDelayed(() -> {
                         if (!destroyed) showSettings();
                     }, Motion.EXIT + 220);
+                }));
+        final String[] openNames = {T.t("Zoom"), T.t("Rivelazione"), T.t("Dissolvenza"), T.t("Nessuna")};
+        final String[] openDesc = {T.t("L'app si ingrandisce dalla sua icona"),
+                T.t("L'app si apre come una finestra che si allarga dall'icona"),
+                T.t("L'app compare sfumando"), T.t("L'app compare subito, senza movimento")};
+        final int openA = Math.max(0, Math.min(3, prefs.getInt("openAnim", 0)));
+        st.row(SectionIcons.RESIZE, T.t("Apertura delle app"), openNames[openA] + " · " + openDesc[openA],
+                () -> Sheet.list(this, th, T.t("Apertura delle app"), openNames, openA, w -> {
+                    prefs.edit().putInt("openAnim", w).apply();
+                    refillSettings();
+                    toast(T.t("Su alcuni telefoni Android usa comunque la sua animazione"));
                 }));
         final String[] speeds = {T.t("Lenta"), T.t("Normale"), T.t("Rapida")};
         final int speed = Math.max(0, Math.min(2, prefs.getInt("animSpeed", 1)));
@@ -6267,15 +6367,29 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
         st.section(T.t("Cassetto delle app"));
         final boolean free = drawerFree();
-        st.row(SectionIcons.CHART, T.t("Ordine delle app"), free ? T.t("Libero: le disponi trascinandole") : T.t("Alfabetico"), () ->
-                Sheet.list(this, th, T.t("Ordine delle app"), new String[]{T.t("Alfabetico"), T.t("Libero")}, free ? 1 : 0, w -> {
-                    boolean toFree = w == 1;
-                    if (toFree == free) return;
-                    if (toFree) {
+        final int order = free ? 2 : Freq.on ? 1 : 0;
+        st.row(SectionIcons.CHART, T.t("Ordine delle app"), free ? T.t("Libero: le disponi trascinandole")
+                        : Freq.on ? T.t("Più usate prima, poi alfabetico") : T.t("Alfabetico"), () ->
+                Sheet.list(this, th, T.t("Ordine delle app"),
+                        new String[]{T.t("Alfabetico"), T.t("Più usate"), T.t("Libero")}, order, w -> {
+                    if (w == order) return;
+                    if (w == 2) {
+                        // si parte dall'ordine che si vede adesso, poi lo si cambia trascinando
                         sections.sortAll(this);
                         sections.save();
                     }
-                    prefs.edit().putString("drawerOrder", toFree ? "free" : "alpha").apply();
+                    prefs.edit().putString("drawerOrder", w == 2 ? "free" : w == 1 ? "freq" : "alpha").apply();
+                    Freq.on = w == 1; // dopo sortAll: passando da "Più usate" a "Libero" si tiene l'ordine visto
+                    if (w == 1) {
+                        if (Usage.granted(this)) {
+                            bg(appExec, () -> {
+                                Freq.compute(getApplicationContext());
+                                ui.post(() -> {
+                                    if (!destroyed) refreshDrawer();
+                                });
+                            });
+                        } else askUsageAccess();
+                    }
                     refreshDrawer();
                     refillSettings();
                 }));
@@ -6307,6 +6421,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     prefs.edit().putBoolean("hiddenLock", true).apply();
                     authUntil = System.currentTimeMillis() + 60000;
                     refillSettings();
+                });
+        st.toggle(SectionIcons.SEARCH, T.t("Trova le app nascoste cercandole"),
+                T.t("Compaiono solo scrivendo il nome; se sono protette chiede prima lo sblocco"),
+                prefs.getBoolean("hiddenSearch", false), on -> {
+                    // con la protezione attiva i risultati restano dietro lo sblocco, quindi non serve chiederlo qui
+                    prefs.edit().putBoolean("hiddenSearch", on).apply();
                 });
 
         st.section(T.t("Notifiche e musica"));
