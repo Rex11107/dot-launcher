@@ -51,6 +51,12 @@ final class StepsPopup {
 
     static boolean dismiss() {
         if (card == null) return false;
+        if (!card.isAttachedToWindow()) {
+            // riquadro rimasto da una home ricreata: non c'è niente da chiudere, il gesto indietro deve proseguire
+            card = null;
+            backdrop = null;
+            return false;
+        }
         final View c = card, b = backdrop;
         card = null;
         backdrop = null;

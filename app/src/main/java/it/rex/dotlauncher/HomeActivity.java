@@ -585,8 +585,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
                         @Override
                         public void onBackInvoked() {
+                            View t = target;
                             target = null;
                             handleBack();
+                            // se il pannello resta aperto (es. da una categoria all'elenco) torna alla misura piena
+                            if (t != null && t == backTarget()) {
+                                t.animate().scaleX(1f).scaleY(1f).translationX(0).setDuration(Motion.FADE)
+                                        .setInterpolator(Motion.STANDARD).start();
+                            }
                         }
 
                         @Override
@@ -6189,9 +6195,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         fillSettings();
         if (settingsOpen) return;
         settingsOpen = true;
-        // il campo di ricerca non prende il focus da solo: la tastiera si apre solo toccandolo
-        settings.setFocusableInTouchMode(true);
-        settings.requestFocus();
+
         settings.bringToFront();
         settings.animate().cancel();
         if (settings.getVisibility() != View.VISIBLE) {
@@ -6253,17 +6257,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
         if (im != null) im.hideSoftInputFromWindow(settingsSearch.getWindowToken(), 0);
         settingsSearch.clearFocus();
+        settingsSearch.setFocusableInTouchMode(false);
     }
 
     private void openSettingsPage(int page) {
         hideSettingsKeyboard();
+        boolean forward = page != SP_MAIN;
         settingsPage = page;
         fillSettings();
         settings.scrollTo(0);
+        settings.slideContent(forward);
     }
 
     /** Indietro dalle impostazioni: da una categoria (o da una ricerca) si torna all'elenco, poi si chiude. */
     private void settingsBack() {
+        if (settingsSearch != null && settingsSearch.hasFocus()) hideSettingsKeyboard();
         if (settingsPage != SP_MAIN) {
             openSettingsPage(SP_MAIN);
         } else if (!settingsQuery.isEmpty() && settingsSearch != null) {
@@ -6290,6 +6298,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         g.setCornerRadius(px(24));
         if (th.stroke != 0) g.setStroke(Math.max(1, px(1)), th.stroke);
         e.setBackground(g);
+        // il campo prende il focus solo quando lo si tocca: aprendo le impostazioni la tastiera resta chiusa
+        // e il gesto indietro arriva sempre alla home
+        e.setFocusableInTouchMode(false);
+        e.setOnTouchListener((v, ev) -> {
+            if (ev.getActionMasked() == MotionEvent.ACTION_UP && !v.isFocusableInTouchMode()) {
+                v.setFocusableInTouchMode(true);
+                v.requestFocus();
+                android.view.inputmethod.InputMethodManager im =
+                        (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (im != null) im.showSoftInput(v, 0);
+            }
+            return false;
+        });
         e.addTextChangedListener(new android.text.TextWatcher() {
             @Override public void beforeTextChanged(CharSequence c, int a, int b, int n) {}
             @Override public void onTextChanged(CharSequence c, int a, int b, int n) {}
