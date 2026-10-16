@@ -244,8 +244,13 @@ class FolderTile extends View {
         }
         }
         // un pallino sulla cartella se almeno un'app dentro ha notifiche
+        // le notifiche sono per pacchetto: due icone della stessa app non si contano due volte
         int total = 0;
-        for (String k : a) total += Math.max(0, src.badge(k));
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (String k : a) {
+            int slash = k == null ? -1 : k.indexOf('/');
+            if (seen.add(slash > 0 ? k.substring(0, slash) : String.valueOf(k))) total += Math.max(0, src.badge(k));
+        }
         if (total > 0) {
             float cs = circle ? m : m * 0.9f;
             BadgeDrawable.draw(cv, p, W / 2f, H / 2f, cs, th.accent, th.bg, total);

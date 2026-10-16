@@ -3839,7 +3839,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     /** Esegue {@code ok} subito, o dopo lo sblocco se l'app del pacchetto è bloccata. */
-    private void unlockedPkg(String pkg, Runnable ok) {
+    @Override
+    public void unlockedPkg(String pkg, Runnable ok) {
         if (pkgLocked(pkg) && System.currentTimeMillis() >= authUntil) {
             authenticate(labelForPkg(pkg), T.t("Sblocca per aprire l'app"), ok);
         } else ok.run();
@@ -5912,6 +5913,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             final String pkg = a.component.getPackageName();
             List<android.service.notification.StatusBarNotification> ns = DotNotifications.of(pkg);
             int i = 0;
+            if (!ns.isEmpty() && pkgLocked(pkg) && System.currentTimeMillis() >= authUntil) {
+                // app bloccata: niente testo dei messaggi, e il tocco chiede prima lo sblocco
+                labels.add(i, "●  " + ns.size() + T.n(ns.size(), " notifica", " notifiche"));
+                acts.add(i, () -> unlockedPkg(pkg, () -> launchUnlocked(a, null)));
+                i++;
+                ns = new ArrayList<>(); // le singole notifiche non si mostrano
+            }
             for (android.service.notification.StatusBarNotification n : ns) {
                 if (i >= 3) break;
                 android.os.Bundle ex = n.getNotification().extras;

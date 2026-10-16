@@ -53,6 +53,8 @@ class UniversalSearch extends ScrollView {
         Set<String> hiddenKeys();
         Bitmap iconFor(String key, int size);
         void launchKey(String key, View v);
+        /** Esegue {@code ok} subito, o dopo lo sblocco se l'app del pacchetto è bloccata. */
+        void unlockedPkg(String pkg, Runnable ok);
         void appLongPress(String key, View icon);
         void startSafe(Intent i);
         void toast(String s);
@@ -199,14 +201,15 @@ class UniversalSearch extends ScrollView {
                 if (!hay.contains(norm)) continue;
                 if (n == 0) header(T.t("Azioni delle app"));
                 String app = appLabel(si.getPackage());
-                row(shortcutIcon(si), l == null ? String.valueOf(ll) : String.valueOf(l), app, () -> {
-                    try {
-                        LauncherApps la = (LauncherApps) act.getSystemService(Context.LAUNCHER_APPS_SERVICE);
-                        la.startShortcut(si, null, null);
-                    } catch (Exception e) {
-                        host.toast(T.t("Azione non disponibile"));
-                    }
-                }, null);
+                row(shortcutIcon(si), l == null ? String.valueOf(ll) : String.valueOf(l), app,
+                        () -> host.unlockedPkg(si.getPackage(), () -> {
+                            try {
+                                LauncherApps la = (LauncherApps) act.getSystemService(Context.LAUNCHER_APPS_SERVICE);
+                                la.startShortcut(si, null, null);
+                            } catch (Exception e) {
+                                host.toast(T.t("Azione non disponibile"));
+                            }
+                        }), null);
                 if (++n >= 4) break;
             }
         }
