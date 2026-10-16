@@ -3,6 +3,9 @@ name: Build APK
 on:
   push:
     branches: [main]
+  # build di prova per le pull request: crea l'APK ma non lo rende l'ultima versione
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -56,11 +59,25 @@ jobs:
           path: DotLauncher.apk
 
       - uses: softprops/action-gh-release@v3
+        if: github.event_name != 'pull_request'
         with:
           tag_name: v2.0.${{ github.run_number }}
           name: Dot Launcher 2.0.${{ github.run_number }}
           files: DotLauncher.apk
           make_latest: true
+
+      # Pull request: pre-release di prova con un link diretto. Non è "latest", quindi
+      # l'aggiornamento dentro l'app e il link dell'ultima versione non la vedono.
+      - uses: softprops/action-gh-release@v3
+        if: github.event_name == 'pull_request'
+        with:
+          tag_name: prova-2.0.${{ github.run_number }}
+          target_commitish: ${{ github.event.pull_request.head.sha }}
+          name: Prova 2.0.${{ github.run_number }} (PR #${{ github.event.pull_request.number }})
+          body: Versione di prova della pull request #${{ github.event.pull_request.number }}, da non usare come aggiornamento.
+          files: DotLauncher.apk
+          prerelease: true
+          make_latest: false
 
       # Controllo del codice: gira dopo la release, quindi non la ritarda e non la blocca mai
       - name: Android Lint
