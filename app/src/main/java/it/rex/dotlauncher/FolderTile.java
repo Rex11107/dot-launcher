@@ -37,7 +37,10 @@ class FolderTile extends View {
     /** Cosa legge TalkBack: calcolato al momento, così dice sempre lo stato attuale. */
     CharSequence a11yText() {
         int n = apps(item).size();
-        return T.t("Cartella") + " " + name(item) + ", " + n + T.n(n, " app", " app");
+        String base = T.t("Cartella") + " " + name(item) + ", " + n + T.n(n, " app", " app");
+        String open = coverApp(item);
+        if (open.isEmpty()) return base;
+        return base + ". " + T.t("Tocca per aprire ") + src.labelFor(open) + T.t(", scorri in su per la cartella");
     }
 
     FolderTile(Context c, Item item, AppTile.Source src, Theme th) {
@@ -78,12 +81,37 @@ class FolderTile extends View {
     }
 
     static void setCover(Item it, String key) {
+        setCover(it, key, false);
+    }
+
+    /**
+     * Copertina con un'app. Con {@code opens} il tocco apre l'app di copertina
+     * e la cartella si apre scorrendo in su (o dal menu); senza, il tocco apre la cartella.
+     */
+    static void setCover(Item it, String key, boolean opens) {
         try {
             JSONObject o = new JSONObject(it.data == null || it.data.isEmpty() ? "{}" : it.data);
-            if (key == null || key.isEmpty()) o.remove("c");
-            else o.put("c", key);
+            if (key == null || key.isEmpty()) {
+                o.remove("c");
+                o.remove("co");
+            } else {
+                o.put("c", key);
+                if (opens) o.put("co", true);
+                else o.remove("co");
+            }
             it.data = o.toString();
         } catch (Exception ignored) {
+        }
+    }
+
+    /** App che si apre toccando la cartella (copertina che apre l'app), oppure "" se il tocco apre la cartella. */
+    static String coverApp(Item it) {
+        String c = cover(it);
+        if (c.isEmpty()) return "";
+        try {
+            return new JSONObject(it.data).optBoolean("co", false) ? c : "";
+        } catch (Exception e) {
+            return "";
         }
     }
 
@@ -216,12 +244,16 @@ class FolderTile extends View {
         }
         }
         // un pallino sulla cartella se almeno un'app dentro ha notifiche
+        // le notifiche sono per pacchetto: due icone della stessa app non si contano due volte
+        int total = 0;
+        java.util.Set<String> seen = new java.util.HashSet<>();
         for (String k : a) {
-            if (src.badge(k) > 0) {
-                float cs = circle ? m : m * 0.9f;
-                BadgeDrawable.draw(cv, p, W / 2f, H / 2f, cs, th.accent, th.bg);
-                break;
-            }
+            int slash = k == null ? -1 : k.indexOf('/');
+            if (seen.add(slash > 0 ? k.substring(0, slash) : String.valueOf(k))) total += Math.max(0, src.badge(k));
+        }
+        if (total > 0) {
+            float cs = circle ? m : m * 0.9f;
+            BadgeDrawable.draw(cv, p, W / 2f, H / 2f, cs, th.accent, th.bg, total);
         }
     }
 }

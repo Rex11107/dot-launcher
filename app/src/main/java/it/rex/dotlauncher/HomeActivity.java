@@ -190,6 +190,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         public void onReceive(Context c, Intent i) {
             updateAlarm();
             refreshTiles(null);
+            refreshGlance(false);
             if (System.currentTimeMillis() - Usage.computedAt > 5 * 60000L) refreshUsage();
             else updateWellbeing();
         }
@@ -239,6 +240,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Motion.setSpeed(prefs.getInt("animSpeed", 1));
         Motion.menu = Math.max(0, Math.min(2, prefs.getInt("menuAnim", 0)));
         Pager.transition = Math.max(0, Math.min(3, prefs.getInt("pageAnim", 0)));
+        BadgeDrawable.configure(prefs);
         th = Theme.build(this, prefs);
         themeSig = Theme.signature(prefs);
         h24 = prefs.getBoolean("h24", DateFormat.is24HourFormat(this));
@@ -411,6 +413,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             updateAlarm();
             refreshTiles(null);
             maybeRefreshWeather();
+            refreshGlance(true); // tornando alla home l'evento potrebbe essere cambiato
             consumePendingShortcuts();
             checkUpdate(false);
             refreshUsage();
@@ -669,8 +672,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         float dx = ev.getRawX() - pullDownX, dy = ev.getRawY() - pullDownY;
         int slop = ViewConfiguration.get(this).getScaledTouchSlop();
         if (dy > -slop * 2.5f || Math.abs(dy) < Math.abs(dx) * 1.5f) return false;
-        String act = swipeActionAt(pullDownX, pullDownY);
-        if (act == null) return false;
+        // una cartella con la copertina che apre l'app si apre scorrendo in su
+        final Item coverFolder = coverFolderAt(pullDownX, pullDownY);
+        final String act = coverFolder != null ? null : swipeActionAt(pullDownX, pullDownY);
+        if (coverFolder == null && act == null) return false;
         swallow = true;
         flingTook = true;
         MotionEvent c = MotionEvent.obtain(ev);
@@ -680,8 +685,24 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         c.recycle();
         View root = getWindow().getDecorView();
         root.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
-        runAction(act);
+        if (coverFolder != null) openFolder(coverFolder);
+        else runAction(act);
         return true;
+    }
+
+    /** Cartella della pagina corrente sotto il punto, se la sua copertina apre un'app; altrimenti null. */
+    private Item coverFolderAt(float rx, float ry) {
+        int page = pager.getCurrent();
+        if (page >= grids.size()) return null;
+        TileGrid g = grids.get(page);
+        for (int i = 0; i < g.getChildCount(); i++) {
+            View c = g.getChildAt(i);
+            if (c instanceof FolderTile && inside(c, rx, ry)) {
+                Item f = ((FolderTile) c).item;
+                return FolderTile.coverApp(f).isEmpty() ? null : f;
+            }
+        }
+        return null;
     }
 
     private boolean canPull(MotionEvent ev) {
@@ -1892,6 +1913,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         } else if ("folder".equals(it.type)) {
             FolderTile ft = new FolderTile(this, it, this, th);
             ft.setOnClickListener(x -> {
+                String coverApp = FolderTile.coverApp(it);
+                AppEntry ca = coverApp.isEmpty() ? null : appsByKey.get(coverApp);
+                if (ca != null) {
+                    // copertina che apre l'app: la cartella si apre scorrendo in su o dal menu
+                    launch(ca, x);
+                    return;
+                }
                 int idx = ft.tappedIndex();
                 List<String> apps = FolderTile.apps(it);
                 if (idx >= 0) {
@@ -1922,6 +1950,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         } else {
             v = new NothingTile(this, it, th, h24);
             v.setOnClickListener(x -> onTileClick(it));
+            if ("glance".equals(it.type)) refreshGlance(false);
         }
         v.setTag(it);
         it.view = v;
@@ -1945,6 +1974,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         bg.setStroke(Math.max(1, px(1)), Theme.alpha(th.onTile, 0.15f));
         t.setBackground(bg);
         return t;
+    }
+
+    /** Prossimo evento per i widget Riepilogo: si legge solo se ce n'è almeno uno sulla home. */
+    private void refreshGlance(boolean force) {
+        boolean any = false;
+        for (Item it : Item.leaves(items)) if ("glance".equals(it.type)) any = true;
+        if (!any) return;
+        NextEvent.refreshIfNeeded(this, force, () -> refreshTiles("glance"));
     }
 
     private void refreshTiles(String prefix) {
@@ -1975,6 +2012,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         } else {
             v = new NothingTile(this, kid, th, h24);
             v.setOnClickListener(x -> onTileClick(kid));
+            if ("glance".equals(kid.type)) refreshGlance(false);
         }
         kid.view = v;
         v.setTag(kid);
@@ -2142,6 +2180,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 // Dot Sveglia, l'Orologio o un'altra app: lo si sceglie in alto a destra nella pagina Sveglia
                 AlarmsActivity.openFromWidget(this);
                 break;
+            case "glance": {
+                NextEvent.Ev e = NextEvent.current;
+                if (!NextEvent.permitted(this)) {
+                    requestCalendar();
+                } else if (e != null) {
+                    Intent i = new Intent(Intent.ACTION_VIEW,
+                            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, e.id));
+                    i.putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, e.begin);
+                    i.putExtra(CalendarContract.EXTRA_EVENT_END_TIME, e.end);
+                    safeStart(i);
+                } else {
+                    safeStart(calendarIntent());
+                }
+                break;
+            }
             case "date_big":
             case "date_dot":
             case "calendar":
@@ -2238,8 +2291,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     DotNotifications.control(hit);
                     if (it.view != null) it.view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
                 } else if (!DotNotifications.mPkg.isEmpty()) {
-                    Intent li = getPackageManager().getLaunchIntentForPackage(DotNotifications.mPkg);
-                    if (li != null) safeStart(li);
+                    final String mp = DotNotifications.mPkg;
+                    Intent li = getPackageManager().getLaunchIntentForPackage(mp);
+                    if (li != null) unlockedPkg(mp, () -> safeStart(li));
                 } else toast("Nessuna musica in riproduzione");
                 break;
             }
@@ -2805,6 +2859,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 acts.add(() -> chooseSwipeAction(a));
                 labels.add(T.t("Benessere digitale…"));
                 acts.add(() -> appWellbeing(a));
+                labels.add(appLocked(a.key) ? T.t("Togli il blocco") : T.t("Blocca con impronta o PIN"));
+                acts.add(() -> toggleAppLock(a));
                 labels.add(T.t("Info app"));
                 acts.add(() -> appInfo(a));
             }
@@ -2888,14 +2944,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void folderLook(Item f) {
         boolean cov = !FolderTile.cover(f).isEmpty();
+        boolean opens = !FolderTile.coverApp(f).isEmpty();
         Sheet.list(this, th, T.t("Aspetto della cartella"),
-                new String[]{T.t("Anteprima delle app"), T.t("Copertina con un'app…")}, cov ? 1 : 0, w -> {
+                new String[]{T.t("Anteprima delle app"), T.t("Copertina con un'app…"), T.t("Copertina che apre l'app…")},
+                !cov ? 0 : opens ? 2 : 1, w -> {
                     if (w == 0) {
                         FolderTile.setCover(f, "");
                         saveLayout();
                         if (f.view != null) f.view.invalidate();
                         return;
                     }
+                    final boolean open = w == 2;
                     List<String> keys = FolderTile.apps(f);
                     String[] names = new String[keys.size()];
                     Bitmap[] icons = new Bitmap[keys.size()];
@@ -2904,9 +2963,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         icons[i] = iconFor(keys.get(i), px(36));
                     }
                     Sheet.list(this, th, T.t("Copertina"), names, icons, keys.indexOf(FolderTile.cover(f)), x -> {
-                        FolderTile.setCover(f, keys.get(x));
+                        FolderTile.setCover(f, keys.get(x), open);
                         saveLayout();
                         if (f.view != null) f.view.invalidate();
+                        if (open) toast(T.t("Tocca per aprire ") + names[x] + T.t(", scorri in su per la cartella"));
                     }, null);
                 });
     }
@@ -2926,6 +2986,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void widgetActions(Item it, List<String> labels, List<Runnable> acts) {
         switch (it.type) {
             case "folder":
+                if (!FolderTile.coverApp(it).isEmpty()) {
+                    labels.add(T.t("Apri la cartella"));
+                    acts.add(() -> openFolder(it));
+                }
                 labels.add(T.t("Aspetto della cartella"));
                 acts.add(() -> folderLook(it));
                 break;
@@ -3755,6 +3819,63 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     /** Apre un'app passando prima dal benessere digitale (focus, limiti, pausa). */
     private void launch(AppEntry a, View v) {
         if (a == null) return;
+        if (appLocked(a.key) && System.currentTimeMillis() >= authUntil) {
+            // app bloccata: si apre solo dopo impronta, volto o PIN
+            authenticate(a.label, T.t("Sblocca per aprire l'app"), () -> launchUnlocked(a, v));
+            return;
+        }
+        launchUnlocked(a, v);
+    }
+
+    // ---------- app bloccate ----------
+
+    private boolean appLocked(String key) {
+        return AppLock.locked(prefs.getStringSet(AppLock.PREF, null), key);
+    }
+
+    /** Un'app del pacchetto è bloccata (per scorciatoie e widget che aprono l'app senza passare dall'icona). */
+    private boolean pkgLocked(String pkg) {
+        return AppLock.pkgLocked(prefs.getStringSet(AppLock.PREF, null), pkg);
+    }
+
+    /** Esegue {@code ok} subito, o dopo lo sblocco se l'app del pacchetto è bloccata. */
+    @Override
+    public void unlockedPkg(String pkg, Runnable ok) {
+        if (pkgLocked(pkg) && System.currentTimeMillis() >= authUntil) {
+            authenticate(labelForPkg(pkg), T.t("Sblocca per aprire l'app"), ok);
+        } else ok.run();
+    }
+
+    private String labelForPkg(String pkg) {
+        for (AppEntry e : allApps) if (e.component.getPackageName().equals(pkg)) return e.label;
+        return pkg;
+    }
+
+    private void toggleAppLock(AppEntry a) {
+        Set<String> s = new HashSet<>(prefs.getStringSet(AppLock.PREF, new HashSet<>()));
+        if (s.contains(a.key)) {
+            // anche per togliere il blocco serve sbloccare: altrimenti basterebbe la pressione prolungata
+            authenticate(a.label, T.t("Sblocca per togliere il blocco"), () -> {
+                Set<String> n = new HashSet<>(prefs.getStringSet(AppLock.PREF, new HashSet<>()));
+                n.remove(a.key);
+                prefs.edit().putStringSet(AppLock.PREF, n).apply();
+                toast(a.label + T.t(" non è più bloccata"));
+            });
+            return;
+        }
+        android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+        if (km == null || !km.isDeviceSecure()) {
+            Sheet.confirm(this, th, T.t("Serve un blocco schermo"),
+                    T.t("Per bloccare un'app imposta prima un'impronta, un PIN o una sequenza nelle impostazioni di sicurezza del telefono."),
+                    T.t("Apri le impostazioni"), () -> safeStart(new Intent(android.provider.Settings.ACTION_SECURITY_SETTINGS)));
+            return;
+        }
+        s.add(a.key);
+        prefs.edit().putStringSet(AppLock.PREF, s).apply();
+        toast(a.label + T.t(" si aprirà solo con impronta, volto o PIN"));
+    }
+
+    private void launchUnlocked(AppEntry a, View v) {
         String pkg = a.component.getPackageName();
         if (Usage.paused(prefs, pkg)) {
             focusSheet(a, v);
@@ -4609,7 +4730,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             ImageView iv = new ImageView(this);
             iv.setImageBitmap(iconFor(a.key, size));
             if (dimmed(a.key)) iv.setAlpha(0.35f);
-            else if (badge(a.key) > 0) iv.setForeground(new BadgeDrawable(th.accent, th.bg));
+            else if (badge(a.key) > 0) iv.setForeground(new BadgeDrawable(th.accent, th.bg, badge(a.key)));
             iv.setContentDescription(a.label);
             iv.setTag(R_KEY, a.key);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(size, size);
@@ -4680,6 +4801,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         acts.add(() -> chooseSwipeAction(a));
         labels.add(T.t("Benessere digitale…"));
         acts.add(() -> appWellbeing(a));
+        labels.add(appLocked(a.key) ? T.t("Togli il blocco") : T.t("Blocca con impronta o PIN"));
+        acts.add(() -> toggleAppLock(a));
         labels.add(T.t("Info app"));
         acts.add(() -> appInfo(a));
         labels.add(T.t("Disinstalla"));
@@ -5656,6 +5779,17 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void launchShortcut(String key, View v) {
+        String[] parts;
+        try {
+            parts = scParts(key);
+        } catch (Exception e) {
+            toast(T.t("Scorciatoia non disponibile"));
+            return;
+        }
+        unlockedPkg(parts[0], () -> launchShortcutNow(key, v));
+    }
+
+    private void launchShortcutNow(String key, View v) {
         try {
             String[] p = scParts(key);
             UserHandle u = userManager().getUserForSerialNumber(Long.parseLong(p[2]));
@@ -5779,6 +5913,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             final String pkg = a.component.getPackageName();
             List<android.service.notification.StatusBarNotification> ns = DotNotifications.of(pkg);
             int i = 0;
+            if (!ns.isEmpty() && pkgLocked(pkg) && System.currentTimeMillis() >= authUntil) {
+                // app bloccata: niente testo dei messaggi, e il tocco chiede prima lo sblocco
+                labels.add(i, "●  " + ns.size() + T.n(ns.size(), " notifica", " notifiche"));
+                acts.add(i, () -> unlockedPkg(pkg, () -> launchUnlocked(a, null)));
+                i++;
+                ns = new ArrayList<>(); // le singole notifiche non si mostrano
+            }
             for (android.service.notification.StatusBarNotification n : ns) {
                 if (i >= 3) break;
                 android.os.Bundle ex = n.getNotification().extras;
@@ -5814,11 +5955,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Dialog d = Sheet.list(this, th, title, all, icons, -1, w -> {
             if (w < n) {
                 ShortcutInfo si = scs.get(w);
-                try {
-                    launcherApps.startShortcut(si.getPackage(), si.getId(), null, null, si.getUserHandle());
-                } catch (Exception e) {
-                    toast(T.t("Azione non disponibile"));
-                }
+                unlockedPkg(si.getPackage(), () -> {
+                    try {
+                        launcherApps.startShortcut(si.getPackage(), si.getId(), null, null, si.getUserHandle());
+                    } catch (Exception e) {
+                        toast(T.t("Azione non disponibile"));
+                    }
+                });
             } else {
                 acts.get(w - n).run();
             }
@@ -6174,6 +6317,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     prefs.edit().putBoolean("badges", on).apply();
                     onNotificationsChanged();
                 });
+        st.row(SectionIcons.BADGE, T.t("Aspetto dei pallini"), badgeSummary(), this::chooseBadgeLook);
 
         st.section(T.t("Sveglia"));
         st.row(SettingsScreen.CLOCK, T.t("Sveglia del widget"), DotAlarms.enabled(this)
@@ -6271,6 +6415,81 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }, null);
     }
 
+    // ---------- aspetto dei pallini di notifica ----------
+
+    // testi costruiti al momento: la lingua si può cambiare senza riavviare l'app
+    private static String[] badgeStyles() {
+        return new String[]{T.t("Punto"), T.t("Numero delle notifiche")};
+    }
+
+    private static String[] badgeSizes() {
+        return new String[]{T.t("Piccolo"), T.t("Medio"), T.t("Grande")};
+    }
+
+    private static String[] badgeCorners() {
+        return new String[]{T.t("In alto a destra"), T.t("In alto a sinistra"), T.t("In basso a destra"), T.t("In basso a sinistra")};
+    }
+
+    private static String[] badgeColorNames() {
+        return new String[]{T.t("Colore d'accento"), T.t("Rosso"), T.t("Arancio"), T.t("Verde"), T.t("Blu"),
+                T.t("Viola"), T.t("Bianco"), T.t("Nero")};
+    }
+
+    private String badgeColorName(int c) {
+        for (int i = 0; i < BadgeDrawable.COLORS.length; i++) if (BadgeDrawable.COLORS[i] == c) return badgeColorNames()[i];
+        return T.t("Personalizzato");
+    }
+
+    private String badgeSummary() {
+        return badgeStyles()[BadgeDrawable.style] + " · " + badgeSizes()[BadgeDrawable.sizeIdx].toLowerCase(T.loc()) + " · "
+                + badgeCorners()[BadgeDrawable.corner].toLowerCase(T.loc()) + " · " + badgeColorName(BadgeDrawable.color).toLowerCase(T.loc());
+    }
+
+    private void saveBadge(String key, int v) {
+        prefs.edit().putInt(key, v).apply();
+        recreate();
+    }
+
+    private void chooseBadgeLook() {
+        String[] items = {
+                T.t("Mostra: ") + badgeStyles()[BadgeDrawable.style],
+                T.t("Dimensione: ") + badgeSizes()[BadgeDrawable.sizeIdx],
+                T.t("Angolo: ") + badgeCorners()[BadgeDrawable.corner],
+                T.t("Colore: ") + badgeColorName(BadgeDrawable.color)};
+        Sheet.list(this, th, T.t("Aspetto dei pallini"), items, -1, w -> {
+            switch (w) {
+                case 0:
+                    Sheet.list(this, th, T.t("Mostra"), badgeStyles(), BadgeDrawable.style, x -> saveBadge("badgeStyle", x));
+                    break;
+                case 1:
+                    Sheet.list(this, th, T.t("Dimensione"), badgeSizes(), BadgeDrawable.sizeIdx, x -> saveBadge("badgeSize", x));
+                    break;
+                case 2:
+                    Sheet.list(this, th, T.t("Angolo"), badgeCorners(), BadgeDrawable.corner, x -> saveBadge("badgePos", x));
+                    break;
+                default: {
+                    int n = BadgeDrawable.COLORS.length;
+                    Bitmap[] dots = new Bitmap[n];
+                    int sel = -1;
+                    for (int i = 0; i < n; i++) {
+                        int c = BadgeDrawable.COLORS[i] == 0 ? th.accent : BadgeDrawable.COLORS[i];
+                        Bitmap b = Bitmap.createBitmap(px(28), px(28), Bitmap.Config.ARGB_8888);
+                        Paint pp = new Paint(Paint.ANTI_ALIAS_FLAG);
+                        Canvas cv = new Canvas(b);
+                        pp.setColor(th.stroke != 0 ? th.stroke : 0x33888888); // bordo: il bianco e il nero restano visibili
+                        cv.drawCircle(px(14), px(14), px(13), pp);
+                        pp.setColor(c);
+                        cv.drawCircle(px(14), px(14), px(11), pp);
+                        dots[i] = b;
+                        if (BadgeDrawable.COLORS[i] == BadgeDrawable.color) sel = i;
+                    }
+                    Sheet.list(this, th, T.t("Colore"), badgeColorNames(), dots, sel,
+                            x -> saveBadge("badgeColor", BadgeDrawable.COLORS[x]), null);
+                }
+            }
+        });
+    }
+
     private void toggle(String key, boolean cur) {
         prefs.edit().putBoolean(key, !cur).apply();
         recreate();
@@ -6365,6 +6584,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             ok.run();
             return;
         }
+        authenticate(T.t("App nascoste"), T.t("Sblocca per vederle"), ok);
+    }
+
+    /** Chiede impronta, volto o PIN e poi esegue {@code ok}; senza blocco schermo lo esegue subito. */
+    private void authenticate(String title, String subtitle, Runnable ok) {
         android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
         if (km == null || !km.isDeviceSecure()) {
             ok.run(); // nessun blocco schermo impostato: non c'è niente con cui verificare
@@ -6373,15 +6597,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (Build.VERSION.SDK_INT >= 28) {
             try {
                 android.hardware.biometrics.BiometricPrompt.Builder b = new android.hardware.biometrics.BiometricPrompt.Builder(this)
-                        .setTitle(T.t("App nascoste"))
-                        .setSubtitle(T.t("Sblocca per vederle"));
+                        .setTitle(title)
+                        .setSubtitle(subtitle);
                 if (Build.VERSION.SDK_INT >= 30) {
                     b.setAllowedAuthenticators(android.hardware.biometrics.BiometricManager.Authenticators.BIOMETRIC_WEAK
                             | android.hardware.biometrics.BiometricManager.Authenticators.DEVICE_CREDENTIAL);
                 } else if (Build.VERSION.SDK_INT >= 29) {
                     b.setDeviceCredentialAllowed(true);
                 } else {
-                    b.setNegativeButton(T.t("Usa il PIN"), getMainExecutor(), (d, w) -> confirmCredential(ok));
+                    b.setNegativeButton(T.t("Usa il PIN"), getMainExecutor(), (d, w) -> confirmCredential(title, subtitle, ok));
                 }
                 b.build().authenticate(new android.os.CancellationSignal(), getMainExecutor(),
                         new android.hardware.biometrics.BiometricPrompt.AuthenticationCallback() {
@@ -6401,13 +6625,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 // alcuni telefoni non hanno il riconoscimento biometrico: si passa al PIN
             }
         }
-        confirmCredential(ok);
+        confirmCredential(title, subtitle, ok);
     }
 
     @SuppressWarnings("deprecation")
-    private void confirmCredential(Runnable ok) {
+    private void confirmCredential(String title, String subtitle, Runnable ok) {
         android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-        Intent i = km == null ? null : km.createConfirmDeviceCredentialIntent(T.t("App nascoste"), T.t("Sblocca per vederle"));
+        Intent i = km == null ? null : km.createConfirmDeviceCredentialIntent(title, subtitle);
         if (i == null) {
             ok.run();
             return;
@@ -6496,6 +6720,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (onboarding != null) onboarding.refresh();
         if (req == REQ_CAL || req == REQ_CONTACTS) {
             if (panel != null) panel.refreshCalendar();
+            if (req == REQ_CAL) refreshGlance(true);
             if (searchMode) grid.setQuery(search.getText().toString());
             return;
         }

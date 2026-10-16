@@ -117,6 +117,14 @@ class NothingTile extends View {
             case "week":
             case "day":
                 return new SimpleDateFormat("EEEE d MMMM", T.loc()).format(new Date());
+            case "glance": {
+                String d = new SimpleDateFormat("EEEE d MMMM", T.loc()).format(new Date());
+                if (State.wOk) d += ", " + State.wTemp + "°, " + T.t(State.describe(State.wCode));
+                NextEvent.Ev e = NextEvent.current;
+                if (e != null) d += ". " + NextEvent.when(e, System.currentTimeMillis(), h24) + ": " + eventTitle(e);
+                else if (!NextEvent.permitted) d += ". " + T.t("Tocca per vedere i prossimi eventi");
+                return d;
+            }
             case "weather":
             case "weather_week":
             case "weather_hours":
@@ -223,6 +231,7 @@ class NothingTile extends View {
             case "media": media(cv, W, H); break;
             case "usage": usage(cv, W, H); break;
             case "focus": focus(cv, W, H); break;
+            case "glance": glance(cv, W, H); break;
         }
         if (animating) postInvalidateOnAnimation();
         // l'animazione di ricarica continua solo se si vede davvero (pagina corrente, home non coperta)
@@ -450,6 +459,103 @@ class NothingTile extends View {
         Draw.label(cv, th, "↑" + State.wMax + "°  ↓" + State.wMin + "°", W - pad, pad + W * 0.1f, H * 0.07f, sub(), 1, p, W * 0.5f);
         Draw.label(cv, th, State.describe(State.wCode), pad, H * 0.6f, H * 0.075f, sub(), -1, p, W - pad * 2);
         Draw.big(cv, th, temp, pad, H * 0.78f, H * 0.2f, W - pad * 2, fg(), "°", acc(), -1, p, false);
+    }
+
+    // ---------- riepilogo: data, meteo e prossimo evento ----------
+
+    private static String eventTitle(NextEvent.Ev e) {
+        return e.title == null || e.title.trim().isEmpty() ? T.t("(senza titolo)") : e.title.trim();
+    }
+
+    /** Riga dell'evento: quando (in accento) e titolo; senza permesso, l'invito a toccare. */
+    private void glanceEvent(Canvas cv, float x, float y1, float y2, float size, float maxW) {
+        NextEvent.Ev e = NextEvent.current;
+        if (e == null) {
+            String msg = NextEvent.permitted ? T.t("Nessun evento nei prossimi 7 giorni") : T.t("Tocca per vedere i prossimi eventi");
+            Draw.label(cv, th, msg, x, y2, size, NextEvent.permitted ? sub() : accT(), -1, p, maxW);
+            return;
+        }
+        Draw.label(cv, th, NextEvent.when(e, System.currentTimeMillis(), h24), x, y1, size * 0.85f, accT(), -1, p, maxW);
+        Draw.label(cv, th, fit(eventTitle(e), size, maxW), x, y2, size, fg(), -1, p, maxW);
+    }
+
+    /**
+     * Accorcia un testo con "…" perché stia in maxW alla dimensione data:
+     * Draw.label altrimenti rimpicciolirebbe i titoli lunghi fino a renderli illeggibili.
+     */
+    private String fit(String s, float size, float maxW) {
+        p.setTypeface(th.labelFace);
+        p.setTextSize(size);
+        p.setLetterSpacing(th.upperLabels ? 0.04f : 0f);
+        String out = s;
+        if (p.measureText(shown(s)) > maxW) {
+            int n = s.length();
+            while (n > 1 && p.measureText(shown(s.substring(0, n)) + "…") > maxW) n--;
+            out = s.substring(0, n).trim() + "…";
+        }
+        p.setLetterSpacing(0f);
+        return out;
+    }
+
+    /** Il testo come lo scrive Draw.label (maiuscolo nello stile Classico). */
+    private String shown(String s) {
+        return th.upperLabels ? s.toUpperCase(T.loc()) : s;
+    }
+
+    private void glance(Canvas cv, float W, float H) {
+        Date now = new Date();
+        float pad = Math.min(W, H) * (item.h == 1 ? 0.2f : 0.12f);
+        String wd = new SimpleDateFormat("EEEE", T.loc()).format(now);
+        String dm = new SimpleDateFormat("d MMMM", T.loc()).format(now); // solo nelle etichette
+        if (item.w <= 2) {
+            // quadrato: data in alto, meteo a destra, evento in basso
+            Draw.label(cv, th, wd, pad, pad + H * 0.07f, H * 0.075f, sub(), -1, p, W * 0.55f);
+            Draw.big(cv, th, new SimpleDateFormat("d", T.loc()).format(now), pad, pad + H * 0.22f, H * 0.15f, W * 0.4f,
+                    accT(), "", acc(), -1, p, false);
+            if (State.wOk) {
+                Draw.icon(cv, Draw.weatherIcon(State.wCode), W - pad - W * 0.1f, pad + H * 0.1f, W * 0.18f, p, fg(), acc());
+                Draw.label(cv, th, State.wTemp + "°", W - pad, pad + H * 0.32f, H * 0.075f, fg(), 1, p, W * 0.3f);
+            }
+            glanceEvent(cv, pad, H * 0.72f, H * 0.86f, H * 0.075f, W - pad * 2);
+            return;
+        }
+        float right = W - pad;
+        float weatherW = 0;
+        if (State.wOk) {
+            // meteo a destra: icona e temperatura
+            String temp = State.wTemp + "°";
+            float th1 = item.h == 1 ? H * 0.22f : H * 0.12f;
+            float tw = Draw.big(cv, th, temp, right, item.h == 1 ? H / 2f : pad + H * 0.12f, th1, W * 0.22f, fg(), "°", acc(), 1, p, false);
+            float isz = item.h == 1 ? H * 0.36f : H * 0.2f;
+            Draw.icon(cv, Draw.weatherIcon(State.wCode), right - tw - isz * 0.75f, item.h == 1 ? H / 2f : pad + H * 0.12f, isz, p, fg(), acc());
+            weatherW = tw + isz * 1.4f;
+            if (item.h > 1) Draw.label(cv, th, State.describe(State.wCode), right, pad + H * 0.3f, H * 0.065f, sub(), 1, p, W * 0.35f);
+        }
+        float textW = W - pad * 2 - weatherW - pad * 0.5f;
+        if (item.h == 1) {
+            // una riga: data sopra, evento sotto
+            Draw.label(cv, th, wd + " " + dm, pad, H * 0.42f, H * 0.17f, fg(), -1, p, textW);
+            NextEvent.Ev e = NextEvent.current;
+            String line;
+            int col;
+            if (e != null) {
+                line = NextEvent.when(e, System.currentTimeMillis(), h24) + " · " + eventTitle(e);
+                col = accT();
+            } else {
+                line = NextEvent.permitted ? T.t("Nessun evento nei prossimi 7 giorni") : T.t("Tocca per vedere i prossimi eventi");
+                col = NextEvent.permitted ? sub() : accT();
+            }
+            Draw.label(cv, th, fit(line, H * 0.14f, textW), pad, H * 0.74f, H * 0.14f, col, -1, p, textW);
+            return;
+        }
+        // due righe: data grande a sinistra, evento in basso su tutta la larghezza
+        Draw.label(cv, th, wd, pad, pad + H * 0.06f, H * 0.075f, sub(), -1, p, textW);
+        // il numero a puntini o sottile, il mese accanto (i caratteri a puntini sono pensati per le cifre)
+        float dw = Draw.big(cv, th, new SimpleDateFormat("d", T.loc()).format(now), pad, pad + H * 0.22f, H * 0.12f,
+                textW * 0.4f, accT(), "", acc(), -1, p, false);
+        Draw.label(cv, th, new SimpleDateFormat("MMMM", T.loc()).format(now), pad + dw + H * 0.05f, pad + H * 0.27f,
+                H * 0.085f, fg(), -1, p, Math.max(1f, textW - dw - H * 0.05f));
+        glanceEvent(cv, pad, H * 0.68f, H * 0.84f, H * 0.085f, W - pad * 2);
     }
 
     private void weatherWeek(Canvas cv, float W, float H) {

@@ -373,7 +373,8 @@ class AppSections extends LinearLayout {
             iv.setImageBitmap(host.iconFor(e.app, s));
             iv.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO); // il nome sotto basta per TalkBack
             boolean dim = host.dimmed(e.app);
-            if (!dim && host.badge(e.app) > 0) iv.setForeground(badge());
+            int nb = dim ? 0 : host.badge(e.app);
+            if (nb > 0) iv.setForeground(badge(nb));
             if (dim) iv.setAlpha(0.35f);
             icon = iv;
             c.setOnClickListener(v -> host.launchKey(e.app, iv));
@@ -403,8 +404,8 @@ class AppSections extends LinearLayout {
         return c;
     }
 
-    private BadgeDrawable badge() {
-        return new BadgeDrawable(th.accent, th.drawerBg | 0xFF000000);
+    private BadgeDrawable badge(int count) {
+        return new BadgeDrawable(th.accent, th.drawerBg | 0xFF000000, count);
     }
 
     /** Riapplica l'effetto di passaggio tra le pagine (dopo averlo cambiato nelle impostazioni). */
@@ -419,7 +420,8 @@ class AppSections extends LinearLayout {
             for (Cell c : page) {
                 if (c.icon instanceof ImageView && c.entry.app != null) {
                     boolean dim = host.dimmed(c.entry.app);
-                    c.icon.setForeground(!dim && host.badge(c.entry.app) > 0 ? badge() : null);
+                    int nb = dim ? 0 : host.badge(c.entry.app);
+                    c.icon.setForeground(nb > 0 ? badge(nb) : null);
                     c.icon.setAlpha(dim ? 0.35f : 1f);
                 } else if (c.icon != null) c.icon.invalidate();
             }

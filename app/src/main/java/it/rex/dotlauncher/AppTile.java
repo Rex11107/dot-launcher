@@ -70,7 +70,8 @@ class AppTile extends View {
             if (dim) p.setAlpha(90);
             cv.drawBitmap(b, null, rf, p);
             p.setAlpha(255);
-            if (!dim && src.badge(item.data) > 0) BadgeDrawable.draw(cv, p, cx, cy, size, th.accent, th.bg);
+            int nb = dim ? 0 : src.badge(item.data);
+            if (nb > 0) BadgeDrawable.draw(cv, p, cx, cy, size, th.accent, th.bg, nb);
         } else {
             p.setColor(th.tile);
             cv.drawCircle(cx, cy, size / 2f, p);
