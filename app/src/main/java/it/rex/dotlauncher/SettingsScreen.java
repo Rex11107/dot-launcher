@@ -51,7 +51,7 @@ class SettingsScreen extends FrameLayout {
 
     // ---------- trascinamento laterale per tornare indietro ----------
     private Runnable onBackRun;
-    private boolean swipeBack, swiping;
+    private boolean swipeBack, swiping, vertical;
     private float downX, downY;
     private android.view.VelocityTracker vel;
 
@@ -147,51 +147,42 @@ class SettingsScreen extends FrameLayout {
         }
     }
 
+    /**
+     * Il gesto si legge qui, prima di passare il tocco all'elenco: così arriva sempre, anche quando l'elenco
+     * ha già cominciato a scorrere (che altrimenti impedirebbe alla pagina di vedere il resto del movimento).
+     */
     @Override
-    public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
-        if (!swipeBack) return super.onInterceptTouchEvent(ev);
-        switch (ev.getActionMasked()) {
-            case android.view.MotionEvent.ACTION_DOWN:
-                downX = ev.getRawX();
-                downY = ev.getRawY();
-                swiping = false;
-                if (vel != null) vel.recycle();
-                vel = android.view.VelocityTracker.obtain();
-                vel.addMovement(ev);
-                break;
-            case android.view.MotionEvent.ACTION_MOVE: {
-                if (vel != null) vel.addMovement(ev);
-                float dx = ev.getRawX() - downX, dy = ev.getRawY() - downY;
-                int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
-                // solo un movimento chiaramente orizzontale: lo scorrimento verticale dell'elenco resta com'è
-                if (Math.abs(dx) > slop * 2 && Math.abs(dx) > Math.abs(dy) * 1.8f) {
-                    swiping = true;
-                    return true;
-                }
-                break;
-            }
-        }
-        return super.onInterceptTouchEvent(ev);
-    }
-
-    @Override
-    public boolean onTouchEvent(android.view.MotionEvent ev) {
-        if (!swipeBack) return super.onTouchEvent(ev);
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (!swipeBack) return super.dispatchTouchEvent(ev);
         int a = ev.getActionMasked();
         if (a == android.view.MotionEvent.ACTION_DOWN) {
             downX = ev.getRawX();
             downY = ev.getRawY();
             swiping = false;
+            vertical = false;
             if (vel != null) vel.recycle();
             vel = android.view.VelocityTracker.obtain();
         }
         if (vel != null) vel.addMovement(ev);
         float dx = ev.getRawX() - downX, dy = ev.getRawY() - downY;
-        if (a == android.view.MotionEvent.ACTION_MOVE && !swiping) {
-            int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
-            if (Math.abs(dx) > slop * 2 && Math.abs(dx) > Math.abs(dy) * 1.8f) swiping = true;
+        if (!swiping) {
+            if (a == android.view.MotionEvent.ACTION_MOVE && !vertical && ev.getPointerCount() == 1) {
+                int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                    // movimento orizzontale: da qui il tocco è del gesto, l'elenco riceve un annullamento
+                    swiping = true;
+                    android.view.MotionEvent c = android.view.MotionEvent.obtain(ev);
+                    c.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(c);
+                    c.recycle();
+                    downX = ev.getRawX() - Math.signum(dx) * slop * 1.5f; // niente salto all'inizio
+                    return true;
+                } else if (Math.abs(dy) > slop * 2 && Math.abs(dy) > Math.abs(dx) * 1.5f) {
+                    vertical = true; // l'elenco sta scorrendo: il gesto laterale non parte più
+                }
+            }
+            return super.dispatchTouchEvent(ev);
         }
-        if (!swiping) return super.onTouchEvent(ev);
         if (a == android.view.MotionEvent.ACTION_MOVE) {
             // la pagina segue il dito, un po' frenata, e si rimpicciolisce appena (come l'anteprima di Android)
             float p = Math.min(1f, Math.abs(dx) / (getWidth() * 0.5f));
@@ -209,7 +200,7 @@ class SettingsScreen extends FrameLayout {
             }
             swiping = false;
             boolean go = a == android.view.MotionEvent.ACTION_UP
-                    && (Math.abs(dx) > px(96) || (Math.abs(dx) > px(40) && Math.abs(v) > px(700) && Math.signum(v) == Math.signum(dx)));
+                    && (Math.abs(dx) > px(72) || (Math.abs(dx) > px(28) && Math.abs(v) > px(500) && Math.signum(v) == Math.signum(dx)));
             if (go && onBackRun != null) {
                 // posizione normale subito: chiusura o cambio di pagina hanno già la loro animazione
                 animate().cancel();
