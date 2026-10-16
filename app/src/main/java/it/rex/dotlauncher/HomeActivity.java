@@ -6181,6 +6181,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void showSettings() {
         if (settings == null) {
             settings = new SettingsScreen(this, th, this::settingsBack);
+            settings.enableSwipeBack(); // sopra la home il gesto indietro del sistema spesso non arriva
             settings.setVisibility(View.GONE);
             root.addView(settings, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));

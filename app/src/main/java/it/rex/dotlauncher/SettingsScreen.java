@@ -49,6 +49,12 @@ class SettingsScreen extends FrameLayout {
     private String pendingSection;
     private int matches;
 
+    // ---------- trascinamento laterale per tornare indietro ----------
+    private Runnable onBackRun;
+    private boolean swipeBack, swiping;
+    private float downX, downY;
+    private android.view.VelocityTracker vel;
+
     SettingsScreen(Activity a, Theme th, Runnable onBack) {
         this(a, th, null, onBack);
     }
@@ -74,6 +80,7 @@ class SettingsScreen extends FrameLayout {
         back.setPadding(px(12), px(12), px(12), px(12));
         back.setContentDescription(T.t("Indietro"));
         back.setOnClickListener(v -> onBack.run());
+        onBackRun = onBack;
         bar.addView(back, new LinearLayout.LayoutParams(px(48), px(48)));
         View title;
         if (th.dots) {
@@ -117,6 +124,111 @@ class SettingsScreen extends FrameLayout {
         scroll.setTranslationX((forward ? 1 : -1) * px(36));
         scroll.setAlpha(0f);
         scroll.animate().translationX(0).alpha(1f).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+    }
+
+    /**
+     * Trascinando di lato la pagina torna indietro da sola. Serve sopra la home: lì molti telefoni (Honor compreso)
+     * tengono per sé il gesto indietro del sistema, perché per loro la home non ha niente "dietro".
+     */
+    void enableSwipeBack() {
+        swipeBack = true;
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int l, int t, int r, int b) {
+        super.onLayout(changed, l, t, r, b);
+        if (swipeBack && android.os.Build.VERSION.SDK_INT >= 29) {
+            // a metà dei bordi il gesto arriva alla pagina invece che al sistema (Android ne concede 200 dp per lato)
+            int w = r - l, h = b - t, half = px(100), edge = px(32);
+            java.util.List<android.graphics.Rect> ex = new java.util.ArrayList<>();
+            ex.add(new android.graphics.Rect(0, h / 2 - half, edge, h / 2 + half));
+            ex.add(new android.graphics.Rect(w - edge, h / 2 - half, w, h / 2 + half));
+            setSystemGestureExclusionRects(ex);
+        }
+    }
+
+    @Override
+    public boolean onInterceptTouchEvent(android.view.MotionEvent ev) {
+        if (!swipeBack) return super.onInterceptTouchEvent(ev);
+        switch (ev.getActionMasked()) {
+            case android.view.MotionEvent.ACTION_DOWN:
+                downX = ev.getRawX();
+                downY = ev.getRawY();
+                swiping = false;
+                if (vel != null) vel.recycle();
+                vel = android.view.VelocityTracker.obtain();
+                vel.addMovement(ev);
+                break;
+            case android.view.MotionEvent.ACTION_MOVE: {
+                if (vel != null) vel.addMovement(ev);
+                float dx = ev.getRawX() - downX, dy = ev.getRawY() - downY;
+                int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                // solo un movimento chiaramente orizzontale: lo scorrimento verticale dell'elenco resta com'è
+                if (Math.abs(dx) > slop * 2 && Math.abs(dx) > Math.abs(dy) * 1.8f) {
+                    swiping = true;
+                    return true;
+                }
+                break;
+            }
+        }
+        return super.onInterceptTouchEvent(ev);
+    }
+
+    @Override
+    public boolean onTouchEvent(android.view.MotionEvent ev) {
+        if (!swipeBack) return super.onTouchEvent(ev);
+        int a = ev.getActionMasked();
+        if (a == android.view.MotionEvent.ACTION_DOWN) {
+            downX = ev.getRawX();
+            downY = ev.getRawY();
+            swiping = false;
+            if (vel != null) vel.recycle();
+            vel = android.view.VelocityTracker.obtain();
+        }
+        if (vel != null) vel.addMovement(ev);
+        float dx = ev.getRawX() - downX, dy = ev.getRawY() - downY;
+        if (a == android.view.MotionEvent.ACTION_MOVE && !swiping) {
+            int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+            if (Math.abs(dx) > slop * 2 && Math.abs(dx) > Math.abs(dy) * 1.8f) swiping = true;
+        }
+        if (!swiping) return super.onTouchEvent(ev);
+        if (a == android.view.MotionEvent.ACTION_MOVE) {
+            // la pagina segue il dito, un po' frenata, e si rimpicciolisce appena (come l'anteprima di Android)
+            float p = Math.min(1f, Math.abs(dx) / (getWidth() * 0.5f));
+            animate().cancel();
+            setTranslationX(dx * 0.4f);
+            setScaleX(1f - 0.06f * p);
+            setScaleY(1f - 0.06f * p);
+        } else if (a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL) {
+            float v = 0;
+            if (vel != null) {
+                vel.computeCurrentVelocity(1000);
+                v = vel.getXVelocity();
+                vel.recycle();
+                vel = null;
+            }
+            swiping = false;
+            boolean go = a == android.view.MotionEvent.ACTION_UP
+                    && (Math.abs(dx) > px(96) || (Math.abs(dx) > px(40) && Math.abs(v) > px(700) && Math.signum(v) == Math.signum(dx)));
+            if (go && onBackRun != null) {
+                // posizione normale subito: chiusura o cambio di pagina hanno già la loro animazione
+                animate().cancel();
+                setTranslationX(0);
+                setScaleX(1f);
+                setScaleY(1f);
+                performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+                onBackRun.run();
+            } else {
+                animate().translationX(0).scaleX(1f).scaleY(1f).setDuration(Motion.FADE)
+                        .setInterpolator(Motion.STANDARD).start();
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public boolean performClick() {
+        return super.performClick(); // il trascinamento non è un clic; TalkBack usa il pulsante Indietro
     }
 
     /** Titolo in alto (null = "Impostazioni"). */
