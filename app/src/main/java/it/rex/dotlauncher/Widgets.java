@@ -7,13 +7,13 @@ final class Widgets {
             "weather", "weather_week", "battery_ring", "battery_pill", "battery_dots", "alarm", "search",
             "world_clock", "countdown", "photo", "compass", "steps",
             "year", "day", "clock_ring", "moon", "sun", "weather_hours", "counter", "proverb", "dice", "week",
-            "storage", "note", "torch", "media", "usage", "focus"
+            "storage", "note", "torch", "media", "usage", "focus", "glance"
     };
 
     /** Categorie per la scelta dei widget: {titolo, tipi…}. */
     static final String[][] CATEGORIES = {
             {T.t("Orologi"), "clock_dots", "clock_analog", "clock_pill", "clock_ring", "world_clock", "alarm"},
-            {T.t("Data e tempo"), "date_big", "date_dot", "calendar", "week", "year", "day", "countdown"},
+            {T.t("Data e tempo"), "glance", "date_big", "date_dot", "calendar", "week", "year", "day", "countdown"},
             {T.t("Meteo e cielo"), "weather", "weather_week", "weather_hours", "sun", "moon"},
             {T.t("Batteria e sistema"), "battery_ring", "battery_pill", "battery_dots", "storage", "torch"},
             {T.t("Musica e strumenti"), "media", "search", "compass", "steps", "counter", "dice"},
@@ -57,6 +57,7 @@ final class Widgets {
             case "media": return T.t("Musica");
             case "usage": return T.t("Tempo di utilizzo");
             case "focus": return "Focus";
+            case "glance": return T.t("Riepilogo");
             case "stack": return T.t("Pila di widget");
             case "app": return "App";
             case "folder": return T.t("Cartella");
@@ -103,6 +104,7 @@ final class Widgets {
             case "media": return new int[][]{{F, 1}, {2, 2}, {F, 2}};
             case "usage": return new int[][]{{2, 2}, {F, 2}, {2, 1}, {F, 1}};
             case "focus": return new int[][]{{1, 1}, {2, 1}};
+            case "glance": return new int[][]{{F, 1}, {F, 2}, {2, 2}};
             case "app": return new int[][]{{1, 1}, {2, 2}};
             case "folder": return new int[][]{{1, 1}, {2, 2}};
             case "shortcut": return new int[][]{{1, 1}};
