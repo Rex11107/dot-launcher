@@ -41,6 +41,13 @@ class SettingsScreen extends FrameLayout {
     private LinearLayout group;
 
     private final LinearLayout bar;
+    private final LinearLayout outer;
+    private View titleView;
+    private View header;
+    /** Ricerca: si mostrano solo le voci che contengono il testo (null = tutte). */
+    private String filter;
+    private String pendingSection;
+    private int matches;
 
     SettingsScreen(Activity a, Theme th, Runnable onBack) {
         this(a, th, null, onBack);
@@ -54,7 +61,7 @@ class SettingsScreen extends FrameLayout {
         dp = a.getResources().getDisplayMetrics().density;
         setBackgroundColor(th.drawerBg);
         setClickable(true);
-        LinearLayout outer = new LinearLayout(a);
+        outer = new LinearLayout(a);
         outer.setOrientation(LinearLayout.VERTICAL);
         addView(outer, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -75,16 +82,18 @@ class SettingsScreen extends FrameLayout {
             dt.setFitWidth(true, 3.4f * dp);
             dt.setColor(th.onTile);
             dt.setAccent(".", th.accent);
-            dt.setText(titleText == null ? T.t("IMPOSTAZIONI.") : titleText.toUpperCase(T.loc()) + ".");
             title = dt;
         } else {
             TextView tv = new TextView(a);
-            tv.setText(titleText == null ? T.t("Impostazioni") : titleText);
             tv.setTextColor(th.onTile);
             tv.setTypeface(th.titleFace);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
+            tv.setSingleLine(true);
+            tv.setEllipsize(TextUtils.TruncateAt.END);
             title = tv;
         }
+        titleView = title;
+        setTitle(titleText);
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         tl.leftMargin = px(6);
         bar.addView(title, tl);
@@ -102,6 +111,53 @@ class SettingsScreen extends FrameLayout {
         outer.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
     }
 
+    /** Titolo in alto (null = "Impostazioni"). */
+    void setTitle(String titleText) {
+        if (titleView instanceof DotTextView) {
+            ((DotTextView) titleView).setText(titleText == null ? T.t("IMPOSTAZIONI.") : titleText.toUpperCase(T.loc()) + ".");
+        } else if (titleView instanceof TextView) {
+            ((TextView) titleView).setText(titleText == null ? T.t("Impostazioni") : titleText);
+        }
+        if (titleView != null) titleView.setContentDescription(titleText == null ? T.t("Impostazioni") : titleText);
+    }
+
+    /** Vista fissa sotto il titolo che non scorre e non si svuota con clear() (es. il campo di ricerca). */
+    void setHeader(View v) {
+        if (header != null) outer.removeView(header);
+        header = v;
+        if (v != null) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = px(16);
+            lp.rightMargin = px(16);
+            lp.bottomMargin = px(4);
+            outer.addView(v, 1, lp);
+        }
+    }
+
+    void showHeader(boolean show) {
+        if (header != null) header.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    /**
+     * Ricerca: da qui in poi si aggiungono solo le voci il cui titolo o descrizione contiene il testo;
+     * le sezioni compaiono solo se hanno almeno una voce. null = nessun filtro.
+     */
+    void setFilter(String q) {
+        filter = q == null || q.trim().isEmpty() ? null : DotTextView.normalize(q.trim());
+        pendingSection = null;
+        matches = 0;
+    }
+
+    /** Voci trovate con il filtro attuale. */
+    int matches() {
+        return matches;
+    }
+
+    private boolean filtering() {
+        return filter != null;
+    }
+
     /** Elemento in alto a destra, accanto al titolo. */
     void setAction(View v) {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -112,6 +168,7 @@ class SettingsScreen extends FrameLayout {
 
     /** Una vista libera nell'elenco; le voci successive aprono un nuovo gruppo. */
     void custom(View v) {
+        if (filtering()) return;
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.topMargin = px(10);
@@ -138,11 +195,19 @@ class SettingsScreen extends FrameLayout {
     void clear() {
         col.removeAllViews();
         group = null;
+        pendingSection = null;
+        matches = 0;
     }
 
     // ---------- costruzione ----------
 
     void section(String title) {
+        if (filtering()) {
+            // la sezione compare solo se almeno una voce corrisponde alla ricerca
+            pendingSection = title;
+            group = null;
+            return;
+        }
         title = T.t(title);
         TextView t = new TextView(act);
         t.setText(th.upperLabels ? title.toUpperCase(T.loc()) : title);
@@ -167,6 +232,20 @@ class SettingsScreen extends FrameLayout {
     private LinearLayout baseRow(String[] icon, String title, String value) {
         title = T.t(title);
         value = T.t(value);
+        if (filtering()) {
+            String hay = DotTextView.normalize(title + " " + (value == null ? "" : value));
+            if (!hay.contains(filter)) return new LinearLayout(act); // non corrisponde: la voce non si aggiunge
+            matches++;
+            if (group == null) {
+                // prima voce trovata di questa sezione: ora la sezione si crea davvero
+                String sec = pendingSection == null ? "" : pendingSection;
+                String f = filter;
+                filter = null;
+                section(sec);
+                filter = f;
+                pendingSection = null;
+            }
+        }
         if (group == null) section("");
         if (group.getChildCount() > 0) {
             View div = new View(act);
@@ -245,6 +324,7 @@ class SettingsScreen extends FrameLayout {
 
     /** Avviso: un riquadro a parte, color ambra, che non si confonde con le impostazioni. */
     void warn(String[] icon, String title, String text, Runnable act) {
+        if (filtering()) return;
         final int amber = th.light ? 0xFFB26A00 : 0xFFFFB547;
         LinearLayout r = new LinearLayout(this.act);
         r.setOrientation(LinearLayout.HORIZONTAL);
@@ -289,6 +369,7 @@ class SettingsScreen extends FrameLayout {
 
     /** Testo piccolo in fondo a un gruppo. */
     void note(String text) {
+        if (filtering()) return;
         TextView t = new TextView(act);
         t.setText(text);
         t.setTextColor(th.sub);
