@@ -287,4 +287,74 @@ final class SearchTools {
     }
 
     private SearchTools() {}
+
+    // =====================================================================
+    // sveglie e timer: "sveglia 7:30", "alarm 6pm", "timer 10 min", "timer 1h 30m"
+    // =====================================================================
+
+    private static final Pattern ALARM = Pattern.compile(
+            "^(?:sveglia|svegliami|alarm|wake me)\\s+(?:alle\\s+|all'|a\\s+|at\\s+)?(\\d{1,2})(?:[:.,h](\\d{2}))?\\s*(am|pm)?$");
+    private static final Pattern TIMER = Pattern.compile("^(?:timer|countdown)\\s+(.+)$");
+    private static final Pattern PART = Pattern.compile(
+            "(\\d+(?:[.,]\\d+)?)\\s*(hours|hour|hrs|hr|ore|ora|h|minutes|minute|minuti|minuto|mins|min|m|seconds|second|secondi|secondo|secs|sec|s)?\\b");
+
+    private static String low(String q) {
+        return java.text.Normalizer.normalize(q == null ? "" : q, java.text.Normalizer.Form.NFD)
+                .replaceAll("\\p{M}", "").toLowerCase(Locale.ROOT).replaceAll("\\s+", " ").trim();
+    }
+
+    /** Ora di una sveglia scritta nella ricerca: {ore, minuti}, oppure null. */
+    static int[] alarmTime(String q) {
+        Matcher m = ALARM.matcher(low(q));
+        if (!m.matches()) return null;
+        int h = Integer.parseInt(m.group(1));
+        int min = m.group(2) == null ? 0 : Integer.parseInt(m.group(2));
+        String ap = m.group(3);
+        if (ap != null) {
+            if (h < 1 || h > 12) return null;
+            if ("pm".equals(ap) && h != 12) h += 12;
+            if ("am".equals(ap) && h == 12) h = 0;
+        }
+        if (h > 23 || min > 59) return null;
+        return new int[]{h, min};
+    }
+
+    /** Durata di un timer scritta nella ricerca, in secondi (al massimo 24 ore), oppure -1. */
+    static int timerSeconds(String q) {
+        Matcher m = TIMER.matcher(low(q));
+        if (!m.matches()) return -1;
+        String rest = m.group(1).replace(" e ", " ").replace(" and ", " ").trim();
+        Matcher p = PART.matcher(rest);
+        double total = 0;
+        int pos = 0;
+        boolean any = false;
+        while (p.find()) {
+            // fra un pezzo e l'altro solo spazi: "10 min pizza" non è un timer
+            if (!rest.substring(pos, p.start()).trim().isEmpty()) return -1;
+            if (p.group().trim().isEmpty()) {
+                pos = p.end();
+                continue;
+            }
+            double v = Double.parseDouble(p.group(1).replace(',', '.'));
+            String u = p.group(2);
+            if (u == null || u.startsWith("m")) total += v * 60;         // senza unità: minuti
+            else if (u.startsWith("h") || u.startsWith("o")) total += v * 3600;
+            else total += v;
+            any = true;
+            pos = p.end();
+        }
+        if (!any || !rest.substring(pos).trim().isEmpty()) return -1;
+        int sec = (int) Math.round(total);
+        return sec >= 1 && sec <= 86400 ? sec : -1;
+    }
+
+    /** "1 h 30 min", "10 min", "45 s". */
+    static String duration(int sec) {
+        int h = sec / 3600, m = (sec % 3600) / 60, s = sec % 60;
+        StringBuilder b = new StringBuilder();
+        if (h > 0) b.append(h).append(" h");
+        if (m > 0) b.append(b.length() > 0 ? " " : "").append(m).append(" min");
+        if (s > 0) b.append(b.length() > 0 ? " " : "").append(s).append(" s");
+        return b.toString();
+    }
 }

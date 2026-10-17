@@ -62,6 +62,8 @@ class LeftPanel extends FrameLayout {
         void startSafe(Intent i);
         void toast(String s);
         void requestCalendar();
+        /** Apre la pagina che mostra cosa viene inviato all'IA e a chi. */
+        void aiTransparency();
     }
 
     static final String[] BLOCKS = {"ai", "news", "calendar", "tasks", "notes"};
@@ -593,6 +595,7 @@ class LeftPanel extends FrameLayout {
             opts.add(T.t("Indirizzo: ") + (b.isEmpty() ? AiClient.defaultBase(p).isEmpty() ? T.t("da impostare") : AiClient.defaultBase(p) : b));
         }
         if (!key.isEmpty()) opts.add(T.t("Cancella la chiave"));
+        opts.add(T.t("Cosa viene inviato e a chi…"));
         Sheet.list(act, th, T.t("Chiedi all'IA"), opts.toArray(new String[0]), -1, w -> {
             String o = opts.get(w);
             if (o.startsWith(T.t("Servizio: "))) {
@@ -629,6 +632,8 @@ class LeftPanel extends FrameLayout {
                             prefs.edit().putString("aiBase_" + p, v.trim()).apply();
                             aiSettings();
                         });
+            } else if (o.equals(T.t("Cosa viene inviato e a chi…"))) {
+                host.aiTransparency();
             } else if (o.equals(T.t("Cancella la chiave"))) {
                 secret.edit().remove("aiKey_" + p).apply();
                 prefs.edit().putString("aiMode_" + p, "app").apply();

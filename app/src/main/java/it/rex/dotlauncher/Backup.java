@@ -28,7 +28,7 @@ final class Backup {
 
     // tipi attesi delle impostazioni lette come numeri o sì/no (le altre sono testi o insiemi)
     private static final Set<String> BOOLS = new HashSet<>(Arrays.asList("anim", "askedLoc", "dockInit",
-            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock", "hiddenSearch"));
+            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock", "hiddenSearch", "standby", "oneHand"));
     private static final Set<String> INTS = new HashSet<>(Arrays.asList("blurWallId", "cols", "pages", "stepAcc",
             "stepGoal", "stepToday", "wallVer", "accentC", "iconShape", "rows", "dockMax", "pageAnim", "menuAnim", "animSpeed", "openAnim",
             "badgeStyle", "badgeSize", "badgePos", "badgeColor"));
@@ -46,6 +46,90 @@ final class Backup {
     /** Dati da non esportare: cache, stato dei sensori e soprattutto le chiavi API. */
     private static boolean skip(String k) {
         return SKIP.contains(k) || k.startsWith("aiKey_");
+    }
+
+    /**
+     * Layout da condividere con altre persone: solo aspetto e disposizione. Niente posizione, note, attività,
+     * notizie, app nascoste o bloccate, limiti, sveglie, chiavi o impostazioni dell'IA (elenco esplicito di ciò che entra).
+     */
+    static final Set<String> SHARE_KEYS = new HashSet<>(Arrays.asList(
+            "style", "mode", "icons", "accentC", "iconShape", "iconScale", "iconPack", "rows", "cols", "pages",
+            "dock", "dockMax", "dockBg", "labels", "h24", "hideStatus", "wall", "wallStyle", "wallVer", "ghost",
+            "anim", "animSpeed", "pageAnim", "menuAnim", "openAnim", "badges", "badgeStyle", "badgeSize", "badgePos",
+            "badgeColor", "drawerOrder", "drawerAll", "sections", "panel", "panelOrder", "panelOff", "engine",
+            "swipeActs", "redApps", "origApps", "glyphApps", "layout", "oneHand"));
+    /** Widget con contenuti personali: nel layout condiviso restano, ma vuoti. */
+    private static final Set<String> PERSONAL_WIDGETS = new HashSet<>(Arrays.asList("note", "photo", "countdown", "counter"));
+
+    static boolean shareKey(String k) {
+        return SHARE_KEYS.contains(k) || k.startsWith("g_");
+    }
+
+    /** Toglie dal layout i contenuti dei widget personali (anche dentro le pile). */
+    static String cleanLayout(String layout) throws Exception {
+        JSONArray a = new JSONArray(layout);
+        for (int j = 0; j < a.length(); j++) {
+            JSONObject it = a.getJSONObject(j);
+            String type = it.optString("t");
+            if (PERSONAL_WIDGETS.contains(type)) it.put("d", "");
+            else if ("stack".equals(type)) {
+                JSONObject st = new JSONObject(it.optString("d", "{}"));
+                JSONArray kids = st.optJSONArray("k");
+                if (kids != null) {
+                    for (int q = 0; q < kids.length(); q++) {
+                        JSONObject k = kids.getJSONObject(q);
+                        if (PERSONAL_WIDGETS.contains(k.optString("t"))) k.put("d", "");
+                    }
+                    it.put("d", st.toString());
+                }
+            }
+        }
+        return a.toString();
+    }
+
+    /** I widget mostrati dalle icone sono legati a questo telefono: nel layout condiviso non vanno. */
+    private static String cleanSwipe(String json) throws Exception {
+        JSONObject o = new JSONObject(json), out = new JSONObject();
+        JSONArray names = o.names();
+        if (names != null) {
+            for (int i = 0; i < names.length(); i++) {
+                String k = names.getString(i), v = o.optString(k);
+                if (!v.startsWith("widget:")) out.put(k, v);
+            }
+        }
+        return out.toString();
+    }
+
+    /** Scrive il layout da condividere (vedi SHARE_KEYS) nel file indicato. */
+    static void exportShare(SharedPreferences prefs, java.io.File f) throws Exception {
+        JSONObject data = new JSONObject();
+        for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
+            String k = e.getKey();
+            if (!shareKey(k)) continue;
+            Object v = e.getValue();
+            JSONObject o = new JSONObject();
+            if (v instanceof String) {
+                o.put("t", "s");
+                o.put("v", "layout".equals(k) ? cleanLayout((String) v) : "swipeActs".equals(k) ? cleanSwipe((String) v) : v);
+            } else if (v instanceof Boolean) { o.put("t", "b"); o.put("v", v); }
+            else if (v instanceof Integer) { o.put("t", "i"); o.put("v", v); }
+            else if (v instanceof Float) { o.put("t", "f"); o.put("v", (double) (Float) v); }
+            else if (v instanceof Set) {
+                JSONArray arr = new JSONArray();
+                for (Object x : (Set<?>) v) arr.put(String.valueOf(x));
+                o.put("t", "set");
+                o.put("v", arr);
+            } else continue;
+            data.put(k, o);
+        }
+        JSONObject root = new JSONObject();
+        root.put("app", "DotLauncher");
+        root.put("version", 1);
+        root.put("share", true);
+        root.put("prefs", data);
+        try (OutputStream out = new java.io.FileOutputStream(f)) {
+            out.write(root.toString(2).getBytes(StandardCharsets.UTF_8));
+        }
     }
 
     static void export(Context c, SharedPreferences prefs, Uri uri) throws Exception {
@@ -89,14 +173,19 @@ final class Backup {
         JSONObject root = new JSONObject(sb.toString());
         if (!"DotLauncher".equals(root.optString("app"))) throw new Exception("not a backup");
         JSONObject data = root.getJSONObject("prefs");
+        // un layout condiviso cambia solo aspetto e disposizione: le altre impostazioni restano come sono
+        final boolean share = root.optBoolean("share", false);
         SharedPreferences.Editor ed = prefs.edit();
-        for (String k : prefs.getAll().keySet()) if (!skip(k)) ed.remove(k);
+        if (!share) {
+            for (String k : prefs.getAll().keySet()) if (!skip(k)) ed.remove(k);
+        }
         int droppedSys = 0;
         JSONArray keys = data.names();
         if (keys != null) {
             for (int i = 0; i < keys.length(); i++) {
                 String k = keys.getString(i);
                 JSONObject o = data.getJSONObject(k);
+                if (share && !shareKey(k)) continue; // in un layout condiviso entra solo ciò che è ammesso
                 if (!typeOk(k, o.getString("t"))) continue; // tipo inatteso: meglio saltarlo che bloccare la home
                 switch (o.getString("t")) {
                     case "s":

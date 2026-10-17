@@ -412,6 +412,19 @@ class SettingsScreen extends FrameLayout {
         r.setOnClickListener(v -> act.run());
     }
 
+    /** Voce solo da leggere: niente freccia e niente tocco. */
+    void info(String[] icon, String title, String value) {
+        LinearLayout r = baseRow(icon, title, value);
+        r.setBackground(null);
+        TextView v = r.getChildCount() > 1 && r.getChildAt(1) instanceof LinearLayout
+                && ((LinearLayout) r.getChildAt(1)).getChildCount() > 1
+                ? (TextView) ((LinearLayout) r.getChildAt(1)).getChildAt(1) : null;
+        if (v != null) {
+            v.setMaxLines(12); // qui la descrizione si legge per intero
+            v.setTextIsSelectable(false);
+        }
+    }
+
     /** Voce con interruttore. */
     void toggle(String[] icon, String title, String desc, boolean on, OnToggle cb) {
         LinearLayout r = baseRow(icon, title, desc);
