@@ -138,11 +138,13 @@ class SettingsScreen extends FrameLayout {
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
         super.onLayout(changed, l, t, r, b);
         if (swipeBack && android.os.Build.VERSION.SDK_INT >= 29) {
-            // a metà dei bordi il gesto arriva alla pagina invece che al sistema (Android ne concede 200 dp per lato)
-            int w = r - l, h = b - t, half = px(100), edge = px(32);
+            // nella parte bassa dei bordi, dove arriva il pollice, il gesto va alla pagina invece che al sistema.
+            // Android ne concede al massimo 200 dp per lato; si lascia libero l'angolo in basso (gesto Home).
+            int w = r - l, h = b - t, band = px(200), edge = px(32);
+            int bottom = h - getPaddingBottom() - px(56), top = Math.max(0, bottom - band);
             java.util.List<android.graphics.Rect> ex = new java.util.ArrayList<>();
-            ex.add(new android.graphics.Rect(0, h / 2 - half, edge, h / 2 + half));
-            ex.add(new android.graphics.Rect(w - edge, h / 2 - half, w, h / 2 + half));
+            ex.add(new android.graphics.Rect(0, top, edge, bottom));
+            ex.add(new android.graphics.Rect(w - edge, top, w, bottom));
             setSystemGestureExclusionRects(ex);
         }
     }
