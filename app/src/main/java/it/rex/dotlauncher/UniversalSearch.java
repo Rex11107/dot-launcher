@@ -61,6 +61,12 @@ class UniversalSearch extends ScrollView {
         void requestContacts();
         void requestCalendar();
         String searchEngine();
+        /** Le app nascoste si possono trovare con la ricerca (opzione, spenta di base). */
+        boolean hiddenSearch();
+        /** Le app nascoste sono visibili adesso (nessuna protezione, o già sbloccate). */
+        boolean hiddenOpen();
+        /** Chiede impronta, volto o PIN per le app nascoste e poi esegue {@code ok}. */
+        void unlockHidden(Runnable ok);
     }
 
     private final Activity act;
@@ -191,6 +197,7 @@ class UniversalSearch extends ScrollView {
             if (firstAction == null) firstAction = () -> host.launchKey(firstApp.key, null);
             appsSection(found.size() > 12 ? found.subList(0, 12) : found, "App");
         }
+        hiddenApps(norm);
         // 4) scorciatoie delle app
         if (shortcuts != null && norm.length() >= 2) {
             int n = 0;
@@ -371,6 +378,35 @@ class UniversalSearch extends ScrollView {
                 row.addView(new View(act), new LinearLayout.LayoutParams(0, 1, 1f));
             }
         }
+    }
+
+    /**
+     * App nascoste che corrispondono alla ricerca, solo se l'opzione è attiva e solo cercandole (mai nell'elenco
+     * senza testo). Con la protezione attiva compare una riga per sbloccare, uguale che ci siano risultati o no:
+     * così non si capisce se esiste un'app nascosta con quel nome.
+     */
+    private void hiddenApps(String norm) {
+        if (!host.hiddenSearch() || norm.length() < 2) return;
+        Set<String> hidden = host.hiddenKeys();
+        if (hidden.isEmpty()) return;
+        if (!host.hiddenOpen()) {
+            final String q = query;
+            row(SectionIcons.bitmap(SectionIcons.EYE_OFF, px(40), th.onTile, th.accent, circle()),
+                    T.t("Cerca anche tra le app nascoste"), T.t("Serve impronta, volto o PIN"),
+                    () -> host.unlockHidden(() -> setQuery(q)), null);
+            return;
+        }
+        List<HomeActivity.AppEntry> found = new ArrayList<>();
+        for (HomeActivity.AppEntry a : host.apps()) {
+            if (!hidden.contains(a.key)) continue;
+            if (DotTextView.normalize(a.label).contains(norm)) found.add(a);
+        }
+        if (found.isEmpty()) return;
+        if (firstAction == null) {
+            final HomeActivity.AppEntry h = found.get(0);
+            firstAction = () -> host.launchKey(h.key, null);
+        }
+        appsSection(found.size() > 8 ? found.subList(0, 8) : found, T.t("App nascoste"));
     }
 
     /** Senza testo: tutte le app in ordine alfabetico (come prima). */

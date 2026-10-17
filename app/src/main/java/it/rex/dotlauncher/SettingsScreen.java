@@ -41,6 +41,19 @@ class SettingsScreen extends FrameLayout {
     private LinearLayout group;
 
     private final LinearLayout bar;
+    private final LinearLayout outer;
+    private View titleView;
+    private View header;
+    /** Ricerca: si mostrano solo le voci che contengono il testo (null = tutte). */
+    private String filter;
+    private String pendingSection;
+    private int matches;
+
+    // ---------- trascinamento laterale per tornare indietro ----------
+    private Runnable onBackRun;
+    private boolean swipeBack, swiping, vertical;
+    private float downX, downY;
+    private android.view.VelocityTracker vel;
 
     SettingsScreen(Activity a, Theme th, Runnable onBack) {
         this(a, th, null, onBack);
@@ -54,7 +67,7 @@ class SettingsScreen extends FrameLayout {
         dp = a.getResources().getDisplayMetrics().density;
         setBackgroundColor(th.drawerBg);
         setClickable(true);
-        LinearLayout outer = new LinearLayout(a);
+        outer = new LinearLayout(a);
         outer.setOrientation(LinearLayout.VERTICAL);
         addView(outer, new LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
 
@@ -67,6 +80,7 @@ class SettingsScreen extends FrameLayout {
         back.setPadding(px(12), px(12), px(12), px(12));
         back.setContentDescription(T.t("Indietro"));
         back.setOnClickListener(v -> onBack.run());
+        onBackRun = onBack;
         bar.addView(back, new LinearLayout.LayoutParams(px(48), px(48)));
         View title;
         if (th.dots) {
@@ -75,16 +89,18 @@ class SettingsScreen extends FrameLayout {
             dt.setFitWidth(true, 3.4f * dp);
             dt.setColor(th.onTile);
             dt.setAccent(".", th.accent);
-            dt.setText(titleText == null ? T.t("IMPOSTAZIONI.") : titleText.toUpperCase(T.loc()) + ".");
             title = dt;
         } else {
             TextView tv = new TextView(a);
-            tv.setText(titleText == null ? T.t("Impostazioni") : titleText);
             tv.setTextColor(th.onTile);
             tv.setTypeface(th.titleFace);
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 26);
+            tv.setSingleLine(true);
+            tv.setEllipsize(TextUtils.TruncateAt.END);
             title = tv;
         }
+        titleView = title;
+        setTitle(titleText);
         LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
         tl.leftMargin = px(6);
         bar.addView(title, tl);
@@ -102,6 +118,159 @@ class SettingsScreen extends FrameLayout {
         outer.addView(scroll, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
     }
 
+    /** Passaggio tra elenco e categoria: il contenuto entra da destra (avanti) o da sinistra (indietro). */
+    void slideContent(boolean forward) {
+        scroll.animate().cancel();
+        scroll.setTranslationX((forward ? 1 : -1) * px(36));
+        scroll.setAlpha(0f);
+        scroll.animate().translationX(0).alpha(1f).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+    }
+
+    /**
+     * Trascinando di lato la pagina torna indietro da sola. Serve sopra la home: lì molti telefoni (Honor compreso)
+     * tengono per sé il gesto indietro del sistema, perché per loro la home non ha niente "dietro".
+     */
+    void enableSwipeBack() {
+        swipeBack = true;
+    }
+
+    @Override
+    protected void onLayout(boolean changed, int l, int t, int r, int b) {
+        super.onLayout(changed, l, t, r, b);
+        if (swipeBack && android.os.Build.VERSION.SDK_INT >= 29) {
+            // nella parte bassa dei bordi, dove arriva il pollice, il gesto va alla pagina invece che al sistema.
+            // Android ne concede al massimo 200 dp per lato; si lascia libero l'angolo in basso (gesto Home).
+            int w = r - l, h = b - t, band = px(200), edge = px(32);
+            int bottom = h - getPaddingBottom() - px(56), top = Math.max(0, bottom - band);
+            java.util.List<android.graphics.Rect> ex = new java.util.ArrayList<>();
+            ex.add(new android.graphics.Rect(0, top, edge, bottom));
+            ex.add(new android.graphics.Rect(w - edge, top, w, bottom));
+            setSystemGestureExclusionRects(ex);
+        }
+    }
+
+    /**
+     * Il gesto si legge qui, prima di passare il tocco all'elenco: così arriva sempre, anche quando l'elenco
+     * ha già cominciato a scorrere (che altrimenti impedirebbe alla pagina di vedere il resto del movimento).
+     */
+    @Override
+    public boolean dispatchTouchEvent(android.view.MotionEvent ev) {
+        if (!swipeBack) return super.dispatchTouchEvent(ev);
+        int a = ev.getActionMasked();
+        if (a == android.view.MotionEvent.ACTION_DOWN) {
+            downX = ev.getRawX();
+            downY = ev.getRawY();
+            swiping = false;
+            vertical = false;
+            if (vel != null) vel.recycle();
+            vel = android.view.VelocityTracker.obtain();
+        }
+        if (vel != null) vel.addMovement(ev);
+        float dx = ev.getRawX() - downX, dy = ev.getRawY() - downY;
+        if (!swiping) {
+            if (a == android.view.MotionEvent.ACTION_MOVE && !vertical && ev.getPointerCount() == 1) {
+                int slop = android.view.ViewConfiguration.get(getContext()).getScaledTouchSlop();
+                if (Math.abs(dx) > slop * 1.5f && Math.abs(dx) > Math.abs(dy) * 1.2f) {
+                    // movimento orizzontale: da qui il tocco è del gesto, l'elenco riceve un annullamento
+                    swiping = true;
+                    android.view.MotionEvent c = android.view.MotionEvent.obtain(ev);
+                    c.setAction(android.view.MotionEvent.ACTION_CANCEL);
+                    super.dispatchTouchEvent(c);
+                    c.recycle();
+                    downX = ev.getRawX() - Math.signum(dx) * slop * 1.5f; // niente salto all'inizio
+                    return true;
+                } else if (Math.abs(dy) > slop * 2 && Math.abs(dy) > Math.abs(dx) * 1.5f) {
+                    vertical = true; // l'elenco sta scorrendo: il gesto laterale non parte più
+                }
+            }
+            return super.dispatchTouchEvent(ev);
+        }
+        if (a == android.view.MotionEvent.ACTION_MOVE) {
+            // la pagina segue il dito, un po' frenata, e si rimpicciolisce appena (come l'anteprima di Android)
+            float p = Math.min(1f, Math.abs(dx) / (getWidth() * 0.5f));
+            animate().cancel();
+            setTranslationX(dx * 0.4f);
+            setScaleX(1f - 0.06f * p);
+            setScaleY(1f - 0.06f * p);
+        } else if (a == android.view.MotionEvent.ACTION_UP || a == android.view.MotionEvent.ACTION_CANCEL) {
+            float v = 0;
+            if (vel != null) {
+                vel.computeCurrentVelocity(1000);
+                v = vel.getXVelocity();
+                vel.recycle();
+                vel = null;
+            }
+            swiping = false;
+            boolean go = a == android.view.MotionEvent.ACTION_UP
+                    && (Math.abs(dx) > px(72) || (Math.abs(dx) > px(28) && Math.abs(v) > px(500) && Math.signum(v) == Math.signum(dx)));
+            if (go && onBackRun != null) {
+                // posizione normale subito: chiusura o cambio di pagina hanno già la loro animazione
+                animate().cancel();
+                setTranslationX(0);
+                setScaleX(1f);
+                setScaleY(1f);
+                performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY);
+                onBackRun.run();
+            } else {
+                animate().translationX(0).scaleX(1f).scaleY(1f).setDuration(Motion.FADE)
+                        .setInterpolator(Motion.STANDARD).start();
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public boolean performClick() {
+        return super.performClick(); // il trascinamento non è un clic; TalkBack usa il pulsante Indietro
+    }
+
+    /** Titolo in alto (null = "Impostazioni"). */
+    void setTitle(String titleText) {
+        if (titleView instanceof DotTextView) {
+            ((DotTextView) titleView).setText(titleText == null ? T.t("IMPOSTAZIONI.") : titleText.toUpperCase(T.loc()) + ".");
+        } else if (titleView instanceof TextView) {
+            ((TextView) titleView).setText(titleText == null ? T.t("Impostazioni") : titleText);
+        }
+        if (titleView != null) titleView.setContentDescription(titleText == null ? T.t("Impostazioni") : titleText);
+    }
+
+    /** Vista fissa sotto il titolo che non scorre e non si svuota con clear() (es. il campo di ricerca). */
+    void setHeader(View v) {
+        if (header != null) outer.removeView(header);
+        header = v;
+        if (v != null) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = px(16);
+            lp.rightMargin = px(16);
+            lp.bottomMargin = px(4);
+            outer.addView(v, 1, lp);
+        }
+    }
+
+    void showHeader(boolean show) {
+        if (header != null) header.setVisibility(show ? View.VISIBLE : View.GONE);
+    }
+
+    /**
+     * Ricerca: da qui in poi si aggiungono solo le voci il cui titolo o descrizione contiene il testo;
+     * le sezioni compaiono solo se hanno almeno una voce. null = nessun filtro.
+     */
+    void setFilter(String q) {
+        filter = q == null || q.trim().isEmpty() ? null : DotTextView.normalize(q.trim());
+        pendingSection = null;
+        matches = 0;
+    }
+
+    /** Voci trovate con il filtro attuale. */
+    int matches() {
+        return matches;
+    }
+
+    private boolean filtering() {
+        return filter != null;
+    }
+
     /** Elemento in alto a destra, accanto al titolo. */
     void setAction(View v) {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -112,6 +281,7 @@ class SettingsScreen extends FrameLayout {
 
     /** Una vista libera nell'elenco; le voci successive aprono un nuovo gruppo. */
     void custom(View v) {
+        if (filtering()) return;
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
         lp.topMargin = px(10);
@@ -138,11 +308,19 @@ class SettingsScreen extends FrameLayout {
     void clear() {
         col.removeAllViews();
         group = null;
+        pendingSection = null;
+        matches = 0;
     }
 
     // ---------- costruzione ----------
 
     void section(String title) {
+        if (filtering()) {
+            // la sezione compare solo se almeno una voce corrisponde alla ricerca
+            pendingSection = title;
+            group = null;
+            return;
+        }
         title = T.t(title);
         TextView t = new TextView(act);
         t.setText(th.upperLabels ? title.toUpperCase(T.loc()) : title);
@@ -167,6 +345,20 @@ class SettingsScreen extends FrameLayout {
     private LinearLayout baseRow(String[] icon, String title, String value) {
         title = T.t(title);
         value = T.t(value);
+        if (filtering()) {
+            String hay = DotTextView.normalize(title + " " + (value == null ? "" : value));
+            if (!hay.contains(filter)) return new LinearLayout(act); // non corrisponde: la voce non si aggiunge
+            matches++;
+            if (group == null) {
+                // prima voce trovata di questa sezione: ora la sezione si crea davvero
+                String sec = pendingSection == null ? "" : pendingSection;
+                String f = filter;
+                filter = null;
+                section(sec);
+                filter = f;
+                pendingSection = null;
+            }
+        }
         if (group == null) section("");
         if (group.getChildCount() > 0) {
             View div = new View(act);
@@ -245,6 +437,7 @@ class SettingsScreen extends FrameLayout {
 
     /** Avviso: un riquadro a parte, color ambra, che non si confonde con le impostazioni. */
     void warn(String[] icon, String title, String text, Runnable act) {
+        if (filtering()) return;
         final int amber = th.light ? 0xFFB26A00 : 0xFFFFB547;
         LinearLayout r = new LinearLayout(this.act);
         r.setOrientation(LinearLayout.HORIZONTAL);
@@ -289,6 +482,7 @@ class SettingsScreen extends FrameLayout {
 
     /** Testo piccolo in fondo a un gruppo. */
     void note(String text) {
+        if (filtering()) return;
         TextView t = new TextView(act);
         t.setText(text);
         t.setTextColor(th.sub);

@@ -241,6 +241,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Motion.menu = Math.max(0, Math.min(2, prefs.getInt("menuAnim", 0)));
         Pager.transition = Math.max(0, Math.min(3, prefs.getInt("pageAnim", 0)));
         BadgeDrawable.configure(prefs);
+        Freq.on = "freq".equals(prefs.getString("drawerOrder", "alpha"));
         th = Theme.build(this, prefs);
         themeSig = Theme.signature(prefs);
         h24 = prefs.getBoolean("h24", DateFormat.is24HourFormat(this));
@@ -328,8 +329,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         root.post(this::fitToScreen);
         if (saved != null && saved.getBoolean("set", false)) {
             final int y = saved.getInt("setY", 0);
+            final int page = saved.getInt("setPage", SP_MAIN);
             root.post(() -> {
                 showSettings();
+                if (page != SP_MAIN) {
+                    settingsPage = page; // dopo un riavvio della home si resta nella stessa categoria
+                    fillSettings();
+                }
                 settings.scrollTo(y);
             });
         }
@@ -344,6 +350,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         out.putInt("pr", pendingRow);
         out.putInt("pph", pendingPhoto == null ? -1 : items.indexOf(pendingPhoto));
         out.putBoolean("set", settingsOpen);
+        out.putInt("setPage", settingsPage);
         if (settings != null) out.putInt("setY", settings.scrollY());
     }
 
@@ -417,6 +424,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             consumePendingShortcuts();
             checkUpdate(false);
             refreshUsage();
+            refreshFreq();
             if (waveOnWake) {
                 waveOnWake = false;
                 if (hasWindowFocus()) playWave(); // solo se la home è davvero davanti, non dietro le app recenti
@@ -533,7 +541,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (onboarding != null) return; // la configurazione guidata si chiude con "Salta" o "Inizia"
         if (StepsPopup.dismiss()) return;
         if (resizer != null) exitResize();
-        else if (settingsOpen) closeSettings();
+        else if (settingsOpen) settingsBack();
         else if (panelOpen) closePanel();
         else if (drawerOpen) {
             if (searchMode) exitSearch();
@@ -577,8 +585,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
                         @Override
                         public void onBackInvoked() {
+                            View t = target;
                             target = null;
                             handleBack();
+                            // se il pannello resta aperto (es. da una categoria all'elenco) torna alla misura piena
+                            if (t != null && t == backTarget()) {
+                                t.animate().scaleX(1f).scaleY(1f).translationX(0).setDuration(Motion.FADE)
+                                        .setInterpolator(Motion.STANDARD).start();
+                            }
                         }
 
                         @Override
@@ -1111,6 +1125,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public Set<String> hiddenKeys() {
         return hidden();
+    }
+
+    @Override
+    public boolean hiddenSearch() {
+        return prefs.getBoolean("hiddenSearch", false);
+    }
+
+    @Override
+    public boolean hiddenOpen() {
+        return !prefs.getBoolean("hiddenLock", false) || System.currentTimeMillis() < authUntil;
+    }
+
+    @Override
+    public void unlockHidden(Runnable ok) {
+        withAuth(ok);
     }
 
     @Override
@@ -3896,6 +3925,20 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         mindfulThenLaunch(a, v);
     }
 
+    /** Animazione di apertura scelta nelle impostazioni: 0 zoom, 1 rivelazione circolare, 2 dissolvenza, 3 nessuna. */
+    private Bundle openAnim(View v) {
+        switch (Math.max(0, Math.min(3, prefs.getInt("openAnim", 0)))) {
+            case 1:
+                return ActivityOptions.makeClipRevealAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+            case 2:
+                return ActivityOptions.makeCustomAnimation(this, android.R.anim.fade_in, android.R.anim.fade_out).toBundle();
+            case 3:
+                return ActivityOptions.makeCustomAnimation(this, R.anim.dot_open_none, R.anim.dot_open_none).toBundle();
+            default:
+                return ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+        }
+    }
+
     private void launchNow(AppEntry a, View v) {
         if (a == null) return;
         if (v != null && !v.isAttachedToWindow()) v = null;
@@ -3905,7 +3948,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (v != null && v.getWidth() > 0) {
                 r = new Rect();
                 v.getGlobalVisibleRect(r);
-                opts = ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+                opts = openAnim(v);
             }
             launcherApps.startMainActivity(a.component, a.user, r, opts);
         } catch (Exception e) {
@@ -4074,6 +4117,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             Usage.refreshToday(getApplicationContext());
             ui.post(() -> {
                 if (!destroyed) refreshTiles("usage");
+            });
+        });
+    }
+
+    /** Ordine "Più usate": ricalcola le aperture recenti al massimo ogni mezz'ora, mai mentre il cassetto è aperto. */
+    private void refreshFreq() {
+        if (!Freq.on || !Freq.stale() || !Usage.granted(this)) return;
+        bg(appExec, () -> {
+            boolean changed = Freq.compute(getApplicationContext());
+            ui.post(() -> {
+                if (destroyed || !changed) return;
+                drawerDirty = true; // si riordina alla prossima apertura, non sotto il dito
             });
         });
     }
@@ -4433,6 +4488,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         list.setOrientation(LinearLayout.VERTICAL);
         list.setPadding(px(4), 0, px(4), px(12));
         final Runnable openSet = this::showSettings;
+        final Runnable openLook = () -> {
+            showSettings();
+            openSettingsPage(SP_LOOK);
+        };
+        final Runnable openGest = () -> {
+            showSettings();
+            openSettingsPage(SP_ANIM);
+        };
         Object[][] g = {
                 {"Home"},
                 {"Aggiungere un widget", "Tieni premuto uno spazio vuoto della home → Widget Dot.",
@@ -4457,8 +4520,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                         (Runnable) this::openPanel},
                 {"Personalizzazione"},
                 {"Nome e icona di un'app", "Tieni premuta l'app → Rinomina o Cambia icona.", null},
-                {"Colori, forme, caratteri e animazioni", "Impostazioni → Aspetto, Animazioni e Personalizzazione.", openSet},
-                {"Gesti", "Impostazioni → Gesti: scegli cosa fanno scorrimenti, doppio tocco, due dita e pizzico.", openSet},
+                {"Colori, forme, caratteri e animazioni", "Impostazioni → Aspetto e icone, e Animazioni e gesti.", openLook},
+                {"Gesti", "Impostazioni → Animazioni e gesti: scegli cosa fanno scorrimenti, doppio tocco, due dita e pizzico.", openGest},
                 {"Benessere digitale"},
                 {"Tempo di utilizzo", "Quanto usi ogni app oggi, con il numero di aperture.", (Runnable) this::showUsage},
                 {"Modalità focus", "Metti in pausa le app che distraggono per un po' di tempo.", (Runnable) this::focusMenu},
@@ -4507,7 +4570,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 row.addView(go);
                 row.setOnClickListener(v -> {
                     if (dlg[0] != null) dlg[0].dismiss();
-                    if (act == openSet || !settingsOpen) {
+                    if (act == openSet || act == openLook || act == openGest || !settingsOpen) {
                         act.run();
                         return;
                     }
@@ -5798,7 +5861,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (v != null && v.getWidth() > 0) {
                 r = new Rect();
                 v.getGlobalVisibleRect(r);
-                opts = ActivityOptions.makeScaleUpAnimation(v, 0, 0, v.getWidth(), v.getHeight()).toBundle();
+                opts = openAnim(v);
             }
             launcherApps.startShortcut(p[0], p[1], r, opts, u);
         } catch (Exception e) {
@@ -5906,6 +5969,38 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         toast(T.t("Scorciatoia aggiunta alla home"));
     }
 
+    /** Azione di risposta diretta di una notifica (con campo di testo libero), oppure null. */
+    static android.app.Notification.Action replyAction(android.app.Notification no) {
+        if (no.actions == null) return null;
+        android.app.Notification.Action any = null;
+        for (android.app.Notification.Action ac : no.actions) {
+            android.app.RemoteInput[] ins = ac.getRemoteInputs();
+            if (ins == null || ac.actionIntent == null) continue;
+            boolean free = false;
+            for (android.app.RemoteInput ri : ins) if (ri.getAllowFreeFormInput()) free = true;
+            if (!free) continue;
+            if (Build.VERSION.SDK_INT >= 28 && ac.getSemanticAction() == android.app.Notification.Action.SEMANTIC_ACTION_REPLY) return ac;
+            if (any == null) any = ac;
+        }
+        return any;
+    }
+
+    /** Invia il testo all'app come se si rispondesse dalla tendina delle notifiche. */
+    private void sendReply(android.app.Notification.Action ac, String text) {
+        if (text == null || text.trim().isEmpty()) return;
+        try {
+            android.app.RemoteInput[] ins = ac.getRemoteInputs();
+            Bundle res = new Bundle();
+            for (android.app.RemoteInput ri : ins) if (ri.getAllowFreeFormInput()) res.putCharSequence(ri.getResultKey(), text.trim());
+            Intent fill = new Intent();
+            android.app.RemoteInput.addResultsToIntent(ins, fill, res);
+            ac.actionIntent.send(this, 0, fill);
+            toast(T.t("Risposta inviata"));
+        } catch (Exception e) {
+            toast(T.t("Risposta non inviata: apri l'app per rispondere"));
+        }
+    }
+
     /** Mostra il menu di un'app con le azioni rapide in cima. */
     private Dialog showMenuWithShortcuts(String title, AppEntry a, List<String> labels, List<Runnable> acts) {
         // notifiche dell'app in cima al menu (se l'accesso alle notifiche è attivo)
@@ -5920,8 +6015,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 i++;
                 ns = new ArrayList<>(); // le singole notifiche non si mostrano
             }
+            int shown = 0; // le righe "Rispondi" non contano tra le 3 notifiche mostrate
             for (android.service.notification.StatusBarNotification n : ns) {
-                if (i >= 3) break;
+                if (shown++ >= 3) break;
                 android.os.Bundle ex = n.getNotification().extras;
                 CharSequence t = ex.getCharSequence(android.app.Notification.EXTRA_TITLE);
                 CharSequence x = ex.getCharSequence(android.app.Notification.EXTRA_TEXT);
@@ -5937,6 +6033,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     }
                 });
                 i++;
+                // risposta diretta, se l'app la offre (messaggi, email…)
+                final android.app.Notification.Action reply = replyAction(n.getNotification());
+                if (reply != null) {
+                    final String who = t == null ? a.label : t.toString();
+                    labels.add(i, "↩  " + T.t("Rispondi a ") + who);
+                    acts.add(i, () -> Sheet.input(this, th, T.t("Rispondi a ") + who, T.t("Scrivi la risposta"), "", true,
+                            txt -> sendReply(reply, txt)));
+                    i++;
+                }
             }
             if (!ns.isEmpty()) {
                 labels.add(i, T.t("Cancella le notifiche (") + ns.size() + ")");
@@ -6075,15 +6180,23 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void showSettings() {
         if (settings == null) {
-            settings = new SettingsScreen(this, th, this::closeSettings);
+            settings = new SettingsScreen(this, th, this::settingsBack);
+            settings.enableSwipeBack(); // sopra la home il gesto indietro del sistema spesso non arriva
             settings.setVisibility(View.GONE);
             root.addView(settings, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
             root.requestApplyInsets();
         }
+        if (!settingsOpen) {
+            // si riparte sempre dall'elenco delle categorie, senza ricerca
+            settingsPage = SP_MAIN;
+            settingsQuery = "";
+            if (settingsSearch != null) settingsSearch.setText("");
+        }
         fillSettings();
         if (settingsOpen) return;
         settingsOpen = true;
+
         settings.bringToFront();
         settings.animate().cancel();
         if (settings.getVisibility() != View.VISIBLE) {
@@ -6097,6 +6210,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void closeSettings() {
         if (settings == null || !settingsOpen) return;
         settingsOpen = false;
+        hideSettingsKeyboard();
         settings.animate().cancel();
         menuOut(settings, 0, px(40))
                 .withEndAction(() -> {
@@ -6113,273 +6227,464 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         settings.scrollTo(y);
     }
 
+    // ---------- categorie ----------
+
+    static final int SP_MAIN = -1, SP_LOOK = 1, SP_ANIM = 2, SP_HOME = 3, SP_WIDGETS = 4, SP_APPS = 5,
+            SP_NOTIF = 6, SP_WELL = 7, SP_SYSTEM = 8, SP_INFO = 9;
+    /** Categoria aperta nelle impostazioni (SP_MAIN = elenco delle categorie). */
+    private int settingsPage = SP_MAIN;
+    /** Testo cercato nella pagina principale ("" = nessuna ricerca). */
+    private String settingsQuery = "";
+    private android.widget.EditText settingsSearch;
+
+    private static String pageTitle(int page) {
+        switch (page) {
+            case SP_LOOK: return T.t("Aspetto e icone");
+            case SP_ANIM: return T.t("Animazioni e gesti");
+            case SP_HOME: return T.t("Home e dock");
+            case SP_WIDGETS: return T.t("Widget");
+            case SP_APPS: return T.t("App");
+            case SP_NOTIF: return T.t("Notifiche");
+            case SP_WELL: return T.t("Benessere digitale");
+            case SP_SYSTEM: return T.t("Sistema");
+            case SP_INFO: return T.t("Informazioni");
+            default: return null;
+        }
+    }
+
+    private void hideSettingsKeyboard() {
+        if (settingsSearch == null) return;
+        android.view.inputmethod.InputMethodManager im =
+                (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+        if (im != null) im.hideSoftInputFromWindow(settingsSearch.getWindowToken(), 0);
+        settingsSearch.clearFocus();
+        settingsSearch.setFocusableInTouchMode(false);
+    }
+
+    private void openSettingsPage(int page) {
+        hideSettingsKeyboard();
+        boolean forward = page != SP_MAIN;
+        settingsPage = page;
+        fillSettings();
+        settings.scrollTo(0);
+        settings.slideContent(forward);
+    }
+
+    /** Indietro dalle impostazioni: da una categoria (o da una ricerca) si torna all'elenco, poi si chiude. */
+    private void settingsBack() {
+        if (settingsSearch != null && settingsSearch.hasFocus()) hideSettingsKeyboard();
+        if (settingsPage != SP_MAIN) {
+            openSettingsPage(SP_MAIN);
+        } else if (!settingsQuery.isEmpty() && settingsSearch != null) {
+            settingsSearch.setText(""); // svuota la ricerca e ricostruisce l'elenco
+        } else {
+            closeSettings();
+        }
+    }
+
+    /** Campo di ricerca fisso sopra l'elenco delle categorie. */
+    private android.widget.EditText settingsSearchField() {
+        android.widget.EditText e = new android.widget.EditText(this);
+        e.setHint(T.t("Cerca nelle impostazioni"));
+        e.setHintTextColor(th.sub);
+        e.setTextColor(th.onTile);
+        e.setTypeface(th.bodyFace);
+        e.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
+        e.setSingleLine(true);
+        e.setImeOptions(android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH);
+        e.setPadding(px(18), px(12), px(18), px(12));
+        e.setMinHeight(px(48));
+        GradientDrawable g = new GradientDrawable();
+        g.setColor(th.tile);
+        g.setCornerRadius(px(24));
+        if (th.stroke != 0) g.setStroke(Math.max(1, px(1)), th.stroke);
+        e.setBackground(g);
+        // il campo prende il focus solo quando lo si tocca: aprendo le impostazioni la tastiera resta chiusa
+        // e il gesto indietro arriva sempre alla home
+        e.setFocusableInTouchMode(false);
+        e.setOnTouchListener((v, ev) -> {
+            if (ev.getActionMasked() == MotionEvent.ACTION_UP && !v.isFocusableInTouchMode()) {
+                v.setFocusableInTouchMode(true);
+                v.requestFocus();
+                android.view.inputmethod.InputMethodManager im =
+                        (android.view.inputmethod.InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (im != null) im.showSoftInput(v, 0);
+            }
+            return false;
+        });
+        e.addTextChangedListener(new android.text.TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence c, int a, int b, int n) {}
+            @Override public void onTextChanged(CharSequence c, int a, int b, int n) {}
+            @Override public void afterTextChanged(android.text.Editable ed) {
+                String q = ed.toString().trim();
+                if (q.equals(settingsQuery)) return;
+                settingsQuery = q;
+                if (settingsOpen && settingsPage == SP_MAIN) {
+                    fillSettings();
+                    settings.scrollTo(0);
+                }
+            }
+        });
+        return e;
+    }
+
     private void fillSettings() {
         SettingsScreen st = settings;
         st.clear();
+        if (settingsSearch == null) {
+            settingsSearch = settingsSearchField();
+            st.setHeader(settingsSearch);
+        }
+        st.setTitle(pageTitle(settingsPage));
+        st.showHeader(settingsPage == SP_MAIN);
+        final boolean searching = settingsPage == SP_MAIN && !settingsQuery.isEmpty();
+        if (settingsPage == SP_MAIN && !searching) {
+            settingsMain(st);
+            return;
+        }
+        // una categoria, oppure (cercando) tutte le voci filtrate
+        st.setFilter(searching ? settingsQuery : null);
+        final int pg = searching ? 0 : settingsPage;
         String style = prefs.getString("style", "classic");
         String mode = prefs.getString("mode", "dark");
         String icons = prefs.getString("icons", IconFactory.AUTO);
         String city = prefs.getString("city", "");
 
-        st.section(T.t("Aspetto"));
-        String lang = prefs.getString("lang", "auto");
-        st.row(SectionIcons.LANG, T.t("Lingua"), "it".equals(lang) ? "Italiano" : "en".equals(lang) ? "English"
-                : T.t("Automatica (lingua del telefono)"), () -> {
-            String[] vals = {"auto", "it", "en"};
-            Sheet.list(this, th, T.t("Lingua"), new String[]{T.t("Automatica (lingua del telefono)"), "Italiano", "English"},
-                    Arrays.asList(vals).indexOf(lang), w -> {
-                        if (vals[w].equals(lang)) return;
-                        prefs.edit().putString("lang", vals[w]).commit();
-                        RestartActivity.restart(this);
-                    });
-        });
-        st.row(SectionIcons.PALETTE, T.t("Stile"), "nuovo".equals(style) ? T.t("Moderno: numeri sottili, vetro")
-                : T.t("Classico: puntini e caratteri a matrice"), () -> choose(T.t("Stile"),
-                new String[]{T.t("Classico"), T.t("Moderno")}, new String[]{"classic", "nuovo"}, "style", style));
-        st.row(SectionIcons.MOON, T.t("Tema"), "light".equals(mode) ? T.t("Chiaro") : "auto".equals(mode) ? T.t("Automatico (segue il sistema)")
-                : "grey".equals(mode) ? T.t("Scuro (grigio)") : T.t("Extra scuro (nero)"), () -> choose(T.t("Tema"),
-                new String[]{T.t("Extra scuro (nero)"), T.t("Scuro (grigio)"), T.t("Chiaro"), T.t("Automatico")},
-                new String[]{"dark", "grey", "light", "auto"}, "mode", mode));
-        st.row(SectionIcons.SHAPES, T.t("Icone"), IconFactory.INVERSE.equals(icons) ? T.t("Invertite")
-                : IconFactory.COLOR.equals(icons) ? T.t("A colori (originali)") : T.t("Monocromatiche"), () -> choose(T.t("Icone"),
-                new String[]{T.t("Monocromatiche"), T.t("Invertite"), T.t("A colori")},
-                new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR}, "icons", icons));
-        st.row(SectionIcons.BAG, T.t("Pacchetto di icone"), packLabel(), this::pickIconPack);
-        st.row(Draw.PHOTO, T.t("Sfondi"), T.t("Sfondi generati, foto a puntini o a strisce"),
-                () -> startActivity(new Intent(this, WallpaperActivity.class)));
-        st.toggle(SectionIcons.WALL, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
-                prefs.getBoolean("wall", false), on -> toggle("wall", !on));
-        st.toggle(SectionIcons.CHIP, T.t("Punti spenti sui display"), T.t("Si vede la griglia dei puntini spenti"),
-                prefs.getBoolean("ghost", true), on -> toggle("ghost", !on));
 
-        st.section(T.t("Animazioni"));
-        final String[] pageNames = {T.t("Scorrimento"), T.t("Profondità"), T.t("Cubo"), T.t("Dissolvenza")};
-        final String[] pageDesc = {T.t("Le pagine scorrono una accanto all'altra"),
-                T.t("La pagina nuova cresce da dietro quella che se ne va"),
-                T.t("Le pagine ruotano come le facce di un cubo"),
-                T.t("Le pagine restano ferme e si sostituiscono sfumando")};
-        st.row(SectionIcons.PAGES, T.t("Passaggio tra le pagine"), pageNames[Pager.transition] + " · " + pageDesc[Pager.transition],
-                () -> Sheet.list(this, th, T.t("Passaggio tra le pagine"), pageNames, Pager.transition, w -> {
-                    prefs.edit().putInt("pageAnim", w).apply();
-                    Pager.transition = w;
-                    pager.applyTransition();
-                    if (secView != null) secView.applyTransition();
-                    refillSettings();
-                    toast(T.t("Vale per la home e per il cassetto delle app"));
-                }));
-        final String[] menuNames = {T.t("Scorrimento"), T.t("Zoom"), T.t("Dissolvenza")};
-        final String[] menuDesc = {T.t("Cassetto e impostazioni salgono dal basso, la pagina a sinistra arriva di lato"),
-                T.t("I pannelli si ingrandiscono dal centro"), T.t("I pannelli compaiono sfumando, senza movimento")};
-        st.row(SectionIcons.SLIDERS, T.t("Apertura dei menu"), menuNames[Motion.menu] + " · " + menuDesc[Motion.menu],
-                () -> Sheet.list(this, th, T.t("Apertura dei menu"), menuNames, Motion.menu, w -> {
-                    prefs.edit().putInt("menuAnim", w).apply();
-                    Motion.menu = w;
-                    // piccola anteprima: le impostazioni si richiudono e si riaprono con il nuovo stile
-                    closeSettings();
-                    ui.postDelayed(() -> {
-                        if (!destroyed) showSettings();
-                    }, Motion.EXIT + 220);
-                }));
-        final String[] speeds = {T.t("Lenta"), T.t("Normale"), T.t("Rapida")};
-        final int speed = Math.max(0, Math.min(2, prefs.getInt("animSpeed", 1)));
-        st.row(Draw.BOLT, T.t("Velocità delle animazioni"), speeds[speed],
-                () -> Sheet.list(this, th, T.t("Velocità delle animazioni"), speeds, speed, w -> {
-                    prefs.edit().putInt("animSpeed", w).apply();
-                    Motion.setSpeed(w);
-                    refillSettings();
-                }));
-        st.toggle(SectionIcons.WAVE, T.t("Animazioni a punti"), T.t("Cifre che si accendono, onda, ricarica"),
-                prefs.getBoolean("anim", true), on -> toggle("anim", !on));
-        if (!Motion.systemOn()) {
-            st.warn(SectionIcons.WARN, T.t("Animazioni di sistema spente"),
-                    T.t("Android ha la scala animazione a zero: riattivala nelle Opzioni sviluppatore"),
-                    () -> safeStart(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)));
-        }
-
-        st.section(T.t("Personalizzazione"));
-        final int accC = prefs.getInt("accentC", 0);
-        st.row(SectionIcons.DROP, T.t("Colore d'accento"), accentName(accC), this::chooseAccent);
-        final String[] shapes = {T.t("Cerchio"), "Squircle", T.t("Quadrato arrotondato"), T.t("Quadrato")};
-        st.row(SectionIcons.SHAPES, T.t("Forma delle icone"), shapes[IconFactory.shape], () ->
-                Sheet.list(this, th, T.t("Forma delle icone"), shapes, IconFactory.shape, w -> {
-                    prefs.edit().putInt("iconShape", w).apply();
-                    recreate();
-                }));
-        final String[] scales = {T.t("Piccole"), T.t("Normali"), T.t("Grandi"), T.t("Molto grandi")};
-        final float[] scaleV = {0.85f, 1f, 1.12f, 1.22f};
-        int sIdx = 1;
-        for (int i = 0; i < scaleV.length; i++) if (Math.abs(scaleV[i] - AppTile.SCALE) < 0.02f) sIdx = i;
-        final int curScale = sIdx;
-        st.row(SectionIcons.RESIZE, T.t("Dimensione delle icone"), scales[curScale], () ->
-                Sheet.list(this, th, T.t("Dimensione delle icone"), scales, curScale, w -> {
-                    prefs.edit().putFloat("iconScale", scaleV[w]).apply();
-                    recreate();
-                }));
-        final String[] rowsL = {T.t("Automatiche"), T.t("4 righe"), T.t("5 righe"), T.t("6 righe"), T.t("7 righe"), T.t("8 righe")};
-        final int rowsCur = TileGrid.ROWS == 0 ? 0 : Math.max(0, Math.min(5, TileGrid.ROWS - 3));
-        st.row(SectionIcons.ROWS, T.t("Righe della home"), rowsL[rowsCur] + T.t(" · celle quadrate, centrate se servono"), () ->
-                Sheet.list(this, th, T.t("Righe della home"), rowsL, rowsCur, w -> {
-                    prefs.edit().putInt("rows", w == 0 ? 0 : w + 3).apply();
-                    recreate();
-                }));
-        final String[] dockL = {T.t("Nascosto"), "3 app", "4 app", "5 app", "6 app"};
-        final int dockCur = dockMax() == 0 ? 0 : Math.max(1, Math.min(4, dockMax() - 2));
-        st.row(SectionIcons.DOCK, T.t("Dock"), dockL[dockCur], () -> Sheet.list(this, th, T.t("App nel dock"), dockL, dockCur, w -> {
-            prefs.edit().putInt("dockMax", w == 0 ? 0 : w + 2).apply();
-            recreate();
-        }));
-        st.toggle(SectionIcons.DOCK, T.t("Sfondo del dock"), T.t("Una pillola dietro le app del dock"),
-                prefs.getBoolean("dockBg", false), on -> toggle("dockBg", !on));
-        String font = prefs.getString("font", "");
-        st.row(SectionIcons.FONT, T.t("Carattere"), font.isEmpty() ? T.t("Predefinito (Geist, Doto per le etichette a puntini)")
-                : T.t("Personalizzato"), () -> Sheet.list(this, th, T.t("Carattere"),
-                new String[]{T.t("Predefinito"), T.t("Scegli un file .ttf o .otf…")}, font.isEmpty() ? 0 : -1, w -> {
-                    if (w == 1) pickFont();
-                    else if (!font.isEmpty()) {
-                        //noinspection ResultOfMethodCallIgnored
-                        new java.io.File(new java.io.File(getFilesDir(), "fonts"), font).delete();
-                        prefs.edit().remove("font").apply();
+        if (pg == 0 || pg == SP_LOOK) {
+            st.section(T.t("Aspetto"));
+            st.row(SectionIcons.PALETTE, T.t("Stile"), "nuovo".equals(style) ? T.t("Moderno: numeri sottili, vetro")
+                    : T.t("Classico: puntini e caratteri a matrice"), () -> choose(T.t("Stile"),
+                    new String[]{T.t("Classico"), T.t("Moderno")}, new String[]{"classic", "nuovo"}, "style", style));
+            st.row(SectionIcons.MOON, T.t("Tema"), "light".equals(mode) ? T.t("Chiaro") : "auto".equals(mode) ? T.t("Automatico (segue il sistema)")
+                    : "grey".equals(mode) ? T.t("Scuro (grigio)") : T.t("Extra scuro (nero)"), () -> choose(T.t("Tema"),
+                    new String[]{T.t("Extra scuro (nero)"), T.t("Scuro (grigio)"), T.t("Chiaro"), T.t("Automatico")},
+                    new String[]{"dark", "grey", "light", "auto"}, "mode", mode));
+            final int accC = prefs.getInt("accentC", 0);
+            st.row(SectionIcons.DROP, T.t("Colore d'accento"), accentName(accC), this::chooseAccent);
+            String font = prefs.getString("font", "");
+            st.row(SectionIcons.FONT, T.t("Carattere"), font.isEmpty() ? T.t("Predefinito (Geist, Doto per le etichette a puntini)")
+                    : T.t("Personalizzato"), () -> Sheet.list(this, th, T.t("Carattere"),
+                    new String[]{T.t("Predefinito"), T.t("Scegli un file .ttf o .otf…")}, font.isEmpty() ? 0 : -1, w -> {
+                        if (w == 1) pickFont();
+                        else if (!font.isEmpty()) {
+                            //noinspection ResultOfMethodCallIgnored
+                            new java.io.File(new java.io.File(getFilesDir(), "fonts"), font).delete();
+                            prefs.edit().remove("font").apply();
+                            recreate();
+                        }
+                    }));
+            st.row(Draw.PHOTO, T.t("Sfondi"), T.t("Sfondi generati, foto a puntini o a strisce"),
+                    () -> startActivity(new Intent(this, WallpaperActivity.class)));
+            st.toggle(SectionIcons.WALL, T.t("Usa lo sfondo del telefono"), T.t("Altrimenti tinta unita del tema"),
+                    prefs.getBoolean("wall", false), on -> toggle("wall", !on));
+            st.toggle(SectionIcons.CHIP, T.t("Punti spenti sui display"), T.t("Si vede la griglia dei puntini spenti"),
+                    prefs.getBoolean("ghost", true), on -> toggle("ghost", !on));
+            st.toggle(SectionIcons.STATUS, T.t("Nascondi la barra di stato"), T.t("Riappare scorrendo dal bordo in alto"),
+                    prefs.getBoolean("hideStatus", false), on -> toggle("hideStatus", !on));
+            st.section(T.t("Icone"));
+            st.row(SectionIcons.SHAPES, T.t("Stile delle icone"), IconFactory.INVERSE.equals(icons) ? T.t("Invertite")
+                    : IconFactory.COLOR.equals(icons) ? T.t("A colori (originali)")
+                    : IconFactory.TINTED.equals(icons) ? T.t("Tinte: simbolo nel colore d'accento")
+                    : IconFactory.CLEAR.equals(icons) ? T.t("Trasparenti: solo il simbolo e un bordo sottile")
+                    : T.t("Monocromatiche"), () -> choose(T.t("Icone"),
+                    new String[]{T.t("Monocromatiche"), T.t("Invertite"), T.t("A colori"), T.t("Tinte"), T.t("Trasparenti")},
+                    new String[]{IconFactory.AUTO, IconFactory.INVERSE, IconFactory.COLOR, IconFactory.TINTED, IconFactory.CLEAR},
+                    "icons", icons));
+            st.row(SectionIcons.BAG, T.t("Pacchetto di icone"), packLabel(), this::pickIconPack);
+            final String[] shapes = {T.t("Cerchio"), "Squircle", T.t("Quadrato arrotondato"), T.t("Quadrato")};
+            st.row(SectionIcons.SHAPES, T.t("Forma delle icone"), shapes[IconFactory.shape], () ->
+                    Sheet.list(this, th, T.t("Forma delle icone"), shapes, IconFactory.shape, w -> {
+                        prefs.edit().putInt("iconShape", w).apply();
                         recreate();
-                    }
-                }));
-        st.toggle(SectionIcons.STATUS, T.t("Nascondi la barra di stato"), T.t("Riappare scorrendo dal bordo in alto"),
-                prefs.getBoolean("hideStatus", false), on -> toggle("hideStatus", !on));
-        st.toggle(SectionIcons.PUSHPIN, T.t("Blocca la home"), T.t("Niente spostamenti o rimozioni per errore"),
-                locked(), this::setLocked);
-
-        st.section("Home");
-        st.row(SectionIcons.GRID, T.t("Griglia"), TileGrid.COLS + T.t(" colonne"), () -> Sheet.list(this, th, T.t("Griglia della home"),
-                new String[]{T.t("4 colonne"), T.t("5 colonne")}, TileGrid.COLS == 5 ? 1 : 0, w -> setColumns(w == 1 ? 5 : 4)));
-        st.toggle(SectionIcons.NEWS, T.t("Nomi delle app"), T.t("Mostra il nome sotto le icone della home"),
-                prefs.getBoolean("labels", false), on -> toggle("labels", !on));
-        st.toggle(SettingsScreen.CLOCK, T.t("Orologio a 24 ore"), h24 ? "14:30" : "2:30",
-                h24, on -> toggle("h24", !on));
-        st.toggle(SectionIcons.PANEL, T.t("Pagina a sinistra"), T.t("IA, notizie, calendario, attività e note"),
-                prefs.getBoolean("panel", true), on -> toggle("panel", !on));
-        st.row(SectionIcons.WIDGETS, T.t("Aggiungi un widget Dot"), Widgets.TYPES.length + T.t(" widget con anteprima"), () -> {
-            closeSettings();
-            pickNothingWidget(pager.getCurrent(), 0, 0);
-        });
-        st.row(SectionIcons.PHONE, T.t("Aggiungi un widget di sistema"), T.t("Widget delle app installate"), () -> {
-            closeSettings();
-            pickSysWidget(pager.getCurrent(), 0, 0);
-        });
-
-        st.section(T.t("Cassetto delle app"));
-        final boolean free = drawerFree();
-        st.row(SectionIcons.CHART, T.t("Ordine delle app"), free ? T.t("Libero: le disponi trascinandole") : T.t("Alfabetico"), () ->
-                Sheet.list(this, th, T.t("Ordine delle app"), new String[]{T.t("Alfabetico"), T.t("Libero")}, free ? 1 : 0, w -> {
-                    boolean toFree = w == 1;
-                    if (toFree == free) return;
-                    if (toFree) {
-                        sections.sortAll(this);
-                        sections.save();
-                    }
-                    prefs.edit().putString("drawerOrder", toFree ? "free" : "alpha").apply();
-                    refreshDrawer();
-                    refillSettings();
-                }));
-        st.toggle(SectionIcons.GRID, T.t("Sezione \"Tutte le app\""), T.t("In fondo alle sezioni, in ordine alfabetico"),
-                prefs.getBoolean("drawerAll", true), on -> {
-                    prefs.edit().putBoolean("drawerAll", on).apply();
-                    refreshDrawer();
-                });
-        final int nHidden = hidden().size();
-        st.row(SectionIcons.EYE_OFF, T.t("App nascoste"), nHidden == 0 ? T.t("Nessuna") : nHidden + T.n(nHidden, " app nascosta", " app nascoste"),
-                () -> withAuth(this::manageHidden));
-        st.toggle(SectionIcons.SHIELD, T.t("Proteggi le app nascoste"), T.t("Chiedi impronta, volto o PIN per vederle"),
-                prefs.getBoolean("hiddenLock", false), on -> {
-                    if (!on) {
-                        // per spegnerla bisogna sbloccare: altrimenti chiunque potrebbe toglierla
-                        withAuth(() -> {
-                            prefs.edit().putBoolean("hiddenLock", false).apply();
-                            refillSettings();
-                        });
-                        refillSettings();
-                        return;
-                    }
-                    android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
-                    if (km == null || !km.isDeviceSecure()) {
-                        toast(T.t("Imposta prima un blocco schermo (PIN, sequenza o password)"));
-                        refillSettings();
-                        return;
-                    }
-                    prefs.edit().putBoolean("hiddenLock", true).apply();
-                    authUntil = System.currentTimeMillis() + 60000;
-                    refillSettings();
-                });
-
-        st.section(T.t("Notifiche e musica"));
-        st.row(Draw.BELL, T.t("Accesso alle notifiche"), DotNotifications.active()
-                ? T.t("Attivo: pallini, anteprime e musica") : T.t("Spento: tocca per attivarlo"), this::askNotificationAccess);
-        st.toggle(SectionIcons.BADGE, T.t("Pallini di notifica"), T.t("Un punto sulle icone delle app con notifiche"),
-                prefs.getBoolean("badges", true), on -> {
-                    prefs.edit().putBoolean("badges", on).apply();
-                    onNotificationsChanged();
-                });
-        st.row(SectionIcons.BADGE, T.t("Aspetto dei pallini"), badgeSummary(), this::chooseBadgeLook);
-
-        st.section(T.t("Sveglia"));
-        st.row(SettingsScreen.CLOCK, T.t("Sveglia del widget"), DotAlarms.enabled(this)
-                ? T.t("Dot Sveglia, con l'alba") : T.t("App di sistema o un'altra app"),
-                () -> safeStart(new Intent(this, AlarmsActivity.class)));
-
-        wellbeingSettings(st);
-
-        st.section(T.t("Gesti"));
-        for (String[] g : GESTURES) {
-            final String key = g[0], name = g[1];
-            st.row(gestureIcon(key), name, actionLabel(gestureAction(key)), () -> chooseGesture(key, name));
+                    }));
+            final String[] scales = {T.t("Piccole"), T.t("Normali"), T.t("Grandi"), T.t("Molto grandi")};
+            final float[] scaleV = {0.85f, 1f, 1.12f, 1.22f};
+            int sIdx = 1;
+            for (int i = 0; i < scaleV.length; i++) if (Math.abs(scaleV[i] - AppTile.SCALE) < 0.02f) sIdx = i;
+            final int curScale = sIdx;
+            st.row(SectionIcons.RESIZE, T.t("Dimensione delle icone"), scales[curScale], () ->
+                    Sheet.list(this, th, T.t("Dimensione delle icone"), scales, curScale, w -> {
+                        prefs.edit().putFloat("iconScale", scaleV[w]).apply();
+                        recreate();
+                    }));
+            st.toggle(SectionIcons.NEWS, T.t("Nomi delle app"), T.t("Mostra il nome sotto le icone della home"),
+                    prefs.getBoolean("labels", false), on -> toggle("labels", !on));
         }
-        st.row(SectionIcons.A11Y, T.t("Servizio per i gesti di sistema"), DotAccessibility.active()
-                        ? T.t("Attivo: blocco schermo, screenshot, recenti") : T.t("Spento: serve per bloccare lo schermo e altro"),
-                () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
-
-        st.section(T.t("Ricerca"));
-        st.row(SectionIcons.GLOBE, T.t("Motore di ricerca web"), UniversalSearch.engineName(searchEngine()), () -> {
-            String[] names = new String[UniversalSearch.ENGINES.length];
-            int sel = 0;
-            for (int i = 0; i < names.length; i++) {
-                names[i] = UniversalSearch.ENGINES[i][1];
-                if (UniversalSearch.ENGINES[i][0].equals(searchEngine())) sel = i;
+        if (pg == 0 || pg == SP_ANIM) {
+            st.section(T.t("Animazioni"));
+            final String[] pageNames = {T.t("Scorrimento"), T.t("Profondità"), T.t("Cubo"), T.t("Dissolvenza")};
+            final String[] pageDesc = {T.t("Le pagine scorrono una accanto all'altra"),
+                    T.t("La pagina nuova cresce da dietro quella che se ne va"),
+                    T.t("Le pagine ruotano come le facce di un cubo"),
+                    T.t("Le pagine restano ferme e si sostituiscono sfumando")};
+            st.row(SectionIcons.PAGES, T.t("Passaggio tra le pagine"), pageNames[Pager.transition] + " · " + pageDesc[Pager.transition],
+                    () -> Sheet.list(this, th, T.t("Passaggio tra le pagine"), pageNames, Pager.transition, w -> {
+                        prefs.edit().putInt("pageAnim", w).apply();
+                        Pager.transition = w;
+                        pager.applyTransition();
+                        if (secView != null) secView.applyTransition();
+                        refillSettings();
+                        toast(T.t("Vale per la home e per il cassetto delle app"));
+                    }));
+            final String[] menuNames = {T.t("Scorrimento"), T.t("Zoom"), T.t("Dissolvenza")};
+            final String[] menuDesc = {T.t("Cassetto e impostazioni salgono dal basso, la pagina a sinistra arriva di lato"),
+                    T.t("I pannelli si ingrandiscono dal centro"), T.t("I pannelli compaiono sfumando, senza movimento")};
+            st.row(SectionIcons.SLIDERS, T.t("Apertura dei menu"), menuNames[Motion.menu] + " · " + menuDesc[Motion.menu],
+                    () -> Sheet.list(this, th, T.t("Apertura dei menu"), menuNames, Motion.menu, w -> {
+                        prefs.edit().putInt("menuAnim", w).apply();
+                        Motion.menu = w;
+                        // piccola anteprima: le impostazioni si richiudono e si riaprono con il nuovo stile
+                        closeSettings();
+                        ui.postDelayed(() -> {
+                            if (destroyed) return;
+                            showSettings();
+                            openSettingsPage(SP_ANIM); // si torna dove si era
+                        }, Motion.EXIT + 220);
+                    }));
+            final String[] openNames = {T.t("Zoom"), T.t("Rivelazione"), T.t("Dissolvenza"), T.t("Nessuna")};
+            final String[] openDesc = {T.t("L'app si ingrandisce dalla sua icona"),
+                    T.t("L'app si apre come una finestra che si allarga dall'icona"),
+                    T.t("L'app compare sfumando"), T.t("L'app compare subito, senza movimento")};
+            final int openA = Math.max(0, Math.min(3, prefs.getInt("openAnim", 0)));
+            st.row(SectionIcons.RESIZE, T.t("Apertura delle app"), openNames[openA] + " · " + openDesc[openA],
+                    () -> Sheet.list(this, th, T.t("Apertura delle app"), openNames, openA, w -> {
+                        prefs.edit().putInt("openAnim", w).apply();
+                        refillSettings();
+                        toast(T.t("Su alcuni telefoni Android usa comunque la sua animazione"));
+                    }));
+            final String[] speeds = {T.t("Lenta"), T.t("Normale"), T.t("Rapida")};
+            final int speed = Math.max(0, Math.min(2, prefs.getInt("animSpeed", 1)));
+            st.row(Draw.BOLT, T.t("Velocità delle animazioni"), speeds[speed],
+                    () -> Sheet.list(this, th, T.t("Velocità delle animazioni"), speeds, speed, w -> {
+                        prefs.edit().putInt("animSpeed", w).apply();
+                        Motion.setSpeed(w);
+                        refillSettings();
+                    }));
+            st.toggle(SectionIcons.WAVE, T.t("Animazioni a punti"), T.t("Cifre che si accendono, onda, ricarica"),
+                    prefs.getBoolean("anim", true), on -> toggle("anim", !on));
+            if (!Motion.systemOn()) {
+                st.warn(SectionIcons.WARN, T.t("Animazioni di sistema spente"),
+                        T.t("Android ha la scala animazione a zero: riattivala nelle Opzioni sviluppatore"),
+                        () -> safeStart(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)));
             }
-            Sheet.list(this, th, T.t("Motore di ricerca"), names, sel, w -> {
-                prefs.edit().putString("engine", UniversalSearch.ENGINES[w][0]).apply();
-                refillSettings();
+            st.section(T.t("Gesti"));
+            for (String[] g : GESTURES) {
+                final String key = g[0], name = g[1];
+                st.row(gestureIcon(key), name, actionLabel(gestureAction(key)), () -> chooseGesture(key, name));
+            }
+            st.row(SectionIcons.A11Y, T.t("Servizio per i gesti di sistema"), DotAccessibility.active()
+                            ? T.t("Attivo: blocco schermo, screenshot, recenti") : T.t("Spento: serve per bloccare lo schermo e altro"),
+                    () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+        }
+        if (pg == 0 || pg == SP_HOME) {
+            st.section(T.t("Home"));
+            st.row(SectionIcons.GRID, T.t("Griglia"), TileGrid.COLS + T.t(" colonne"), () -> Sheet.list(this, th, T.t("Griglia della home"),
+                    new String[]{T.t("4 colonne"), T.t("5 colonne")}, TileGrid.COLS == 5 ? 1 : 0, w -> setColumns(w == 1 ? 5 : 4)));
+            final String[] rowsL = {T.t("Automatiche"), T.t("4 righe"), T.t("5 righe"), T.t("6 righe"), T.t("7 righe"), T.t("8 righe")};
+            final int rowsCur = TileGrid.ROWS == 0 ? 0 : Math.max(0, Math.min(5, TileGrid.ROWS - 3));
+            st.row(SectionIcons.ROWS, T.t("Righe della home"), rowsL[rowsCur] + T.t(" · celle quadrate, centrate se servono"), () ->
+                    Sheet.list(this, th, T.t("Righe della home"), rowsL, rowsCur, w -> {
+                        prefs.edit().putInt("rows", w == 0 ? 0 : w + 3).apply();
+                        recreate();
+                    }));
+            st.toggle(SectionIcons.PANEL, T.t("Pagina a sinistra"), T.t("IA, notizie, calendario, attività e note"),
+                    prefs.getBoolean("panel", true), on -> toggle("panel", !on));
+            st.toggle(SectionIcons.PUSHPIN, T.t("Blocca la home"), T.t("Niente spostamenti o rimozioni per errore"),
+                    locked(), this::setLocked);
+            st.section(T.t("Dock"));
+            final String[] dockL = {T.t("Nascosto"), "3 app", "4 app", "5 app", "6 app"};
+            final int dockCur = dockMax() == 0 ? 0 : Math.max(1, Math.min(4, dockMax() - 2));
+            st.row(SectionIcons.DOCK, T.t("App nel dock"), dockL[dockCur], () -> Sheet.list(this, th, T.t("App nel dock"), dockL, dockCur, w -> {
+                prefs.edit().putInt("dockMax", w == 0 ? 0 : w + 2).apply();
+                recreate();
+            }));
+            st.toggle(SectionIcons.DOCK, T.t("Sfondo del dock"), T.t("Una pillola dietro le app del dock"),
+                    prefs.getBoolean("dockBg", false), on -> toggle("dockBg", !on));
+            st.section(T.t("Widget sulla home"));
+            st.row(SectionIcons.WIDGETS, T.t("Aggiungi un widget Dot"), Widgets.TYPES.length + T.t(" widget con anteprima"), () -> {
+                closeSettings();
+                pickNothingWidget(pager.getCurrent(), 0, 0);
             });
-        });
-        st.row(SectionIcons.PEOPLE, T.t("Contatti nella ricerca"),
-                checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-                        ? T.t("Attivi") : T.t("Tocca per consentire l'accesso"), this::requestContacts);
+            st.row(SectionIcons.PHONE, T.t("Aggiungi un widget di sistema"), T.t("Widget delle app installate"), () -> {
+                closeSettings();
+                pickSysWidget(pager.getCurrent(), 0, 0);
+            });
+        }
+        if (pg == 0 || pg == SP_WIDGETS) {
+            st.section(T.t("Orologio e sveglia"));
+            st.toggle(SettingsScreen.CLOCK, T.t("Orologio a 24 ore"), h24 ? "14:30" : "2:30",
+                    h24, on -> toggle("h24", !on));
+            st.row(SettingsScreen.CLOCK, T.t("Sveglia del widget"), DotAlarms.enabled(this)
+                    ? T.t("Dot Sveglia, con l'alba") : T.t("App di sistema o un'altra app"),
+                    () -> safeStart(new Intent(this, AlarmsActivity.class)));
+            st.section(T.t("Meteo e passi"));
+            st.row(Draw.SUN, T.t("Città per il meteo"), city.isEmpty() ? T.t("Posizione automatica") : city, this::askCity);
+            st.row(Draw.STEPS, T.t("Obiettivo di passi"), State.stepGoal + T.t(" passi al giorno"), this::editStepGoal);
+            st.row(Draw.STEPS, T.t("Distanza"), T.t("Passo di ") + Math.round(StepsPopup.stride(prefs) * 100) + " cm · "
+                    + (StepsPopup.miles(prefs) ? T.t("miglia") : T.t("chilometri")), this::editStride);
+        }
+        if (pg == 0 || pg == SP_APPS) {
+            st.section(T.t("Cassetto delle app"));
+            final boolean free = drawerFree();
+            final int order = free ? 2 : Freq.on ? 1 : 0;
+            st.row(SectionIcons.CHART, T.t("Ordine delle app"), free ? T.t("Libero: le disponi trascinandole")
+                            : Freq.on ? T.t("Più usate prima, poi alfabetico") : T.t("Alfabetico"), () ->
+                    Sheet.list(this, th, T.t("Ordine delle app"),
+                            new String[]{T.t("Alfabetico"), T.t("Più usate"), T.t("Libero")}, order, w -> {
+                        if (w == order) return;
+                        if (w == 2) {
+                            // si parte dall'ordine che si vede adesso, poi lo si cambia trascinando
+                            sections.sortAll(this);
+                            sections.save();
+                        }
+                        prefs.edit().putString("drawerOrder", w == 2 ? "free" : w == 1 ? "freq" : "alpha").apply();
+                        Freq.on = w == 1; // dopo sortAll: passando da "Più usate" a "Libero" si tiene l'ordine visto
+                        if (w == 1) {
+                            if (Usage.granted(this)) {
+                                bg(appExec, () -> {
+                                    Freq.compute(getApplicationContext());
+                                    ui.post(() -> {
+                                        if (!destroyed) refreshDrawer();
+                                    });
+                                });
+                            } else askUsageAccess();
+                        }
+                        refreshDrawer();
+                        refillSettings();
+                    }));
+            st.toggle(SectionIcons.GRID, T.t("Sezione \"Tutte le app\""), T.t("In fondo alle sezioni, in ordine alfabetico"),
+                    prefs.getBoolean("drawerAll", true), on -> {
+                        prefs.edit().putBoolean("drawerAll", on).apply();
+                        refreshDrawer();
+                    });
+            st.section(T.t("App nascoste"));
+            final int nHidden = hidden().size();
+            st.row(SectionIcons.EYE_OFF, T.t("App nascoste"), nHidden == 0 ? T.t("Nessuna") : nHidden + T.n(nHidden, " app nascosta", " app nascoste"),
+                    () -> withAuth(this::manageHidden));
+            st.toggle(SectionIcons.SHIELD, T.t("Proteggi le app nascoste"), T.t("Chiedi impronta, volto o PIN per vederle"),
+                    prefs.getBoolean("hiddenLock", false), on -> {
+                        if (!on) {
+                            // per spegnerla bisogna sbloccare: altrimenti chiunque potrebbe toglierla
+                            withAuth(() -> {
+                                prefs.edit().putBoolean("hiddenLock", false).apply();
+                                refillSettings();
+                            });
+                            refillSettings();
+                            return;
+                        }
+                        android.app.KeyguardManager km = (android.app.KeyguardManager) getSystemService(KEYGUARD_SERVICE);
+                        if (km == null || !km.isDeviceSecure()) {
+                            toast(T.t("Imposta prima un blocco schermo (PIN, sequenza o password)"));
+                            refillSettings();
+                            return;
+                        }
+                        prefs.edit().putBoolean("hiddenLock", true).apply();
+                        authUntil = System.currentTimeMillis() + 60000;
+                        refillSettings();
+                    });
+            st.toggle(SectionIcons.SEARCH, T.t("Trova le app nascoste cercandole"),
+                    T.t("Compaiono solo scrivendo il nome; se sono protette chiede prima lo sblocco"),
+                    prefs.getBoolean("hiddenSearch", false), on -> {
+                        // con la protezione attiva i risultati restano dietro lo sblocco, quindi non serve chiederlo qui
+                        prefs.edit().putBoolean("hiddenSearch", on).apply();
+                    });
+            st.section(T.t("Ricerca"));
+            st.row(SectionIcons.GLOBE, T.t("Motore di ricerca web"), UniversalSearch.engineName(searchEngine()), () -> {
+                String[] names = new String[UniversalSearch.ENGINES.length];
+                int sel = 0;
+                for (int i = 0; i < names.length; i++) {
+                    names[i] = UniversalSearch.ENGINES[i][1];
+                    if (UniversalSearch.ENGINES[i][0].equals(searchEngine())) sel = i;
+                }
+                Sheet.list(this, th, T.t("Motore di ricerca"), names, sel, w -> {
+                    prefs.edit().putString("engine", UniversalSearch.ENGINES[w][0]).apply();
+                    refillSettings();
+                });
+            });
+            st.row(SectionIcons.PEOPLE, T.t("Contatti nella ricerca"),
+                    checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                            ? T.t("Attivi") : T.t("Tocca per consentire l'accesso"), this::requestContacts);
+        }
+        if (pg == 0 || pg == SP_NOTIF) {
+            st.section(T.t("Notifiche"));
+            st.row(Draw.BELL, T.t("Accesso alle notifiche"), DotNotifications.active()
+                    ? T.t("Attivo: pallini, anteprime e musica") : T.t("Spento: tocca per attivarlo"), this::askNotificationAccess);
+            st.toggle(SectionIcons.BADGE, T.t("Pallini di notifica"), T.t("Un punto sulle icone delle app con notifiche"),
+                    prefs.getBoolean("badges", true), on -> {
+                        prefs.edit().putBoolean("badges", on).apply();
+                        onNotificationsChanged();
+                    });
+            st.row(SectionIcons.BADGE, T.t("Aspetto dei pallini"), badgeSummary(), this::chooseBadgeLook);
+        }
+        if (pg == 0 || pg == SP_WELL) wellbeingSettings(st);
+        if (pg == 0 || pg == SP_SYSTEM) {
+            st.section(T.t("Sistema"));
+            String lang = prefs.getString("lang", "auto");
+            st.row(SectionIcons.LANG, T.t("Lingua"), "it".equals(lang) ? "Italiano" : "en".equals(lang) ? "English"
+                    : T.t("Automatica (lingua del telefono)"), () -> {
+                String[] vals = {"auto", "it", "en"};
+                Sheet.list(this, th, T.t("Lingua"), new String[]{T.t("Automatica (lingua del telefono)"), "Italiano", "English"},
+                        Arrays.asList(vals).indexOf(lang), w -> {
+                            if (vals[w].equals(lang)) return;
+                            prefs.edit().putString("lang", vals[w]).commit();
+                            RestartActivity.restart(this);
+                        });
+            });
+            st.row(SectionIcons.HOME, T.t("Launcher predefinito"), T.t("Scegli Dot Launcher come schermata Home"),
+                    this::requestDefaultLauncher);
+            st.row(SectionIcons.STAR, T.t("Configurazione guidata"), T.t("Rivedi lingua, stile, icone e permessi"), () -> {
+                closeSettings();
+                prefs.edit().putBoolean("onboarded", false).apply();
+                showOnboarding(0);
+            });
+            st.section(T.t("Backup"));
+            st.row(SectionIcons.DOWNLOAD, T.t("Esporta la configurazione"), T.t("Home, cassetto, impostazioni (senza chiavi API)"),
+                    this::exportBackup);
+            st.row(Draw.CLOUD, T.t("Importa una configurazione"), T.t("Da un file esportato in precedenza"), this::importBackup);
+        }
+        if (pg == 0 || pg == SP_INFO) {
+            st.section(T.t("Informazioni"));
+            st.row(SectionIcons.INFO, T.t("Versione ") + versionName(), T.t("Tocca per cercare aggiornamenti"), () -> checkUpdate(true));
+            int nCrash = CrashLog.count(CrashLog.read(this));
+            st.row(SectionIcons.MORE, T.t("Segnala un problema"), nCrash == 0 ? T.t("Nessun errore registrato")
+                    : nCrash + T.n(nCrash, " errore registrato", " errori registrati"), this::reportProblem);
+            st.row(SectionIcons.CODE, T.t("Codice sorgente"), "github.com/Rex11107/dot-launcher · GPL-3.0",
+                    () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Rex11107/dot-launcher"))));
+            st.note(T.t("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. ")
+                    + T.t("Il launcher non ha server: nessun dato viene raccolto."));
+        }
+        if (searching) {
+            boolean none = st.matches() == 0;
+            st.setFilter(null);
+            if (none) st.note(T.t("Nessuna impostazione trovata per «") + settingsQuery + "»");
+        }
+    }
 
-        st.section(T.t("Meteo e sensori"));
-        st.row(Draw.SUN, T.t("Città per il meteo"), city.isEmpty() ? T.t("Posizione automatica") : city, this::askCity);
-        st.row(Draw.STEPS, T.t("Obiettivo di passi"), State.stepGoal + T.t(" passi al giorno"), this::editStepGoal);
-        st.row(Draw.STEPS, T.t("Distanza"), T.t("Passo di ") + Math.round(StepsPopup.stride(prefs) * 100) + " cm · "
-                + (StepsPopup.miles(prefs) ? T.t("miglia") : T.t("chilometri")), this::editStride);
-
-        st.section("Backup");
-        st.row(SectionIcons.DOWNLOAD, T.t("Esporta la configurazione"), T.t("Home, cassetto, impostazioni (senza chiavi API)"),
-                this::exportBackup);
-        st.row(Draw.CLOUD, T.t("Importa una configurazione"), T.t("Da un file esportato in precedenza"), this::importBackup);
-
-        st.section(T.t("Informazioni"));
+    /** Pagina principale: la guida e le categorie, ognuna con un riepilogo dello stato. */
+    private void settingsMain(SettingsScreen st) {
+        st.section("");
         st.row(SectionIcons.BOOK, T.t("Guida"), T.t("Dove trovare ogni funzione, con scorciatoie"), this::showGuide);
-        st.row(SectionIcons.INFO, T.t("Versione ") + versionName(), T.t("Tocca per cercare aggiornamenti"), () -> checkUpdate(true));
-        st.row(SectionIcons.HOME, T.t("Launcher predefinito"), T.t("Scegli Dot Launcher come schermata Home"),
-                this::requestDefaultLauncher);
-        st.row(SectionIcons.STAR, T.t("Configurazione guidata"), T.t("Rivedi lingua, stile, icone e permessi"), () -> {
-            closeSettings();
-            prefs.edit().putBoolean("onboarded", false).apply();
-            showOnboarding(0);
-        });
-        int nCrash = CrashLog.count(CrashLog.read(this));
-        st.row(SectionIcons.MORE, T.t("Segnala un problema"), nCrash == 0 ? T.t("Nessun errore registrato")
-                : nCrash + T.n(nCrash, " errore registrato", " errori registrati"), this::reportProblem);
-        st.row(SectionIcons.CODE, T.t("Codice sorgente"), "github.com/Rex11107/dot-launcher · GPL-3.0",
-                () -> safeStart(new Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/Rex11107/dot-launcher"))));
-        st.note(T.t("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. ")
-                + T.t("Il launcher non ha server: nessun dato viene raccolto."));
+        st.section("");
+        String style = prefs.getString("style", "classic");
+        String mode = prefs.getString("mode", "dark");
+        st.row(SectionIcons.PALETTE, T.t("Aspetto e icone"), ("nuovo".equals(style) ? T.t("Moderno") : T.t("Classico")) + " · "
+                + ("light".equals(mode) ? T.t("Chiaro") : "auto".equals(mode) ? T.t("Automatico") : T.t("Scuro")) + " · "
+                + accentName(prefs.getInt("accentC", 0)), () -> openSettingsPage(SP_LOOK));
+        st.row(SectionIcons.SWIPE_UP, T.t("Animazioni e gesti"), T.t("Pagine, menu, apertura delle app e gesti"),
+                () -> openSettingsPage(SP_ANIM));
+        st.row(SectionIcons.HOME, T.t("Home e dock"), TileGrid.COLS + T.t(" colonne") + " · "
+                + (dockMax() == 0 ? T.t("dock nascosto") : T.t("dock con ") + dockMax() + " app"), () -> openSettingsPage(SP_HOME));
+        st.row(SectionIcons.WIDGETS, T.t("Widget"), T.t("Orologio, sveglia, meteo e passi"), () -> openSettingsPage(SP_WIDGETS));
+        int nh = hidden().size();
+        st.row(SectionIcons.GRID, T.t("App"), (drawerFree() ? T.t("Ordine libero") : Freq.on ? T.t("Più usate prima") : T.t("Ordine alfabetico"))
+                + (nh == 0 ? "" : " · " + nh + T.n(nh, " app nascosta", " app nascoste")), () -> openSettingsPage(SP_APPS));
+        st.row(Draw.BELL, T.t("Notifiche"), DotNotifications.active() ? T.t("Pallini: ") + badgeSummary()
+                : T.t("Accesso alle notifiche spento"), () -> openSettingsPage(SP_NOTIF));
+        st.row(NothingTile.HOURGLASS, T.t("Benessere digitale"), Usage.focusOn(prefs) ? T.t("Focus attivo")
+                : T.t("Tempo di utilizzo, focus e limiti"), () -> openSettingsPage(SP_WELL));
+        st.row(SectionIcons.GEAR, T.t("Sistema"), T.t("Lingua, launcher predefinito, backup"), () -> openSettingsPage(SP_SYSTEM));
+        st.row(SectionIcons.INFO, T.t("Informazioni"), T.t("Versione ") + versionName(), () -> openSettingsPage(SP_INFO));
     }
 
     static final int[] ACCENTS = {0, 0xFFD71921, 0xFFFF6A13, 0xFFF5A623, 0xFF2EBD59, 0xFF14B8A6, 0xFF2F6BFF,

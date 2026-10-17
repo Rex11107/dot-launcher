@@ -25,6 +25,8 @@ final class IconFactory {
     static final String AUTO = "auto";        // cerchio come le tessere, glifo a contrasto
     static final String INVERSE = "inverse";  // colori invertiti
     static final String COLOR = "color";      // icone originali
+    static final String TINTED = "tinted";    // simbolo nel colore d'accento su un fondo appena tinto
+    static final String CLEAR = "clear";      // fondo trasparente, solo un velo e un bordo sottile
 
     static final int MODE_AUTO = 0;
     static final int MODE_ORIGINAL = 1;
@@ -90,9 +92,17 @@ final class IconFactory {
         if (box == null) return uniform(d, size, th); // non trasformabile in modo pulito: colori originali
 
         int bg, fg;
+        boolean clear = CLEAR.equals(style) && !red;
         if (red) {
             bg = th.accent;
             fg = th.onAccent;
+        } else if (TINTED.equals(style)) {
+            int base = th.light ? 0xFFFFFFFF : 0xFF161616;
+            bg = Theme.blend(base, 0xFF000000 | th.accent, th.light ? 0.16f : 0.22f);
+            fg = readable(0xFF000000 | th.accent, bg, th.light);
+        } else if (clear) {
+            bg = Theme.alpha(th.light ? 0xFF000000 : 0xFFFFFFFF, 0.10f);
+            fg = th.light ? 0xFF111111 : 0xFFFFFFFF;
         } else if (INVERSE.equals(style)) {
             bg = th.iconBgAlt;
             fg = th.iconFgAlt;
@@ -106,7 +116,8 @@ final class IconFactory {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
         p.setColor(bg);
         c.drawPath(shapePath(size, 0), p);
-        int ring = th.iconStroke;
+        int ring = clear ? Theme.alpha(th.light ? 0xFF000000 : 0xFFFFFFFF, 0.28f)
+                : TINTED.equals(style) ? 0 : th.iconStroke;
         if (ring != 0 && !red && !INVERSE.equals(style)) {
             p.setStyle(Paint.Style.STROKE);
             p.setStrokeWidth(Math.max(1f, size / 60f));
@@ -121,6 +132,14 @@ final class IconFactory {
         p.setColorFilter(new PorterDuffColorFilter(fg, PorterDuff.Mode.SRC_IN));
         c.drawBitmap(mask, box, dst, p);
         return out;
+    }
+
+    /** Il colore d'accento, schiarito o scurito quanto basta per un contrasto di almeno 3:1 sul fondo dell'icona. */
+    static int readable(int col, int bg, boolean light) {
+        int target = light ? 0xFF000000 : 0xFFFFFFFF;
+        int c = col;
+        for (int i = 1; i <= 10 && Theme.contrast(c, bg) < 3.0; i++) c = Theme.blend(col, target, i / 10f);
+        return c;
     }
 
     /**

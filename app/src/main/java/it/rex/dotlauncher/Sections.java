@@ -365,6 +365,11 @@ final class Sections {
             Collections.sort(s.entries, (x, y) -> col.compare(
                     x.isFolder() ? x.name : labels.labelFor(x.app),
                     y.isFolder() ? y.name : labels.labelFor(y.app)));
+            // passando da "Più usate" a "Libero" si parte dall'ordine che si vedeva
+            if (Freq.on) {
+                final Set<String> none = new HashSet<>();
+                Collections.sort(s.entries, (x, y) -> Integer.compare(freq(y, none), freq(x, none)));
+            }
             for (Entry e : s.entries) {
                 if (e.isFolder()) Collections.sort(e.apps, (p, q) -> col.compare(labels.labelFor(p), labels.labelFor(q)));
             }
@@ -414,8 +419,18 @@ final class Sections {
             Collections.sort(out, (x, y) -> col.compare(
                     x.isFolder() ? x.name : labels.labelFor(x.app),
                     y.isFolder() ? y.name : labels.labelFor(y.app)));
+            // "Più usate": prima le app aperte più spesso; a parità resta l'ordine alfabetico (sort stabile)
+            if (Freq.on) Collections.sort(out, (x, y) -> Integer.compare(freq(y, hidden), freq(x, hidden)));
         }
         return out;
+    }
+
+    /** Aperture recenti di un elemento: per un contenitore, la somma delle sue app visibili. */
+    static int freq(Entry e, Set<String> hidden) {
+        if (!e.isFolder()) return Freq.score(e.app);
+        int n = 0;
+        for (String k : e.apps) if (!hidden.contains(k)) n += Freq.score(k);
+        return n;
     }
 
     interface LabelSource {

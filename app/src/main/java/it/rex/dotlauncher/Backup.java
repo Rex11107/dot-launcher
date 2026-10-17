@@ -28,9 +28,9 @@ final class Backup {
 
     // tipi attesi delle impostazioni lette come numeri o sì/no (le altre sono testi o insiemi)
     private static final Set<String> BOOLS = new HashSet<>(Arrays.asList("anim", "askedLoc", "dockInit",
-            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock"));
+            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock", "hiddenSearch"));
     private static final Set<String> INTS = new HashSet<>(Arrays.asList("blurWallId", "cols", "pages", "stepAcc",
-            "stepGoal", "stepToday", "wallVer", "accentC", "iconShape", "rows", "dockMax", "pageAnim", "menuAnim", "animSpeed",
+            "stepGoal", "stepToday", "wallVer", "accentC", "iconShape", "rows", "dockMax", "pageAnim", "menuAnim", "animSpeed", "openAnim",
             "badgeStyle", "badgeSize", "badgePos", "badgeColor"));
     private static final Set<String> LONGS = new HashSet<>(Arrays.asList("mlat", "mlon", "newsTime", "updCheck", "wt"));
     private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast", "iconScale"));
