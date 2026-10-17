@@ -86,10 +86,32 @@ final class AiClient {
         }
     }
 
+    // ---------- trasparenza: cosa è partito nell'ultima richiesta (solo in memoria) ----------
+    static volatile long lastAt;
+    static volatile int lastMsgs, lastChars;
+    static volatile String lastUrl = "";
+
+    /** Indirizzo a cui va la richiesta con la chiave API. */
+    static String endpoint(String p, String model, String base) {
+        if (model == null || model.trim().isEmpty()) model = defaultModel(p);
+        if ("claude".equals(p)) return "https://api.anthropic.com/v1/messages";
+        if ("gemini".equals(p)) return "https://generativelanguage.googleapis.com/v1beta/models/" + model.trim() + ":generateContent";
+        String b = base == null || base.trim().isEmpty() ? defaultBase(p) : base.trim();
+        if (b.isEmpty()) return "";
+        if (b.endsWith("/")) b = b.substring(0, b.length() - 1);
+        return b + "/chat/completions";
+    }
+
     /** history: coppie {ruolo, testo} con ruolo "user" o "assistant"; l'ultima è la domanda. */
     static String ask(String p, String key, String model, String base, List<String[]> history) throws Exception {
         if (model == null || model.trim().isEmpty()) model = defaultModel(p);
         model = model.trim();
+        int chars = SYSTEM.length();
+        for (String[] m : history) chars += m[1].length();
+        lastAt = System.currentTimeMillis();
+        lastMsgs = history.size();
+        lastChars = chars;
+        lastUrl = endpoint(p, model, base);
         if ("claude".equals(p)) return anthropic(key, model, history);
         if ("gemini".equals(p)) return gemini(key, model, history);
         String b = base == null || base.trim().isEmpty() ? defaultBase(p) : base.trim();

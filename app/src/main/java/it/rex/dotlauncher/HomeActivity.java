@@ -113,6 +113,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_FONT = 11;
     private static final int REQ_ROLE = 12;
     private static final int REQ_AUTH = 13;
+    private static final int REQ_POP_BIND = 14;
+    private static final int REQ_POP_CONFIG = 15;
     private static final int HOST_ID = 0x0D07;
 
     private SharedPreferences prefs;
@@ -208,6 +210,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             refreshTiles("battery");
         }
     };
+
+    /** Caricatore collegato mentre si è sulla home: si apre StandBy, se l'opzione è attiva. */
+    private final BroadcastReceiver powerReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context c, Intent i) {
+            if (!prefs.getBoolean("standby", false) || destroyed) return;
+            // solo se la home è davvero davanti (non dietro un'app o un pannello)
+            ui.postDelayed(() -> {
+                if (!destroyed && hasWindowFocus() && !settingsOpen && resizer == null && onboarding == null) openStandby();
+            }, 600);
+        }
+    };
+
+    private void openStandby() {
+        try {
+            startActivity(new Intent(this, StandbyActivity.class));
+        } catch (Exception ignored) {
+        }
+    }
 
     private final LauncherApps.Callback appsCallback = new LauncherApps.Callback() {
         // più eventi ravvicinati (es. aggiornamenti in blocco) producono un solo ricaricamento
@@ -325,6 +346,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             final Intent bi = getIntent();
             ui.postDelayed(() -> handleBlocked(bi), 900);
         }
+        if (getIntent() != null && getIntent().hasExtra(ImportActivity.EXTRA_FILE)) {
+            final boolean ok = getIntent().getBooleanExtra(ImportActivity.EXTRA_FILE, false);
+            getIntent().removeExtra(ImportActivity.EXTRA_FILE);
+            ui.postDelayed(() -> offerSharedLayout(ok), 700);
+        }
         buildPages();
         root.post(this::fitToScreen);
         if (saved != null && saved.getBoolean("set", false)) {
@@ -374,6 +400,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             f.addAction(AlarmManager.ACTION_NEXT_ALARM_CLOCK_CHANGED);
             registerReceiver(timeReceiver, f);
             registerReceiver(batteryReceiver, new IntentFilter(Intent.ACTION_BATTERY_CHANGED));
+            registerReceiver(powerReceiver, new IntentFilter(Intent.ACTION_POWER_CONNECTED));
             IntentFilter pf = new IntentFilter();
             pf.addAction(Intent.ACTION_MANAGED_PROFILE_AVAILABLE);
             pf.addAction(Intent.ACTION_MANAGED_PROFILE_UNAVAILABLE);
@@ -451,6 +478,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (receiversOn) {
             unregisterReceiver(timeReceiver);
             unregisterReceiver(batteryReceiver);
+            try {
+                unregisterReceiver(powerReceiver);
+            } catch (Exception ignored) {
+            }
             unregisterReceiver(profileReceiver);
             receiversOn = false;
         }
@@ -504,6 +535,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
+        if (intent != null && intent.hasExtra(ImportActivity.EXTRA_FILE)) {
+            final boolean ok = intent.getBooleanExtra(ImportActivity.EXTRA_FILE, false);
+            if (settingsOpen) closeSettings();
+            ui.postDelayed(() -> offerSharedLayout(ok), 300);
+            return;
+        }
         if (intent != null && intent.hasExtra("blocked") && intent.getLongExtra("tok", 0) == DotAccessibility.TOKEN) {
             // riportati qui dal blocco rigido: si chiude ciò che era aperto e si spiega perché
             if (dragSrc >= 0) finishDrag(false);
@@ -882,6 +919,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 @Override public void requestCalendar() {
                     requestPermissions(new String[]{Manifest.permission.READ_CALENDAR}, REQ_CAL);
                 }
+                @Override public void aiTransparency() {
+                    HomeActivity.this.closePanel();
+                    ui.postDelayed(() -> {
+                        if (destroyed) return;
+                        showSettings();
+                        openSettingsPage(SP_AI);
+                    }, Motion.EXIT);
+                }
             });
             panel.setVisibility(View.GONE);
             root.addView(panel, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -1003,17 +1048,24 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         slp.topMargin = px(16);
         slp.bottomMargin = px(16);
-        drawer.addView(searchRow, slp);
+        // uso a una mano: campo di ricerca in basso (sopra la tastiera) e risultati che partono dal basso
+        final boolean oneHand = prefs.getBoolean("oneHand", false);
+        if (!oneHand) drawer.addView(searchRow, slp);
 
         grid = new UniversalSearch(this, this);
-        grid.setPadding(0, 0, 0, px(24));
+        grid.setPadding(0, 0, 0, px(oneHand ? 8 : 24));
         grid.setVisibility(View.GONE);
+        if (oneHand) grid.setBottomAligned();
         drawer.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        if (oneHand) drawer.addView(searchRow, slp);
 
         // sezioni del cassetto
         sections = new Sections(prefs);
         secView = new AppSections(this, this);
-        drawer.addView(secView, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        LinearLayout.LayoutParams sl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+        // a una mano le app partono più in basso, dove arriva il pollice
+        if (oneHand) sl.topMargin = Math.round(getResources().getDisplayMetrics().heightPixels * 0.22f);
+        drawer.addView(secView, sl);
     }
 
     // ---------- cassetto a sezioni ----------
@@ -1611,6 +1663,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             {"torch", T.t("Torcia")},
             {"focus", T.t("Modalità focus")},
             {"usage", T.t("Tempo di utilizzo")},
+            {"standby", "StandBy"},
             {"app", T.t("Apri un'app…")},
     };
 
@@ -1627,6 +1680,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private String actionLabel(String a) {
         if (a.startsWith("app:")) return T.t("Apri ") + labelFor(a.substring(4));
+        if (a.startsWith("widget:")) return T.t("mostra il suo widget");
         return actionName(a);
     }
 
@@ -1635,6 +1689,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void runAction(String a) {
+        if (a.startsWith("widget:")) {
+            try {
+                showPopupWidget(Integer.parseInt(a.substring(7)));
+            } catch (Exception e) {
+                toast(T.t("Il widget di questa icona non è più disponibile"));
+            }
+            return;
+        }
         if (a.startsWith("app:")) {
             AppEntry e = appsByKey.get(a.substring(4));
             if (e != null) launch(e, null);
@@ -1656,6 +1718,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 } else focusMenu();
                 break;
             case "usage": showUsage(); break;
+            case "standby": openStandby(); break;
             case "lock":
                 if (Build.VERSION.SDK_INT >= 28) globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN);
                 else toast(T.t("Bloccare lo schermo richiede Android 9 o successivo"));
@@ -2932,16 +2995,180 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void chooseSwipeAction(AppEntry a) {
         String cur = swipeAction(a.key);
-        chooseAction(T.t("Scorrendo in su sull'icona"), cur.isEmpty() ? "none" : cur, act -> {
+        List<AppWidgetProviderInfo> ws = appWidgets(a);
+        if (ws.isEmpty()) {
+            chooseSwipeActionList(a, cur);
+            return;
+        }
+        // l'app ha dei widget: si può scegliere di mostrarne uno scorrendo in su sull'icona
+        Sheet.list(this, th, T.t("Scorrendo in su sull'icona"),
+                new String[]{T.t("Un'azione…"), T.t("Un widget di ") + a.label + "…"},
+                cur.startsWith("widget:") ? 1 : -1, w -> {
+                    if (w == 0) chooseSwipeActionList(a, cur);
+                    else pickPopupWidget(a, ws);
+                });
+    }
+
+    private void chooseSwipeActionList(AppEntry a, String cur) {
+        chooseAction(T.t("Scorrendo in su sull'icona"), cur.isEmpty() || cur.startsWith("widget:") ? "none" : cur,
+                act -> setSwipeAction(a, "none".equals(act) ? null : act));
+    }
+
+    /** Salva l'azione di un'icona (null = nessuna); il widget mostrato prima, se c'era, viene liberato. */
+    private void setSwipeAction(AppEntry a, String act) {
+        try {
+            String old = swipeAction(a.key);
+            org.json.JSONObject o = new org.json.JSONObject(prefs.getString("swipeActs", "{}"));
+            if (act == null) o.remove(a.key);
+            else o.put(a.key, act);
+            prefs.edit().putString("swipeActs", o.toString()).apply();
+            if (old.startsWith("widget:") && !old.equals(act)) {
+                try {
+                    host.deleteAppWidgetId(Integer.parseInt(old.substring(7)));
+                } catch (Exception ignored) {
+                }
+            }
+            toast(act == null ? T.t("Azione tolta") : T.t("Scorri in su sull'icona di ") + a.label + ": " + actionLabel(act));
+        } catch (Exception ignored) {
+        }
+    }
+
+    // ---------- widget che si apre da un'icona ----------
+
+    private List<AppWidgetProviderInfo> appWidgets(AppEntry a) {
+        try {
+            return awm.getInstalledProvidersForPackage(a.component.getPackageName(), a.user);
+        } catch (Exception e) {
+            return new ArrayList<>();
+        }
+    }
+
+    private String popKey;
+    private int popId = -1;
+
+    private void pickPopupWidget(AppEntry a, List<AppWidgetProviderInfo> ws) {
+        if (ws.size() == 1) {
+            bindPopupWidget(a, ws.get(0));
+            return;
+        }
+        String[] names = new String[ws.size()];
+        for (int i = 0; i < names.length; i++) names[i] = String.valueOf(ws.get(i).loadLabel(getPackageManager()));
+        Sheet.list(this, th, T.t("Quale widget?"), names, -1, w -> bindPopupWidget(a, ws.get(w)));
+    }
+
+    private void bindPopupWidget(AppEntry a, AppWidgetProviderInfo info) {
+        int id = host.allocateAppWidgetId();
+        popKey = a.key;
+        popId = id;
+        prefs.edit().putString("pendPop", a.key + "|" + id).apply(); // se la home si riavvia nel frattempo
+        boolean ok;
+        try {
+            ok = awm.bindAppWidgetIdIfAllowed(id, info.getProfile(), info.provider, null);
+        } catch (Exception e) {
+            ok = false;
+        }
+        if (ok) {
+            configurePopup(id);
+            return;
+        }
+        Intent i = new Intent(AppWidgetManager.ACTION_APPWIDGET_BIND)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER, info.provider)
+                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_PROVIDER_PROFILE, info.getProfile());
+        try {
+            startActivityForResult(i, REQ_POP_BIND);
+        } catch (Exception e) {
+            cancelPopup();
+            toast(T.t("Impossibile aggiungere il widget"));
+        }
+    }
+
+    private void configurePopup(int id) {
+        AppWidgetProviderInfo info = awm.getAppWidgetInfo(id);
+        if (info == null) {
+            cancelPopup();
+            return;
+        }
+        if (info.configure != null) {
             try {
-                org.json.JSONObject o = new org.json.JSONObject(prefs.getString("swipeActs", "{}"));
-                if ("none".equals(act)) o.remove(a.key);
-                else o.put(a.key, act);
-                prefs.edit().putString("swipeActs", o.toString()).apply();
-                toast("none".equals(act) ? T.t("Azione tolta") : T.t("Scorri in su sull'icona di ") + a.label + ": " + actionLabel(act));
+                host.startAppWidgetConfigureActivityForResult(this, id, 0, REQ_POP_CONFIG, null);
+                return;
             } catch (Exception ignored) {
             }
-        });
+        }
+        finishPopup(id);
+    }
+
+    private void finishPopup(int id) {
+        String key = popKey;
+        prefs.edit().remove("pendPop").apply();
+        popKey = null;
+        popId = -1;
+        AppEntry a = key == null ? null : appsByKey.get(key);
+        if (a == null) {
+            try {
+                host.deleteAppWidgetId(id);
+            } catch (Exception ignored) {
+            }
+            return;
+        }
+        setSwipeAction(a, "widget:" + id);
+        showPopupWidget(id); // si vede subito com'è
+    }
+
+    private void cancelPopup() {
+        prefs.edit().remove("pendPop").apply();
+        if (popId != -1) {
+            try {
+                host.deleteAppWidgetId(popId);
+            } catch (Exception ignored) {
+            }
+        }
+        popKey = null;
+        popId = -1;
+    }
+
+    /** Recupera il widget in preparazione se la home è stata ricreata durante la scelta. */
+    private void restorePendingPopup(Intent data) {
+        if (popKey != null) return;
+        String pp = prefs.getString("pendPop", "");
+        int bar = pp.indexOf('|');
+        if (bar <= 0) return;
+        popKey = pp.substring(0, bar);
+        try {
+            popId = Integer.parseInt(pp.substring(bar + 1));
+        } catch (Exception e) {
+            popId = -1;
+        }
+        if (data != null) {
+            int id = data.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1);
+            if (id != -1) popId = id;
+        }
+    }
+
+    /** Mostra il widget di un'icona in un riquadro, largo quanto lo schermo e alto quanto chiede il widget. */
+    private void showPopupWidget(int id) {
+        AppWidgetProviderInfo info = awm.getAppWidgetInfo(id);
+        if (info == null) {
+            toast(T.t("Il widget di questa icona non è più disponibile"));
+            return;
+        }
+        int w = getResources().getDisplayMetrics().widthPixels - px(64);
+        int maxH = Math.round(getResources().getDisplayMetrics().heightPixels * 0.6f);
+        int h = Math.max(px(120), Math.min(maxH, Math.max(info.minHeight, info.minResizeHeight) + px(24)));
+        android.appwidget.AppWidgetHostView v = host.createView(this, id, info);
+        v.setPadding(0, 0, 0, 0);
+        if (Build.VERSION.SDK_INT >= 31) {
+            java.util.List<android.util.SizeF> sizes = new ArrayList<>();
+            sizes.add(new android.util.SizeF(w / dp, h / dp));
+            v.updateAppWidgetSize(new Bundle(), sizes);
+        } else {
+            //noinspection deprecation
+            v.updateAppWidgetSize(null, Math.round(w / dp), Math.round(h / dp), Math.round(w / dp), Math.round(h / dp));
+        }
+        FrameLayout box = new FrameLayout(this);
+        box.addView(v, new FrameLayout.LayoutParams(w, h));
+        Sheet.custom(this, th, String.valueOf(info.loadLabel(getPackageManager())), box);
     }
 
     /** Azione dell'icona sotto il punto (home o dock), oppure null. */
@@ -3609,6 +3836,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             WData.put(it, "u", uri.toString());
             saveLayout();
             if (it.view != null) it.view.invalidate();
+            return;
+        }
+        if (req == REQ_POP_BIND || req == REQ_POP_CONFIG) {
+            restorePendingPopup(data);
+            if (res != RESULT_OK || popId == -1) cancelPopup();
+            else if (req == REQ_POP_BIND) configurePopup(popId);
+            else finishPopup(popId);
             return;
         }
         if ((req == REQ_BIND || req == REQ_CONFIG) && data != null) {
@@ -6230,7 +6464,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     // ---------- categorie ----------
 
     static final int SP_MAIN = -1, SP_LOOK = 1, SP_ANIM = 2, SP_HOME = 3, SP_WIDGETS = 4, SP_APPS = 5,
-            SP_NOTIF = 6, SP_WELL = 7, SP_SYSTEM = 8, SP_INFO = 9;
+            SP_NOTIF = 6, SP_WELL = 7, SP_SYSTEM = 8, SP_INFO = 9, SP_AI = 10;
     /** Categoria aperta nelle impostazioni (SP_MAIN = elenco delle categorie). */
     private int settingsPage = SP_MAIN;
     /** Testo cercato nella pagina principale ("" = nessuna ricerca). */
@@ -6248,6 +6482,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case SP_WELL: return T.t("Benessere digitale");
             case SP_SYSTEM: return T.t("Sistema");
             case SP_INFO: return T.t("Informazioni");
+            case SP_AI: return T.t("Trasparenza sull'IA");
             default: return null;
         }
     }
@@ -6273,7 +6508,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     /** Indietro dalle impostazioni: da una categoria (o da una ricerca) si torna all'elenco, poi si chiude. */
     private void settingsBack() {
         if (settingsSearch != null && settingsSearch.hasFocus()) hideSettingsKeyboard();
-        if (settingsPage != SP_MAIN) {
+        if (settingsPage == SP_AI) {
+            openSettingsPage(SP_SYSTEM); // la pagina dell'IA sta dentro Sistema
+        } else if (settingsPage != SP_MAIN) {
             openSettingsPage(SP_MAIN);
         } else if (!settingsQuery.isEmpty() && settingsSearch != null) {
             settingsSearch.setText(""); // svuota la ricerca e ricostruisce l'elenco
@@ -6518,6 +6755,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             st.row(SettingsScreen.CLOCK, T.t("Sveglia del widget"), DotAlarms.enabled(this)
                     ? T.t("Dot Sveglia, con l'alba") : T.t("App di sistema o un'altra app"),
                     () -> safeStart(new Intent(this, AlarmsActivity.class)));
+            st.toggle(SectionIcons.BATTERY, T.t("StandBy in carica"),
+                    T.t("Collegando il caricatore sulla home compare un orologio a tutto schermo. Tocca per chiuderlo"),
+                    prefs.getBoolean("standby", false), on -> prefs.edit().putBoolean("standby", on).apply());
+            st.row(SectionIcons.MOON, T.t("Prova StandBy"), T.t("Si può aprire anche con un gesto"), this::openStandby);
             st.section(T.t("Meteo e passi"));
             st.row(Draw.SUN, T.t("Città per il meteo"), city.isEmpty() ? T.t("Posizione automatica") : city, this::askCity);
             st.row(Draw.STEPS, T.t("Obiettivo di passi"), State.stepGoal + T.t(" passi al giorno"), this::editStepGoal);
@@ -6557,6 +6798,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     prefs.getBoolean("drawerAll", true), on -> {
                         prefs.edit().putBoolean("drawerAll", on).apply();
                         refreshDrawer();
+                    });
+            st.toggle(SectionIcons.SWIPE_DOWN, T.t("Cassetto a una mano"),
+                    T.t("Le app partono più in basso e la ricerca sta in fondo, vicino al pollice"),
+                    prefs.getBoolean("oneHand", false), on -> {
+                        prefs.edit().putBoolean("oneHand", on).apply();
+                        recreate();
                     });
             st.section(T.t("App nascoste"));
             final int nHidden = hidden().size();
@@ -6638,10 +6885,19 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 prefs.edit().putBoolean("onboarded", false).apply();
                 showOnboarding(0);
             });
-            st.section(T.t("Backup"));
+            st.section(T.t("Privacy"));
+            st.row(SectionIcons.SHIELD, T.t("Trasparenza sull'IA"), T.t("Cosa viene inviato all'assistente e a chi"),
+                    () -> openSettingsPage(SP_AI));
+            st.section(T.t("Backup e condivisione"));
             st.row(SectionIcons.DOWNLOAD, T.t("Esporta la configurazione"), T.t("Home, cassetto, impostazioni (senza chiavi API)"),
                     this::exportBackup);
             st.row(Draw.CLOUD, T.t("Importa una configurazione"), T.t("Da un file esportato in precedenza"), this::importBackup);
+            st.row(SectionIcons.PEOPLE, T.t("Condividi il layout"), T.t("Solo aspetto e disposizione: niente note, posizione o app nascoste"),
+                    this::shareLayout);
+            if (beforeShared().exists()) {
+                st.row(SectionIcons.ARROW_DOWN, T.t("Torna al layout di prima"), T.t("Annulla l'ultimo layout ricevuto"),
+                        this::restoreBeforeShared);
+            }
         }
         if (pg == 0 || pg == SP_INFO) {
             st.section(T.t("Informazioni"));
@@ -6654,10 +6910,57 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             st.note(T.t("Caratteri: Geist, Space Mono e Doto, con licenza SIL Open Font License. Meteo: Open-Meteo. ")
                     + T.t("Il launcher non ha server: nessun dato viene raccolto."));
         }
+        if (pg == SP_AI) aiTransparencyPage(st);
         if (searching) {
             boolean none = st.matches() == 0;
             st.setFilter(null);
             if (none) st.note(T.t("Nessuna impostazione trovata per «") + settingsQuery + "»");
+        }
+    }
+
+    /** Cosa parte verso l'IA, a quale indirizzo e cosa non parte mai. Solo da leggere. */
+    private void aiTransparencyPage(SettingsScreen st) {
+        SharedPreferences secret = getSharedPreferences("secret", MODE_PRIVATE);
+        String p = prefs.getString("aiProvider", "claude");
+        if (!Arrays.asList(AiClient.PROVIDERS).contains(p)) p = "claude";
+        String key = secret.getString("aiKey_" + p, "");
+        boolean api = "api".equals(prefs.getString("aiMode_" + p, "app")) && !key.isEmpty();
+        String model = prefs.getString("aiModel_" + p, "");
+        if (model.isEmpty()) model = AiClient.defaultModel(p);
+        String url = AiClient.endpoint(p, model, prefs.getString("aiBase_" + p, ""));
+
+        st.section(T.t("Servizio scelto"));
+        st.info(SectionIcons.CHAT, AiClient.label(p), api ? T.t("Risposte nella pagina a sinistra, con la tua chiave API")
+                : T.t("La domanda si apre nell'app o nel sito del servizio"));
+        if (api) {
+            st.info(SectionIcons.GLOBE, T.t("Indirizzo"), url.isEmpty() ? T.t("da impostare") : url);
+            st.info(SectionIcons.CHIP, T.t("Modello"), model);
+        }
+
+        st.section(T.t("Cosa viene inviato"));
+        if (api) {
+            st.info(SectionIcons.CHAT, T.t("La tua domanda"),
+                    T.t("Con le domande e le risposte precedenti della stessa conversazione. Si azzera cambiando servizio o cancellando la conversazione."));
+            st.info(SectionIcons.BOOK, T.t("Un'istruzione fissa"), "«" + AiClient.SYSTEM.trim() + "»");
+            st.info(SectionIcons.LOCK, T.t("La chiave API"), T.t("Nell'intestazione, solo a questo indirizzo e solo in https."));
+        } else {
+            st.info(SectionIcons.CHAT, T.t("Niente, dal launcher"),
+                    T.t("La domanda viene passata all'app o al sito, preceduta da: «") + AiClient.PREFIX.trim()
+                            + T.t("». Da lì in poi decide il servizio, con il tuo account."));
+        }
+
+        st.section(T.t("Cosa non viene mai inviato"));
+        st.info(SectionIcons.SHIELD, T.t("Dati del telefono"),
+                T.t("App installate, notifiche, posizione, contatti, calendario, note, attività, foto e tempo di utilizzo."));
+        st.info(SectionIcons.LOCK, T.t("Dove sta la chiave"), key.isEmpty() ? T.t("Nessuna chiave salvata.")
+                : T.t("Solo su questo telefono. Esclusa dai backup e dai layout condivisi."));
+
+        st.section(T.t("Ultima richiesta"));
+        if (AiClient.lastAt == 0) {
+            st.info(SectionIcons.TIMER, T.t("Nessuna"), T.t("Da quando la home è stata avviata non è partita nessuna richiesta."));
+        } else {
+            st.info(SectionIcons.TIMER, hhmm(AiClient.lastAt), AiClient.lastMsgs + T.n(AiClient.lastMsgs, " messaggio", " messaggi")
+                    + " · " + AiClient.lastChars + T.t(" caratteri") + " · " + AiClient.lastUrl);
         }
     }
 
@@ -6683,7 +6986,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 : T.t("Accesso alle notifiche spento"), () -> openSettingsPage(SP_NOTIF));
         st.row(NothingTile.HOURGLASS, T.t("Benessere digitale"), Usage.focusOn(prefs) ? T.t("Focus attivo")
                 : T.t("Tempo di utilizzo, focus e limiti"), () -> openSettingsPage(SP_WELL));
-        st.row(SectionIcons.GEAR, T.t("Sistema"), T.t("Lingua, launcher predefinito, backup"), () -> openSettingsPage(SP_SYSTEM));
+        st.row(SectionIcons.GEAR, T.t("Sistema"), T.t("Lingua, launcher predefinito, backup e privacy"), () -> openSettingsPage(SP_SYSTEM));
         st.row(SectionIcons.INFO, T.t("Informazioni"), T.t("Versione ") + versionName(), () -> openSettingsPage(SP_INFO));
     }
 
@@ -6853,6 +7156,74 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             prefs.edit().putString("iconPack", v).apply();
             recreate();
         });
+    }
+
+    // ---------- layout condivisi ----------
+
+    /** Copia della configurazione presa prima di applicare un layout ricevuto. */
+    private java.io.File beforeShared() {
+        return new java.io.File(getFilesDir(), "before-shared-layout.json");
+    }
+
+    /** Prepara il file del layout (solo aspetto e disposizione) e lo passa al foglio di condivisione di Android. */
+    private void shareLayout() {
+        try {
+            Backup.exportShare(prefs, ShareProvider.file(this));
+            Intent send = new Intent(Intent.ACTION_SEND)
+                    .setType("application/json")
+                    .putExtra(Intent.EXTRA_STREAM, ShareProvider.uri())
+                    .putExtra(Intent.EXTRA_SUBJECT, T.t("Il mio layout di Dot Launcher"))
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            send.setClipData(android.content.ClipData.newRawUri(ShareProvider.NAME, ShareProvider.uri()));
+            startActivity(Intent.createChooser(send, T.t("Condividi il layout")));
+        } catch (Exception e) {
+            toast(T.t("Condivisione non riuscita"));
+        }
+    }
+
+    /** Un layout ricevuto da un'altra app: si applica solo dopo conferma, tenendo una copia di quello attuale. */
+    private void offerSharedLayout(boolean ok) {
+        if (destroyed) return;
+        final java.io.File in = new java.io.File(getCacheDir(), "incoming-layout.json");
+        if (!ok || !in.exists()) {
+            toast(T.t("File di configurazione non valido"));
+            return;
+        }
+        Sheet.confirm(this, th, T.t("Applicare il layout ricevuto?"),
+                T.t("Cambiano aspetto, home, dock, cassetto e gesti. Note, attività, app nascoste, sveglie e impostazioni dell'IA restano come sono. ")
+                        + T.t("Il layout di adesso viene salvato: puoi tornarci da Impostazioni › Sistema."),
+                T.t("Applica"), () -> {
+                    try {
+                        Backup.export(this, prefs, Uri.fromFile(beforeShared()));
+                        int dropped = Backup.restore(this, prefs, Uri.fromFile(in));
+                        //noinspection ResultOfMethodCallIgnored
+                        in.delete();
+                        toast(dropped > 0
+                                ? T.t("Layout applicato. ") + dropped + T.n(dropped, " widget di sistema va riaggiunto", " widget di sistema vanno riaggiunti")
+                                : T.t("Layout applicato"));
+                        recreate();
+                    } catch (Exception e) {
+                        toast(T.t("File di configurazione non valido"));
+                    }
+                });
+    }
+
+    /** Torna alla configurazione salvata prima dell'ultimo layout ricevuto. */
+    private void restoreBeforeShared() {
+        final java.io.File f = beforeShared();
+        if (!f.exists()) return;
+        Sheet.confirm(this, th, T.t("Tornare al layout di prima?"),
+                T.t("Torna la configurazione che avevi prima di applicare il layout ricevuto."), T.t("Ripristina"), () -> {
+                    try {
+                        Backup.restore(this, prefs, Uri.fromFile(f));
+                        //noinspection ResultOfMethodCallIgnored
+                        f.delete();
+                        toast(T.t("Layout di prima ripristinato"));
+                        recreate();
+                    } catch (Exception e) {
+                        toast(T.t("File di configurazione non valido"));
+                    }
+                });
     }
 
     private void exportBackup() {

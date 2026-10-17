@@ -77,6 +77,12 @@ class UniversalSearch extends ScrollView {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private final ExecutorService bg = Executors.newSingleThreadExecutor();
     private String query = "";
+
+    /** Uso a una mano: se i risultati sono pochi stanno in basso, vicino al campo di ricerca. */
+    void setBottomAligned() {
+        setFillViewport(true);
+        col.setGravity(Gravity.BOTTOM);
+    }
     private int generation;
     private List<ShortcutInfo> shortcuts;
     private HomeActivity.AppEntry firstApp;
@@ -157,6 +163,33 @@ class UniversalSearch extends ScrollView {
             return;
         }
         String norm = DotTextView.normalize(query);
+
+        // 0) sveglia o timer: "sveglia 7:30", "timer 10 min"
+        final int[] at = SearchTools.alarmTime(query);
+        if (at != null) {
+            final String hm = at[0] + ":" + (at[1] < 10 ? "0" : "") + at[1];
+            final boolean dot = DotAlarms.enabled(act);
+            header(T.t("Sveglia"));
+            Runnable set = () -> setAlarm(at[0], at[1], hm, dot);
+            row(SectionIcons.bitmap(SettingsScreen.CLOCK, px(40), th.onTile, th.accent, circle()),
+                    T.t("Sveglia alle ") + hm, dot ? T.t("Dot Sveglia, una volta sola") : T.t("Con l'app della sveglia"), set, null);
+            firstAction = set;
+        }
+        final int sec = SearchTools.timerSeconds(query);
+        if (sec > 0) {
+            final String d = SearchTools.duration(sec);
+            header(T.t("Timer"));
+            Runnable set = () -> {
+                Intent i = new Intent(android.provider.AlarmClock.ACTION_SET_TIMER)
+                        .putExtra(android.provider.AlarmClock.EXTRA_LENGTH, sec)
+                        .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true);
+                host.startSafe(i);
+                host.toast(T.t("Timer di ") + d + T.t(" avviato"));
+            };
+            row(SectionIcons.bitmap(SectionIcons.TIMER, px(40), th.onTile, th.accent, circle()),
+                    T.t("Timer di ") + d, T.t("Con l'app Orologio"), set, null);
+            if (firstAction == null) firstAction = set;
+        }
 
         // 1) calcolatrice
         if (SearchTools.looksLikeMath(query)) {
@@ -580,6 +613,38 @@ class UniversalSearch extends ScrollView {
     private String appLabel(String pkg) {
         for (HomeActivity.AppEntry a : host.apps()) if (a.component.getPackageName().equals(pkg)) return a.label;
         return pkg;
+    }
+
+    /** Sveglia una volta sola: in Dot Sveglia (con le impostazioni dell'ultima sveglia) o nell'app di sistema. */
+    private void setAlarm(int h, int m, String hm, boolean dot) {
+        if (dot) {
+            try {
+                java.util.List<DotAlarms.Alarm> list = DotAlarms.load(act);
+                DotAlarms.Alarm a = list.isEmpty() ? new DotAlarms.Alarm()
+                        : DotAlarms.Alarm.from(list.get(list.size() - 1).json()); // stessa alba, suono e volume
+                a.id = DotAlarms.newId(list);
+                a.hour = h;
+                a.minute = m;
+                a.days = 0;
+                a.on = true;
+                a.name = "";
+                a.skipAt = 0;
+                a.shiftAt = 0;
+                a.shiftMin = 0;
+                list.add(a);
+                DotAlarms.save(act, list);
+                host.toast(T.t("Dot Sveglia alle ") + hm);
+                return;
+            } catch (Exception ignored) {
+                // se qualcosa va storto si passa all'app di sistema
+            }
+        }
+        Intent i = new Intent(android.provider.AlarmClock.ACTION_SET_ALARM)
+                .putExtra(android.provider.AlarmClock.EXTRA_HOUR, h)
+                .putExtra(android.provider.AlarmClock.EXTRA_MINUTES, m)
+                .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true);
+        host.startSafe(i);
+        host.toast(T.t("Sveglia alle ") + hm);
     }
 
     private void copy(String text) {
