@@ -112,7 +112,12 @@ public class WallpaperActivity extends Activity {
             return true;
         });
         root.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
-        setContentView(root);
+        // aperta dalla home: anche qui Honor può tenersi il gesto indietro, quindi lo si legge da qui
+        SwipeBackFrame frame = new SwipeBackFrame(this);
+        frame.setOnSwipeBack(this::onBackPressed);
+        frame.enableSwipeBack();
+        frame.addView(root);
+        setContentView(frame);
         final int padTop = Math.round(24 * dp);
         root.setOnApplyWindowInsetsListener((v, in) -> {
             int[] r = SystemBars.read(in);

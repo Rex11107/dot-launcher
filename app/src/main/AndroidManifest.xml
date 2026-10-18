@@ -48,6 +48,9 @@
             <action android:name="android.intent.action.SET_ALARM" />
         </intent>
         <intent>
+            <action android:name="android.intent.action.SET_TIMER" />
+        </intent>
+        <intent>
             <action android:name="android.intent.action.RINGTONE_PICKER" />
         </intent>
         <intent>
@@ -177,6 +180,42 @@
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- StandBy: orologio a tutto schermo in carica -->
+        <activity
+            android:name=".StandbyActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTask"
+            android:taskAffinity=".standby"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
+
+        <!-- Layout condivisi: un file da inviare e la ricezione di quelli altrui -->
+        <provider
+            android:name=".ShareProvider"
+            android:authorities="it.rex.dotlauncher.share"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+
+        <activity
+            android:name=".ImportActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:label="@string/import_layout"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/json" />
+            </intent-filter>
+        </activity>
 
         <activity
             android:name=".WallpaperActivity"

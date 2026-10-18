@@ -10,13 +10,17 @@ Launcher Android minimale in stile dot-matrix, ispirato all'estetica Nothing ma 
 - **Oltre 30 widget a puntini**: orologi, Riepilogo (data, meteo e prossimo evento), meteo (Open-Meteo, senza account), calendario, batteria, musica, contapassi con la distanza percorsa, bussola, fasi lunari, note, contatori, tempo di utilizzo, focus e altri. Si possono impilare e scorrere in verticale.
 - **Widget di sistema** delle app installate, ridimensionabili.
 - **Dot Sveglia** (facoltativa): sveglia con alba simulata sullo schermo, luce e suono che crescono insieme, suoni ambientali generati dall'app (mare, pioggia, campanelle) o file audio, posticipo e prova breve. Il widget Sveglia può usare questa, l'Orologio di sistema o un'altra app.
-- **Cassetto a sezioni**: le app vengono divise per tipo, con sezioni rinominabili, contenitori, cartelle sulla home con copertina che può aprire direttamente un'app, ordine libero o alfabetico e sezione Lavoro per il profilo di lavoro.
-- **Ricerca universale**: app, scorciatoie, impostazioni del telefono, contatti, eventi, calcolatrice, convertitore di unità e motori web rispettosi della privacy (DuckDuckGo predefinito).
+- **Cassetto a sezioni**: le app vengono divise per tipo, con sezioni rinominabili, contenitori, cartelle sulla home con copertina che può aprire direttamente un'app, ordine libero, alfabetico o per app più usate, uso a una mano e sezione Lavoro per il profilo di lavoro.
+- **Ricerca universale**: sveglie e timer ("sveglia 7:30", "timer 10 min"), app, anche quelle nascoste se lo scegli, scorciatoie, impostazioni del telefono, contatti, eventi, calcolatrice, convertitore di unità e motori web rispettosi della privacy (DuckDuckGo predefinito).
 - **Pagina a sinistra**: chat con un'IA (Claude, ChatGPT, Gemini, OpenRouter o un servizio compatibile), notizie da feed RSS, calendario, attività e note.
 - **Personalizzazione**: colore d'accento, forma e dimensione delle icone, pacchetti di icone, nomi e icone delle app, righe della home, dock, carattere, animazioni di pagine e menu.
-- **Gesti configurabili** (anche a due dita e pizzico), pallini di notifica personalizzabili (punto o numero, dimensione, angolo, colore) e anteprima delle notifiche.
+- **Impostazioni a categorie** con ricerca, e trascinamento laterale per tornare indietro.
+- **StandBy**: orologio a puntini a tutto schermo quando colleghi il caricatore (facoltativo).
+- **Gesti configurabili** (anche a due dita e pizzico; scorrendo in su su un'icona si può aprire un'azione o un widget dell'app), pallini di notifica personalizzabili (punto o numero, dimensione, angolo, colore) e anteprima delle notifiche.
 - **Benessere digitale**: tempo di utilizzo, limiti giornalieri, pausa prima di aprire, modalità focus.
 - **Privacy**: app nascoste e singole app bloccate con impronta, volto o PIN; le chiavi API restano solo sul telefono e sono escluse dai backup; nessun server, nessuna statistica.
+- **Condivisione del layout**: un file con solo aspetto e disposizione, senza dati personali, da mandare ad altri; chi lo riceve può tornare al proprio layout.
+- **Trasparenza sull'IA**: una pagina mostra a chi va ogni domanda e cosa viene inviato.
 - Italiano e inglese, configurazione guidata al primo avvio, backup della configurazione su file, registro locale degli errori.
 
 ## Permessi
@@ -38,7 +42,7 @@ Nessun dato lascia il telefono, tranne le richieste al servizio meteo, ai feed c
 
 1. Scarica l'ultima versione: https://github.com/Rex11107/dot-launcher/releases/latest/download/DotLauncher.apk
 2. Installala (Android 8 o successivo) e scegli Dot Launcher come app Home quando la configurazione guidata lo propone.
-3. Su Honor e Huawei: Impostazioni › Batteria › Avvio app › Dot Launcher › Gestisci manualmente, con tutti gli interruttori attivi.
+3. Su Honor e Huawei: Impostazioni › Batteria › Avvio app › Dot Launcher › Gestisci manualmente, con tutti gli interruttori attivi. Se il trascinamento laterale nelle impostazioni non funziona bene, spegni il dock in Impostazioni › Funzioni di accessibilità › Multi-finestra.
 
 Gli aggiornamenti si installano sopra la versione precedente: home e impostazioni restano.
 
