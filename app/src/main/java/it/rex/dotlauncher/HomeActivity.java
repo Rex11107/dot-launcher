@@ -2947,6 +2947,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 acts.add(() -> changeIcon(a));
                 labels.add(T.t("Stile icona"));
                 acts.add(() -> chooseIconMode(a));
+                if (swipeAction(a.key).startsWith("widget:")) {
+                    labels.add(T.t("Mostra il widget"));
+                    acts.add(() -> runAction(swipeAction(a.key)));
+                }
                 labels.add(T.t("Azione scorrendo in su…"));
                 acts.add(() -> chooseSwipeAction(a));
                 labels.add(T.t("Benessere digitale…"));
@@ -3046,14 +3050,45 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private String popKey;
     private int popId = -1;
 
+    /** Scelta del widget con l'anteprima di ognuno (come nell'elenco dei widget di sistema). */
     private void pickPopupWidget(AppEntry a, List<AppWidgetProviderInfo> ws) {
-        if (ws.size() == 1) {
-            bindPopupWidget(a, ws.get(0));
-            return;
+        final Dialog[] dlg = new Dialog[1];
+        final PackageManager pm = getPackageManager();
+        final int dpi = getResources().getDisplayMetrics().densityDpi;
+        LinearLayout list = new LinearLayout(this);
+        list.setOrientation(LinearLayout.VERTICAL);
+        list.setPadding(px(4), 0, px(4), px(8));
+        for (AppWidgetProviderInfo info : ws) {
+            LinearLayout card = pickerCard();
+            ImageView iv = new ImageView(this);
+            iv.setAdjustViewBounds(true);
+            iv.setMaxHeight(px(140));
+            iv.setScaleType(ImageView.ScaleType.FIT_CENTER);
+            card.addView(iv, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(110)));
+            bg(appExec, () -> {
+                android.graphics.drawable.Drawable d = null;
+                try {
+                    d = info.loadPreviewImage(this, dpi);
+                    if (d == null) d = info.loadIcon(this, dpi);
+                } catch (Exception ignored) {
+                }
+                final android.graphics.drawable.Drawable fd = d;
+                if (fd != null) ui.post(() -> iv.setImageDrawable(fd));
+            });
+            TextView name = new TextView(this);
+            name.setText(String.valueOf(info.loadLabel(pm)));
+            name.setTextColor(th.onTile);
+            name.setTypeface(th.bodyFace);
+            name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            name.setPadding(0, px(8), 0, 0);
+            card.addView(name);
+            card.setOnClickListener(v -> {
+                if (dlg[0] != null) dlg[0].dismiss();
+                bindPopupWidget(a, info);
+            });
+            list.addView(card);
         }
-        String[] names = new String[ws.size()];
-        for (int i = 0; i < names.length; i++) names[i] = String.valueOf(ws.get(i).loadLabel(getPackageManager()));
-        Sheet.list(this, th, T.t("Quale widget?"), names, -1, w -> bindPopupWidget(a, ws.get(w)));
+        dlg[0] = Sheet.custom(this, th, T.t("Widget di ") + a.label, list);
     }
 
     private void bindPopupWidget(AppEntry a, AppWidgetProviderInfo info) {
@@ -3114,6 +3149,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         setSwipeAction(a, "widget:" + id);
         showPopupWidget(id); // si vede subito com'è
+        toast(T.t("Scorri in su sull'icona nella home o nel dock, oppure tienila premuta → Mostra il widget"));
     }
 
     private void cancelPopup() {
@@ -5093,6 +5129,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 prefs.edit().putStringSet("hidden", h).apply();
                 refreshDrawer();
             });
+        }
+        if (swipeAction(a.key).startsWith("widget:")) {
+            labels.add(T.t("Mostra il widget"));
+            acts.add(() -> runAction(swipeAction(a.key)));
         }
         labels.add(T.t("Azione scorrendo in su…"));
         acts.add(() -> chooseSwipeAction(a));

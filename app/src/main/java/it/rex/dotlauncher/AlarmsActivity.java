@@ -55,6 +55,7 @@ public class AlarmsActivity extends Activity {
         getWindow().setBackgroundDrawable(new ColorDrawable(th.bg));
         SystemBars.edgeToEdge(getWindow(), th.light);
         st = new SettingsScreen(this, th, T.t("Sveglia"), this::goBack);
+        st.enableSwipeBack(); // aperta dalla home: anche qui Honor può tenersi il gesto indietro
         appChip = new TextView(this);
         appChip.setTextColor(th.onTile);
         appChip.setTypeface(th.bodyFace);
