@@ -1076,6 +1076,8 @@ final class T {
             "Angolo", "Corner",
             "Colore: ", "Color: ",
             "Dimensione", "Size",
+            "Indietro trascinando di lato", "Back by swiping sideways",
+            "Nelle impostazioni trascina di lato per tornare indietro. Su Honor e Huawei, se non funziona bene, spegni il dock in Impostazioni del telefono → Funzioni di accessibilità → Multi-finestra.", "In settings, swipe sideways to go back. On Honor and Huawei, if it doesn't work well, turn off the dock in phone Settings → Accessibility features → Multi-Window.",
             "Mostra il widget", "Show the widget",
             "Widget di ", "Widgets from ",
             "Scorri in su sull'icona nella home o nel dock, oppure tienila premuta → Mostra il widget", "Swipe up on the icon on the home screen or dock, or long-press it → Show the widget",

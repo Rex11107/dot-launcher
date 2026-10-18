@@ -4792,6 +4792,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 {"Nome e icona di un'app", "Tieni premuta l'app → Rinomina o Cambia icona.", null},
                 {"Colori, forme, caratteri e animazioni", "Impostazioni → Aspetto e icone, e Animazioni e gesti.", openLook},
                 {"Gesti", "Impostazioni → Animazioni e gesti: scegli cosa fanno scorrimenti, doppio tocco, due dita e pizzico.", openGest},
+                {"Indietro trascinando di lato", "Nelle impostazioni trascina di lato per tornare indietro. Su Honor e Huawei, se non funziona bene, spegni il dock in Impostazioni del telefono → Funzioni di accessibilità → Multi-finestra.", null},
                 {"Benessere digitale"},
                 {"Tempo di utilizzo", "Quanto usi ogni app oggi, con il numero di aperture.", (Runnable) this::showUsage},
                 {"Modalità focus", "Metti in pausa le app che distraggono per un po' di tempo.", (Runnable) this::focusMenu},
