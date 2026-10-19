@@ -51,8 +51,6 @@ public class WallpaperActivity extends Activity {
     private boolean busy;
     private GridView monoGrid, fixedGrid, liveGrid;
     private Class<?> pendingSvc;   // sfondo animato in attesa della conferma di Android
-    private int pendingScene;
-    private boolean pendingLock;
 
     @Override
     protected void onCreate(Bundle s) {
@@ -268,13 +266,10 @@ public class WallpaperActivity extends Activity {
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
         if (req == REQ_LIVE) {
-            // tornati dalla conferma di Android: se lo sfondo è attivo e serve, si prepara la schermata di blocco
+            // tornati dalla conferma di Android
             Class<?> svc = pendingSvc;
             pendingSvc = null;
-            if (svc != null && liveActive(svc)) {
-                if (pendingLock) lockStill(svc, pendingScene);
-                else toast(T.t("Sfondo animato applicato"));
-            }
+            if (svc != null && liveActive(svc)) toast(T.t("Sfondo animato applicato"));
             if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
             return;
         }
@@ -414,106 +409,425 @@ public class WallpaperActivity extends Activity {
     }
 
     /**
-     * Sfondo animato. Android non lascia impostarlo in silenzio: la prima volta compare la sua conferma.
-     * Molti telefoni (Honor compreso) non mostrano gli sfondi animati sulla schermata di blocco, quindi lì
-     * si può mettere un fotogramma fisso della stessa scena.
+     * Sfondo animato: si apre un'anteprima a due pagine. La prima mostra la scena in movimento con
+     * "Imposta sfondo home"; scorrendo, la seconda mostra un fotogramma fisso della stessa scena con
+     * "Imposta schermata home" e "Imposta schermata di blocco". Così la home e la schermata di blocco
+     * si impostano con due pulsanti separati (molti telefoni, Honor compreso, non animano la schermata di blocco).
      */
     private void applyAnimated(Class<?> svc, String pref, int scene) {
         if (busy) return;
-        String[] items = {T.t("Solo schermata home (animato)"), T.t("Home animata e blocco con la stessa immagine fissa")};
-        Sheet.list(this, th, animatedName(svc, scene), items, -1, which -> {
-            // la home deve lasciar vedere lo sfondo del telefono, altrimenti lo coprirebbe con la tinta del tema
-            prefs.edit().putInt(pref, scene).putBoolean("wall", true).apply();
-            boolean lock = which == 1;
-            if (liveActive(svc)) {
-                if (lock) lockStill(svc, scene);
-                else toast(T.t("Sfondo animato: ") + animatedName(svc, scene));
-                if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
+        new AnimatedPreview(svc, pref, scene).show();
+    }
+
+    /** Home animata: Android non lascia impostarla in silenzio, la prima volta compare la sua conferma. */
+    private void setAnimatedHome(Class<?> svc, String pref, int scene) {
+        // la home deve lasciar vedere lo sfondo del telefono, altrimenti lo coprirebbe con la tinta del tema
+        prefs.edit().putInt(pref, scene).putBoolean("wall", true).apply();
+        if (liveActive(svc)) {
+            toast(T.t("Sfondo animato: ") + animatedName(svc, scene));
+            if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
+            return;
+        }
+        pendingSvc = svc;
+        android.content.ComponentName me = new android.content.ComponentName(this, svc);
+        try {
+            startActivityForResult(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                    .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, me), REQ_LIVE);
+        } catch (Exception e) {
+            try {
+                startActivityForResult(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER), REQ_LIVE);
+                toast(T.t("Scegli \"Sfondo animato Dot\" dall'elenco"));
+            } catch (Exception e2) {
+                pendingSvc = null;
+                toast(T.t("Questo telefono non permette gli sfondi animati"));
+            }
+        }
+    }
+
+    /** Fotogramma fisso della scena, a risoluzione piena (da un thread di lavoro; null se non riesce). */
+    private Bitmap renderStill(Class<?> svc, int scene, int w, int h) {
+        if (svc == ShaderWallpaper.class) return ShaderWallpaper.still(this, scene, w, h, th.accent);
+        try {
+            Bitmap b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            LiveScenes sc = new LiveScenes();
+            sc.accent = th.accent;
+            sc.ghost = prefs.getBoolean("ghost", true);
+            sc.draw(new Canvas(b), scene, w, h, 20f, 9 * dp, 0);
+            return b;
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    /** Immagine fissa sulla home o sulla schermata di blocco, con un esito chiaro. */
+    private void setStill(Bitmap b, int which, Runnable after) {
+        busy = true;
+        exec.execute(() -> {
+            String msg;
+            boolean ok = false;
+            try {
+                WallpaperManager wm = WallpaperManager.getInstance(this);
+                int before = wm.getWallpaperId(which);
+                wm.setBitmap(b, null, true, which);
+                int now = wm.getWallpaperId(which);
+                ok = true;
+                if (which == WallpaperManager.FLAG_SYSTEM) {
+                    Bitmap small = Bitmap.createScaledBitmap(b, Math.max(1, b.getWidth() / 4), Math.max(1, b.getHeight() / 4), true);
+                    Glass.save(this, small);
+                    prefs.edit().putBoolean("wall", true).putInt("wallStyle", -1)
+                            .putInt("wallVer", prefs.getInt("wallVer", 0) + 1).apply();
+                    msg = T.t("Schermata home impostata");
+                } else {
+                    msg = now != before ? T.t("Schermata di blocco impostata")
+                            : T.t("Android l'ha accettata, ma il telefono potrebbe ignorarla: se non cambia usa \"Imposta dalla Galleria\"");
+                }
+            } catch (Exception e) {
+                msg = T.t("Il telefono ha rifiutato l'immagine: prova \"Imposta dalla Galleria\"");
+            }
+            final String m = msg;
+            final boolean done = ok;
+            ui.post(() -> {
+                busy = false;
+                toast(m);
+                if (done && after != null) after.run();
+            });
+        });
+    }
+
+    private final class AnimatedPreview {
+        private final Class<?> svc;
+        private final String pref;
+        private final int scene;
+        private final android.app.Dialog dlg;
+        private final FrameLayout pages;
+        private final View[] page = new View[2];
+        private final LinearLayout[] actions = new LinearLayout[2];
+        private final View[] dots = new View[2];
+        private final ImageView still;
+        private final TextView stillMsg;
+        private android.opengl.GLSurfaceView gl;
+        private Bitmap stillBmp;
+        private int current;
+        private float downX;
+        private boolean dragging;
+
+        AnimatedPreview(Class<?> svc, String pref, int scene) {
+            this.svc = svc;
+            this.pref = pref;
+            this.scene = scene;
+            dlg = new android.app.Dialog(WallpaperActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+            final int[] sz = screen();
+            int cardH = Math.round(sz[1] * 0.58f), cardW = Math.round(cardH * sz[0] / (float) sz[1]);
+
+            LinearLayout root = new LinearLayout(WallpaperActivity.this);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setBackgroundColor(0xFF000000);
+            root.setPadding(0, Math.round(28 * dp), 0, Math.round(24 * dp));
+
+            TextView title = new TextView(WallpaperActivity.this);
+            title.setText(animatedName(svc, scene));
+            title.setTextColor(0xFFFFFFFF);
+            title.setTypeface(th.titleFace);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+            title.setGravity(Gravity.CENTER);
+            root.addView(title);
+
+            pages = new FrameLayout(WallpaperActivity.this);
+            LinearLayout.LayoutParams pl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
+            pl.topMargin = Math.round(16 * dp);
+            root.addView(pages, pl);
+
+            // pagina 1: la scena in movimento
+            FrameLayout live = card(cardW, cardH);
+            if (svc == ShaderWallpaper.class) {
+                gl = new android.opengl.GLSurfaceView(WallpaperActivity.this);
+                gl.setEGLContextClientVersion(2);
+                gl.getHolder().setFixedSize(Math.max(1, cardW / 2), Math.max(1, cardH / 2));
+                gl.setRenderer(new PreviewRenderer(WallpaperActivity.this, scene, th.accent));
+                live.addView(gl, new FrameLayout.LayoutParams(cardW, cardH));
+            } else {
+                live.addView(new LivePreview(WallpaperActivity.this, scene, th), new FrameLayout.LayoutParams(cardW, cardH));
+            }
+            page[0] = pageOf(live, T.t("Animato · schermata home"));
+
+            // pagina 2: lo stesso sfondo fermo
+            FrameLayout fixed = card(cardW, cardH);
+            still = new ImageView(WallpaperActivity.this);
+            still.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            fixed.addView(still, new FrameLayout.LayoutParams(cardW, cardH));
+            stillMsg = new TextView(WallpaperActivity.this);
+            stillMsg.setText(T.t("Preparo l'immagine…"));
+            stillMsg.setTextColor(0xFFBBBBBB);
+            stillMsg.setGravity(Gravity.CENTER);
+            stillMsg.setPadding(Math.round(16 * dp), 0, Math.round(16 * dp), 0);
+            fixed.addView(stillMsg, new FrameLayout.LayoutParams(cardW, cardH));
+            page[1] = pageOf(fixed, T.t("Fisso · home o schermata di blocco"));
+            for (View v : page) pages.addView(v, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+
+            // indicatore delle pagine
+            LinearLayout ind = new LinearLayout(WallpaperActivity.this);
+            ind.setGravity(Gravity.CENTER);
+            ind.setPadding(0, Math.round(10 * dp), 0, Math.round(14 * dp));
+            for (int i = 0; i < 2; i++) {
+                final int to = i;
+                View d = new View(WallpaperActivity.this);
+                LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(Math.round(8 * dp), Math.round(8 * dp));
+                dl.leftMargin = dl.rightMargin = Math.round(5 * dp);
+                d.setOnClickListener(v -> go(to));
+                ind.addView(d, dl);
+                dots[i] = d;
+            }
+            root.addView(ind);
+
+            // pulsanti: cambiano con la pagina
+            FrameLayout actBox = new FrameLayout(WallpaperActivity.this);
+            root.addView(actBox, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT));
+            actions[0] = column();
+            actions[0].addView(button(T.t("Imposta sfondo home"), true, () -> {
+                dlg.dismiss();
+                setAnimatedHome(svc, pref, scene);
+            }));
+            actions[0].addView(link(T.t("Scorri per la versione fissa →"), () -> go(1)));
+            actions[1] = column();
+            actions[1].addView(button(T.t("Imposta schermata home"), false, () -> withStill(b ->
+                    setStill(b, WallpaperManager.FLAG_SYSTEM, () -> {
+                        if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
+                    }))));
+            actions[1].addView(button(T.t("Imposta schermata di blocco"), true, () -> withStill(b ->
+                    setStill(b, WallpaperManager.FLAG_LOCK, null))));
+            actions[1].addView(link(T.t("Non cambia? Imposta dalla Galleria"), () -> withStill(this::viaGallery)));
+            for (LinearLayout a : actions) actBox.addView(a);
+
+            pages.setOnTouchListener((v, e) -> swipe(e));
+            dlg.setContentView(root);
+            dlg.setOnDismissListener(d -> {
+                if (gl != null) gl.onPause();
+                if (stillBmp != null) stillBmp.recycle();
+                stillBmp = null;
+            });
+            dlg.setOnShowListener(d -> layoutPages(0, false));
+            renderStillAsync(sz);
+        }
+
+        void show() {
+            dlg.show();
+            if (gl != null) gl.onResume();
+        }
+
+        private FrameLayout card(int w, int h) {
+            FrameLayout c = new FrameLayout(WallpaperActivity.this);
+            final float radius = 22 * dp;
+            c.setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(View v, Outline o) {
+                    o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), radius);
+                }
+            });
+            c.setClipToOutline(true);
+            c.setBackgroundColor(0xFF111111);
+            c.setLayoutParams(new LinearLayout.LayoutParams(w, h));
+            return c;
+        }
+
+        private View pageOf(View card, String caption) {
+            LinearLayout p = new LinearLayout(WallpaperActivity.this);
+            p.setOrientation(LinearLayout.VERTICAL);
+            p.setGravity(Gravity.CENTER_HORIZONTAL);
+            p.addView(card);
+            TextView t = new TextView(WallpaperActivity.this);
+            t.setText(caption);
+            t.setTextColor(0xFF9A9A9E);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            t.setGravity(Gravity.CENTER);
+            t.setPadding(0, Math.round(10 * dp), 0, 0);
+            p.addView(t);
+            return p;
+        }
+
+        private LinearLayout column() {
+            LinearLayout l = new LinearLayout(WallpaperActivity.this);
+            l.setOrientation(LinearLayout.VERTICAL);
+            l.setGravity(Gravity.CENTER_HORIZONTAL);
+            l.setPadding(Math.round(28 * dp), 0, Math.round(28 * dp), 0);
+            return l;
+        }
+
+        private TextView button(String text, boolean primary, Runnable r) {
+            TextView b = new TextView(WallpaperActivity.this);
+            b.setText(text);
+            b.setGravity(Gravity.CENTER);
+            b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            b.setTypeface(th.titleFace);
+            b.setTextColor(primary ? 0xFF000000 : 0xFFFFFFFF);
+            android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+            g.setCornerRadius(26 * dp);
+            g.setColor(primary ? 0xFFFFFFFF : 0xFF2A2A2D);
+            b.setBackground(g);
+            b.setOnClickListener(v -> {
+                if (!busy) r.run();
+            });
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.round(52 * dp));
+            lp.bottomMargin = Math.round(10 * dp);
+            b.setLayoutParams(lp);
+            return b;
+        }
+
+        private TextView link(String text, Runnable r) {
+            TextView t = new TextView(WallpaperActivity.this);
+            t.setText(text);
+            t.setTextColor(0xFFBBBBBB);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            t.setGravity(Gravity.CENTER);
+            t.setMinHeight(Math.round(40 * dp));
+            t.setOnClickListener(v -> r.run());
+            return t;
+        }
+
+        private void renderStillAsync(int[] sz) {
+            exec.execute(() -> {
+                Bitmap b = renderStill(svc, scene, Math.max(1, sz[0]), Math.max(1, sz[1]));
+                ui.post(() -> {
+                    if (!dlg.isShowing() && b != null) {
+                        b.recycle();
+                        return;
+                    }
+                    stillBmp = b;
+                    if (b != null) {
+                        still.setImageBitmap(b);
+                        stillMsg.setVisibility(View.GONE);
+                    } else {
+                        stillMsg.setText(T.t("Questo telefono non riesce a preparare l'immagine fissa"));
+                    }
+                });
+            });
+        }
+
+        private void withStill(java.util.function.Consumer<Bitmap> use) {
+            if (stillBmp == null) {
+                toast(T.t("Preparo l'immagine…"));
                 return;
             }
-            pendingSvc = svc;
-            pendingScene = scene;
-            pendingLock = lock;
-            android.content.ComponentName me = new android.content.ComponentName(this, svc);
-            try {
-                startActivityForResult(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
-                        .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, me), REQ_LIVE);
-            } catch (Exception e) {
-                try {
-                    startActivityForResult(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER), REQ_LIVE);
-                    toast(T.t("Scegli \"Sfondo animato Dot\" dall'elenco"));
-                } catch (Exception e2) {
-                    pendingSvc = null;
-                    toast(T.t("Questo telefono non permette gli sfondi animati"));
-                }
-            }
-        });
-    }
+            use.accept(stillBmp);
+        }
 
-    /** Fotogramma fisso della scena sulla schermata di blocco (la home resta animata). */
-    private void lockStill(Class<?> svc, int scene) {
-        final int[] sz = screen();
-        // risoluzione piena: è un solo fotogramma, e la schermata di blocco si guarda da vicino
-        final int w = Math.max(1, sz[0]), h = Math.max(1, sz[1]);
-        final int accent = th.accent;
-        busy = true;
-        toast(T.t("Preparo la schermata di blocco…"));
-        exec.execute(() -> {
-            Bitmap b = null;
-            //noinspection ResultOfMethodCallIgnored
-            ShareProvider.file(this, ShareProvider.LOCK).delete(); // mai un'immagine vecchia
-            try {
-                if (svc == ShaderWallpaper.class) {
-                    b = ShaderWallpaper.still(this, scene, w, h, accent);
-                } else {
-                    b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
-                    LiveScenes sc = new LiveScenes();
-                    sc.accent = accent;
-                    sc.ghost = prefs.getBoolean("ghost", true);
-                    sc.draw(new Canvas(b), scene, w, h, 20f, 9 * dp, 0);
-                }
-                if (b == null) throw new IllegalStateException();
-                // copia dell'immagine, per l'"Imposta come sfondo" del telefono
-                java.io.File f = ShareProvider.file(this, ShareProvider.LOCK);
-                try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
-                    b.compress(Bitmap.CompressFormat.JPEG, 92, out);
-                }
-                WallpaperManager wm = WallpaperManager.getInstance(this);
-                int before = wm.getWallpaperId(WallpaperManager.FLAG_LOCK);
-                try {
-                    wm.setBitmap(b, null, true, WallpaperManager.FLAG_LOCK);
-                } catch (Exception ignored) {
-                }
-                boolean set = !systemLock() && wm.getWallpaperId(WallpaperManager.FLAG_LOCK) != before;
-                // Honor e Huawei mostrano sulla schermata di blocco solo le immagini scelte dalla Galleria:
-                // si salva il fotogramma lì e si apre "Imposta come" su quella foto
-                final Uri gallery = set ? null : saveToGallery(b, scene);
-                final boolean ok = set;
+        private void viaGallery(Bitmap b) {
+            busy = true;
+            exec.execute(() -> {
+                Uri u = saveToGallery(b, scene);
                 ui.post(() -> {
                     busy = false;
-                    if (ok) toast(T.t("Home animata, schermata di blocco aggiornata"));
-                    else openSystemSetter(gallery);
+                    if (u == null) {
+                        toast(T.t("Impossibile salvare in Galleria"));
+                        return;
+                    }
+                    Intent i = Intent.createChooser(new Intent(Intent.ACTION_ATTACH_DATA)
+                            .setDataAndType(u, "image/jpeg").putExtra("mimeType", "image/jpeg")
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), T.t("Imposta come sfondo"));
+                    try {
+                        startActivity(i);
+                        toast(T.t("Salvata in Galleria, album \"Dot Launcher\": scegli \"Schermata di blocco\""));
+                    } catch (Exception e) {
+                        toast(T.t("Salvata in Galleria, album \"Dot Launcher\": impostala da lì"));
+                    }
                 });
-            } catch (Exception e) {
-                ui.post(() -> {
-                    busy = false;
-                    // ultima strada: l'immagine c'è già, la imposta il telefono
-                    if (ShareProvider.file(this, ShareProvider.LOCK).exists()) openSystemSetter(null);
-                    else toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
-                });
-            } finally {
-                if (b != null) b.recycle();
+            });
+        }
+
+        private boolean swipe(android.view.MotionEvent e) {
+            float w = pages.getWidth();
+            switch (e.getActionMasked()) {
+                case android.view.MotionEvent.ACTION_DOWN:
+                    downX = e.getRawX();
+                    dragging = true;
+                    return true;
+                case android.view.MotionEvent.ACTION_MOVE:
+                    if (!dragging) return false;
+                    float dx = e.getRawX() - downX;
+                    if ((current == 0 && dx > 0) || (current == 1 && dx < 0)) dx *= 0.25f; // bordo elastico
+                    page[0].setTranslationX(-current * w + dx);
+                    page[1].setTranslationX((1 - current) * w + dx);
+                    return true;
+                case android.view.MotionEvent.ACTION_UP:
+                case android.view.MotionEvent.ACTION_CANCEL:
+                    dragging = false;
+                    float d = e.getRawX() - downX;
+                    int to = current;
+                    if (d < -w * 0.18f) to = 1;
+                    else if (d > w * 0.18f) to = 0;
+                    go(to);
+                    return true;
             }
-        });
+            return false;
+        }
+
+        private void go(int to) {
+            current = to;
+            layoutPages(to, true);
+        }
+
+        private void layoutPages(int to, boolean anim) {
+            float w = pages.getWidth() > 0 ? pages.getWidth() : screen()[0];
+            for (int i = 0; i < 2; i++) {
+                float x = (i - to) * w;
+                if (anim) page[i].animate().translationX(x).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+                else page[i].setTranslationX(x);
+                actions[i].setVisibility(i == to ? View.VISIBLE : View.GONE);
+                android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+                g.setShape(android.graphics.drawable.GradientDrawable.OVAL);
+                g.setColor(i == to ? 0xFFFFFFFF : 0xFF4A4A4E);
+                dots[i].setBackground(g);
+            }
+            // la scena in movimento lavora solo quando si vede
+            if (gl != null) {
+                if (to == 0) gl.onResume();
+                else gl.onPause();
+            }
+        }
     }
 
-    /**
-     * Honor e Huawei gestiscono la schermata di blocco con i loro temi: un'immagine impostata dalle app
-     * viene accettata ma non mostrata. Lì la si passa all'"Imposta come sfondo" del telefono.
-     */
-    private static boolean systemLock() {
-        String m = android.os.Build.MANUFACTURER == null ? "" : android.os.Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT);
-        return m.contains("honor") || m.contains("huawei");
+    /** Disegna la scena realistica nell'anteprima (circa 25 fotogrammi al secondo). */
+    private static final class PreviewRenderer implements android.opengl.GLSurfaceView.Renderer {
+        private final android.content.Context app;
+        private final int scene;
+        private final float[] accent;
+        private final java.nio.FloatBuffer quad = ShaderWallpaper.quad();
+        private final long start = System.nanoTime();
+        private int prog, w = 1, h = 1;
+        private long last;
+
+        PreviewRenderer(android.content.Context c, int scene, int a) {
+            app = c.getApplicationContext();
+            this.scene = scene;
+            accent = new float[]{((a >> 16) & 255) / 255f, ((a >> 8) & 255) / 255f, (a & 255) / 255f};
+        }
+
+        @Override
+        public void onSurfaceCreated(javax.microedition.khronos.opengles.GL10 g, javax.microedition.khronos.egl.EGLConfig c) {
+            prog = 0;
+        }
+
+        @Override
+        public void onSurfaceChanged(javax.microedition.khronos.opengles.GL10 g, int width, int height) {
+            w = width;
+            h = height;
+        }
+
+        @Override
+        public void onDrawFrame(javax.microedition.khronos.opengles.GL10 g) {
+            // limite ai fotogrammi: l'anteprima non deve scaldare il telefono
+            long now = System.nanoTime(), wait = 40_000_000L - (now - last);
+            if (last != 0 && wait > 0) {
+                try {
+                    Thread.sleep(wait / 1_000_000L);
+                } catch (InterruptedException ignored) {
+                }
+            }
+            last = System.nanoTime();
+            if (prog == 0) prog = ShaderWallpaper.buildProgram(app, scene);
+            ShaderWallpaper.draw(prog, w, h, ((System.nanoTime() - start) / 1e9f) + 20f, 0f, accent, quad);
+        }
     }
 
     /** Salva il fotogramma in Galleria (Immagini/Dot Launcher). Su Android 10+ non servono permessi. */
@@ -541,40 +855,6 @@ public class WallpaperActivity extends Activity {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private void openSystemSetter(Uri gallery) {
-        Uri uri = gallery != null ? gallery : ShareProvider.uri(ShareProvider.LOCK);
-        Intent i;
-        if (gallery != null) {
-            // "Imposta come" della Galleria: è la strada che Honor accetta per la schermata di blocco
-            i = Intent.createChooser(new Intent(Intent.ACTION_ATTACH_DATA)
-                    .setDataAndType(uri, "image/jpeg").putExtra("mimeType", "image/jpeg")
-                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), T.t("Imposta come sfondo"));
-        } else {
-            i = null;
-            try {
-                i = WallpaperManager.getInstance(this).getCropAndSetWallpaperIntent(uri);
-            } catch (Exception ignored) {
-            }
-            if (i == null) {
-                i = Intent.createChooser(new Intent(Intent.ACTION_ATTACH_DATA)
-                        .setDataAndType(uri, "image/jpeg").putExtra("mimeType", "image/jpeg")
-                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), T.t("Imposta come sfondo"));
-            }
-        }
-        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        final Intent go = i;
-        String msg = gallery != null
-                ? T.t("L'immagine è in Galleria, album \"Dot Launcher\". Ora scegli Galleria → \"Schermata di blocco\" (non \"Entrambe\", o la home smette di muoversi).")
-                : T.t("Scegli \"Schermata di blocco\": la home resta animata");
-        Sheet.confirm(this, th, T.t("Schermata di blocco"), msg, T.t("Continua"), () -> {
-            try {
-                startActivity(go);
-            } catch (Exception e) {
-                toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
-            }
-        });
     }
 
     private Bitmap assetBitmap(String path) {

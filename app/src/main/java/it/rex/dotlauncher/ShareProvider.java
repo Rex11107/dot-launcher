@@ -12,39 +12,28 @@ import java.io.File;
 import java.io.FileNotFoundException;
 
 /**
- * Rende leggibili alle altre app solo due file: il layout da condividere (WhatsApp, email, Drive…)
- * e l'immagine per la schermata di blocco, passata all'"Imposta come sfondo" del telefono.
+ * Rende leggibile alle altre app (WhatsApp, email, Drive…) un solo file: il layout da condividere.
  * Non è esportato: l'accesso passa solo con il permesso temporaneo dato dall'invio (FLAG_GRANT_READ_URI_PERMISSION).
  */
 public class ShareProvider extends ContentProvider {
     static final String AUTHORITY = "it.rex.dotlauncher.share";
     static final String NAME = "dotlauncher-layout.json";
-    static final String LOCK = "dotlauncher-blocco.jpg";
 
     static File file(android.content.Context c) {
-        return file(c, NAME);
-    }
-
-    static File file(android.content.Context c, String name) {
         File dir = new File(c.getCacheDir(), "share");
         //noinspection ResultOfMethodCallIgnored
         dir.mkdirs();
-        return new File(dir, name);
+        return new File(dir, NAME);
     }
 
     static Uri uri() {
-        return uri(NAME);
-    }
-
-    static Uri uri(String name) {
-        return Uri.parse("content://" + AUTHORITY + "/" + name);
+        return Uri.parse("content://" + AUTHORITY + "/" + NAME);
     }
 
     private File target(Uri uri) throws FileNotFoundException {
-        // solo i due nomi ammessi: niente percorsi verso altri file dell'app
-        String name = uri.getLastPathSegment();
-        if (getContext() == null || !(NAME.equals(name) || LOCK.equals(name))) throw new FileNotFoundException();
-        File f = file(getContext(), name);
+        // un solo nome ammesso: niente percorsi verso altri file dell'app
+        if (getContext() == null || !NAME.equals(uri.getLastPathSegment())) throw new FileNotFoundException();
+        File f = file(getContext());
         if (!f.exists()) throw new FileNotFoundException();
         return f;
     }
@@ -62,7 +51,7 @@ public class ShareProvider extends ContentProvider {
 
     @Override
     public String getType(Uri uri) {
-        return LOCK.equals(uri.getLastPathSegment()) ? "image/jpeg" : "application/json";
+        return "application/json";
     }
 
     @Override
@@ -74,7 +63,7 @@ public class ShareProvider extends ContentProvider {
             return null;
         }
         MatrixCursor c = new MatrixCursor(new String[]{OpenableColumns.DISPLAY_NAME, OpenableColumns.SIZE});
-        c.addRow(new Object[]{f.getName(), f.length()});
+        c.addRow(new Object[]{NAME, f.length()});
         return c;
     }
 

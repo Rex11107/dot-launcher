@@ -289,7 +289,7 @@ public class ShaderWallpaper extends WallpaperService {
     }
 
     /** Programma della scena (0 se la scheda grafica non lo accetta: si disegna nero). */
-    private static int buildProgram(android.content.Context c, int scene) {
+    static int buildProgram(android.content.Context c, int scene) {
         try {
             String frag = "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n"
                     + asset(c, "common.glsl") + asset(c, FILES[scene] + ".glsl")
@@ -320,7 +320,7 @@ public class ShaderWallpaper extends WallpaperService {
         }
     }
 
-    private static void draw(int prog, int w, int h, float t, float shift, float[] a, FloatBuffer quad) {
+    static void draw(int prog, int w, int h, float t, float shift, float[] a, FloatBuffer quad) {
         GLES20.glViewport(0, 0, w, h);
         if (prog == 0) {
             GLES20.glClearColor(0, 0, 0, 1);
@@ -337,7 +337,7 @@ public class ShaderWallpaper extends WallpaperService {
         GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
     }
 
-    private static FloatBuffer quad() {
+    static FloatBuffer quad() {
         float[] v = {-1, -1, 1, -1, -1, 1, 1, 1};
         FloatBuffer q = ByteBuffer.allocateDirect(v.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
         q.put(v).position(0);
