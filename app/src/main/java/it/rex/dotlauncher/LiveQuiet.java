@@ -9,6 +9,7 @@ import android.os.SystemClock;
  */
 final class LiveQuiet {
     private static volatile long until;
+    private static volatile boolean covered;
 
     private LiveQuiet() {
     }
@@ -18,8 +19,18 @@ final class LiveQuiet {
         until = SystemClock.uptimeMillis() + 300;
     }
 
+    /**
+     * Cassetto, pagina a sinistra o impostazioni aperti: lo sfondo è quasi tutto coperto da un pannello
+     * semitrasparente. Se continuasse a muoversi, il telefono dovrebbe ricomporre lo schermo intero a ogni
+     * fotogramma: resta fermo finché il pannello non si chiude.
+     */
+    static void setCovered(boolean c) {
+        covered = c;
+    }
+
     /** Millisecondi di pausa che restano (0 se lo sfondo può disegnare). */
     static long remaining() {
+        if (covered) return 250; // si ricontrolla ogni tanto, costa niente
         return Math.max(0, until - SystemClock.uptimeMillis());
     }
 }

@@ -117,7 +117,7 @@ class SettingsScreen extends SwipeBackFrame {
         scroll.animate().cancel();
         scroll.setTranslationX((forward ? 1 : -1) * px(36));
         scroll.setAlpha(0f);
-        scroll.animate().translationX(0).alpha(1f).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+        scroll.animate().translationX(0).alpha(1f).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).withLayer().start();
     }
 
     /** Titolo in alto (null = "Impostazioni"). */

@@ -132,7 +132,7 @@ class Onboarding extends FrameLayout {
         }
         body.setAlpha(0f);
         body.setTranslationX(px(24));
-        body.animate().alpha(1f).translationX(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+        body.animate().alpha(1f).translationX(0).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).withLayer().start();
     }
 
     private void welcome() {

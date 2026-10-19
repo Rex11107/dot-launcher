@@ -31,6 +31,17 @@ public class DotLiveWallpaper extends WallpaperService {
         private int scene;
         private float xOffset = 0.5f;
         private final Runnable frame = this::drawFrame;
+        // a tempo con lo schermo (vedi ShaderWallpaper.vsyncStep): fotogrammi regolari, niente scatti
+        private final android.view.Choreographer choreo = android.view.Choreographer.getInstance();
+        private int vsyncs, step = 3;
+        private final android.view.Choreographer.FrameCallback vsync = new android.view.Choreographer.FrameCallback() {
+            @Override
+            public void doFrame(long t) {
+                if (!visible) return;
+                if (++vsyncs >= step) drawFrame();
+                else choreo.postFrameCallback(this);
+            }
+        };
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -62,6 +73,7 @@ public class DotLiveWallpaper extends WallpaperService {
         public void onDestroy() {
             super.onDestroy();
             h.removeCallbacks(frame);
+            choreo.removeFrameCallback(vsync);
             if (prefs != null) prefs.unregisterOnSharedPreferenceChangeListener(this);
         }
 
@@ -70,6 +82,7 @@ public class DotLiveWallpaper extends WallpaperService {
             visible = v;
             h.removeCallbacks(frame);
             lastNs = 0;
+            if (v) ShaderWallpaper.readRefresh(DotLiveWallpaper.this);
             if (v) drawFrame();
         }
 
@@ -86,8 +99,9 @@ public class DotLiveWallpaper extends WallpaperService {
         }
 
         private void drawFrame() {
-            if (!visible) return;
+            choreo.removeFrameCallback(vsync);
             h.removeCallbacks(frame);
+            if (!visible) return;
             long wait = LiveQuiet.remaining();
             if (wait > 0) {
                 // la home si sta muovendo sotto il dito: fotogramma fermo, si riparte subito dopo
@@ -119,8 +133,12 @@ public class DotLiveWallpaper extends WallpaperService {
                     }
                 }
             }
-            // circa 25 fotogrammi al secondo (16 sui telefoni economici)
-            if (visible) h.postDelayed(frame, ShaderWallpaper.lowEnd(DotLiveWallpaper.this) ? 60 : 40);
+            // circa 25 fotogrammi al secondo (meno sui telefoni economici), a tempo con lo schermo
+            if (visible) {
+                step = ShaderWallpaper.vsyncStep(DotLiveWallpaper.this, 25);
+                vsyncs = 0;
+                choreo.postFrameCallback(vsync);
+            }
         }
     }
 }

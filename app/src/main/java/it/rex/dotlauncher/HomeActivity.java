@@ -463,6 +463,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onResume() {
         super.onResume();
+        // nessun pannello aperto: lo sfondo animato può muoversi (protezione se una chiusura è saltata)
+        if (!drawerOpen && !panelOpen && !settingsOpen) LiveQuiet.setCovered(false);
         consumePendingShortcuts();
         if (onboarding != null) onboarding.refresh();
     }
@@ -835,7 +837,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 openDrawer(false);
             } else {
                 drawer.animate().cancel();
-                drawer.animate().alpha(0f).translationY(pullRange()).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN)
+                drawer.animate().alpha(0f).translationY(pullRange()).setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN).withLayer()
                         .withEndAction(() -> {
                             if (!drawerOpen) drawer.setVisibility(View.GONE);
                         }).start();
@@ -1146,7 +1148,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         searchRow.setAlpha(0f);
         grid.setAlpha(0f);
         searchRow.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
-        grid.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
+        grid.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).withLayer().start();
         grid.prepare();
         search.setText("");
         grid.setQuery("");
@@ -1169,7 +1171,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         secView.setVisibility(View.VISIBLE);
         if (was && drawerOpen) {
             secView.setAlpha(0f);
-            secView.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
+            secView.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).withLayer().start();
         } else secView.setAlpha(1f);
     }
 
@@ -1574,12 +1576,13 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private android.view.ViewPropertyAnimator menuIn(View v) {
+        // withLayer: il pannello si muove come un'immagine già pronta, senza ridisegnarlo a ogni fotogramma
         return v.animate().alpha(1f).translationX(0).translationY(0).scaleX(1f).scaleY(1f)
-                .setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT);
+                .setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).withLayer();
     }
 
     private android.view.ViewPropertyAnimator menuOut(View v, float dx, float dy) {
-        android.view.ViewPropertyAnimator a = v.animate().setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN);
+        android.view.ViewPropertyAnimator a = v.animate().setDuration(Motion.EXIT).setInterpolator(Motion.EASE_IN).withLayer();
         switch (Motion.menu) {
             case 1:
                 return a.alpha(0f).scaleX(0.92f).scaleY(0.92f);
@@ -1599,21 +1602,25 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void recedeHome(float scale, float dx) {
+        LiveQuiet.setCovered(true); // sfondo animato fermo mentre un pannello lo copre
         homeBox.animate().cancel();
         homeBox.setVisibility(View.VISIBLE);
+        // withLayer: la home viene disegnata una volta in un'immagine e poi solo spostata e sfumata.
+        // Senza, a ogni fotogramma la trasparenza costringe a ridisegnare tutte le tessere.
         homeBox.animate().alpha(0.4f).scaleX(scale).scaleY(scale).translationX(dx).setDuration(Motion.ENTER)
-                .setInterpolator(Motion.EASE_OUT).withEndAction(() -> {
+                .setInterpolator(Motion.EASE_OUT).withLayer().withEndAction(() -> {
                     // coperta del tutto: smette di disegnare (anche le animazioni dei widget)
                     if (drawerOpen || panelOpen || settingsOpen) homeBox.setVisibility(View.INVISIBLE);
                 }).start();
     }
 
     private void restoreHome(boolean animated) {
+        LiveQuiet.setCovered(false);
         homeBox.animate().cancel();
         homeBox.setVisibility(View.VISIBLE);
         if (animated) {
             homeBox.animate().alpha(1f).scaleX(1f).scaleY(1f).translationX(0).setDuration(Motion.ENTER)
-                    .setInterpolator(Motion.EASE_OUT).start();
+                    .setInterpolator(Motion.EASE_OUT).withLayer().start();
         } else {
             homeBox.setAlpha(1f);
             homeBox.setScaleX(1f);

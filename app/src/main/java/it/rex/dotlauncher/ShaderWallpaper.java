@@ -37,8 +37,31 @@ public class ShaderWallpaper extends WallpaperService {
             "Macchie morbide nel tuo colore d'accento"};
     /** Risoluzione di lavoro rispetto allo schermo, per scena (le scene sono morbide: non si nota). */
     private static final float[] SCALE = {0.42f, 0.36f, 0.33f, 0.25f};
-    /** Pausa tra due fotogrammi, per scena: il buco nero gira, le altre si muovono piano. */
-    private static final int[] FRAME_MS = {40, 50, 66, 66};
+    /** Fotogrammi al secondo che si cercano, per scena: il buco nero gira, le altre si muovono piano. */
+    private static final int[] FPS = {25, 20, 15, 15};
+
+    /**
+     * Ogni quanti aggiornamenti dello schermo si disegna un fotogramma. Si va a tempo con lo schermo
+     * (Choreographer) invece che con un timer: un timer da 40 ms su uno schermo da 60 Hz alterna intervalli
+     * da 33 e 50 ms e il movimento sembra a scatti; un intervallo intero di aggiornamenti resta regolare.
+     */
+    private static float hz;
+
+    /** Da richiamare quando lo sfondo torna visibile: lo schermo può aver cambiato frequenza (60/90/120 Hz). */
+    static void readRefresh(android.content.Context c) {
+        try {
+            android.view.WindowManager wm = (android.view.WindowManager) c.getSystemService(WINDOW_SERVICE);
+            hz = Math.max(30f, wm.getDefaultDisplay().getRefreshRate());
+        } catch (Exception e) {
+            hz = 60f;
+        }
+    }
+
+    static int vsyncStep(android.content.Context c, int fps) {
+        if (hz <= 0) readRefresh(c);
+        if (lowEnd(c)) fps = Math.max(10, fps * 2 / 3);
+        return Math.max(1, (int) Math.ceil(hz / fps - 0.05f));
+    }
 
     private static Boolean lowEnd;
 
@@ -84,6 +107,16 @@ public class ShaderWallpaper extends WallpaperService {
         private volatile float[] accent = {0.84f, 0.1f, 0.13f};
         private FloatBuffer quad;
         private final Runnable frame = this::drawFrame;
+        private android.view.Choreographer choreo;   // del thread della grafica
+        private int vsyncs, step = 3;
+        private final android.view.Choreographer.FrameCallback vsync = new android.view.Choreographer.FrameCallback() {
+            @Override
+            public void doFrame(long t) {
+                if (!visible) return;
+                if (++vsyncs >= step) drawFrame();
+                else choreo.postFrameCallback(this);
+            }
+        };
 
         @Override
         public void onCreate(SurfaceHolder holder) {
@@ -97,6 +130,7 @@ public class ShaderWallpaper extends WallpaperService {
             thread = new HandlerThread("dot-gl", Process.THREAD_PRIORITY_BACKGROUND);
             thread.start();
             gl = new Handler(thread.getLooper());
+            gl.post(() -> choreo = android.view.Choreographer.getInstance());
             quad = quad();
         }
 
@@ -157,6 +191,7 @@ public class ShaderWallpaper extends WallpaperService {
             CountDownLatch done = new CountDownLatch(1);
             gl.post(() -> {
                 gl.removeCallbacks(frame);
+                if (choreo != null) choreo.removeFrameCallback(vsync);
                 destroySurface();
                 done.countDown();
             });
@@ -171,6 +206,7 @@ public class ShaderWallpaper extends WallpaperService {
         public void onVisibilityChanged(boolean v) {
             visible = v;
             gl.removeCallbacks(frame);
+            if (v) readRefresh(ShaderWallpaper.this);
             if (v) gl.post(() -> {
                 lastNs = 0;
                 drawFrame();
@@ -236,8 +272,9 @@ public class ShaderWallpaper extends WallpaperService {
         }
 
         private void drawFrame() {
-            if (!visible || surf == EGL14.EGL_NO_SURFACE) return;
+            if (choreo != null) choreo.removeFrameCallback(vsync);
             gl.removeCallbacks(frame);
+            if (!visible || surf == EGL14.EGL_NO_SURFACE) return;
             long wait = LiveQuiet.remaining();
             if (wait > 0) {
                 // l'utente sta toccando o scorrendo la home: si lascia il fotogramma fermo
@@ -258,7 +295,12 @@ public class ShaderWallpaper extends WallpaperService {
             if (Math.abs(shift - shown) < 0.002f) shown = shift;
             draw(prog, w, h, clock, shown, accent, quad);
             EGL14.eglSwapBuffers(dpy, surf);
-            if (visible) gl.postDelayed(frame, lowEnd(ShaderWallpaper.this) ? FRAME_MS[scene] * 3 / 2 : FRAME_MS[scene]);
+            if (visible) {
+                step = vsyncStep(ShaderWallpaper.this, FPS[scene]);
+                vsyncs = 0;
+                if (choreo != null) choreo.postFrameCallback(vsync);
+                else gl.postDelayed(frame, 1000 / FPS[scene]);
+            }
         }
     }
 
