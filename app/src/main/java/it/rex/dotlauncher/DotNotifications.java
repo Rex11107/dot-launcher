@@ -60,6 +60,38 @@ public class DotNotifications extends NotificationListenerService {
         return l == null ? new ArrayList<>() : new ArrayList<>(l);
     }
 
+    /** Messaggi (chat, SMS, email) di tutte le app, dal più recente. */
+    static List<StatusBarNotification> messages(int max) {
+        List<StatusBarNotification> out = new ArrayList<>();
+        for (List<StatusBarNotification> l : byPkg.values()) {
+            for (StatusBarNotification n : l) {
+                Notification no = n.getNotification();
+                String tpl = no.extras == null ? null : no.extras.getString(Notification.EXTRA_TEMPLATE);
+                boolean msg = Notification.CATEGORY_MESSAGE.equals(no.category) || Notification.CATEGORY_EMAIL.equals(no.category)
+                        || (tpl != null && tpl.contains("MessagingStyle"));
+                if (msg) out.add(n);
+            }
+        }
+        java.util.Collections.sort(out, (x, y) -> Long.compare(y.getPostTime(), x.getPostTime()));
+        return out.size() > max ? new ArrayList<>(out.subList(0, max)) : out;
+    }
+
+    /** Risponde a una notifica come dalla tendina (azione con RemoteInput). Restituisce false se non riesce. */
+    static boolean reply(android.content.Context c, Notification.Action ac, String text) {
+        if (ac == null || text == null || text.trim().isEmpty()) return false;
+        try {
+            android.app.RemoteInput[] ins = ac.getRemoteInputs();
+            android.os.Bundle res = new android.os.Bundle();
+            for (android.app.RemoteInput ri : ins) if (ri.getAllowFreeFormInput()) res.putCharSequence(ri.getResultKey(), text.trim());
+            android.content.Intent fill = new android.content.Intent();
+            android.app.RemoteInput.addResultsToIntent(ins, fill, res);
+            ac.actionIntent.send(c, 0, fill);
+            return true;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     static void dismissAll(String pkg) {
         DotNotifications s = instance;
         if (s == null) return;

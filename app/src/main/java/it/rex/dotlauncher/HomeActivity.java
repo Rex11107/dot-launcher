@@ -114,6 +114,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private static final int REQ_ROLE = 12;
     private static final int REQ_AUTH = 13;
     private static final int REQ_POP_BIND = 14;
+    private static final int REQ_FILES = 16;
     private static final int REQ_POP_CONFIG = 15;
     private static final int HOST_ID = 0x0D07;
 
@@ -130,7 +131,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private Pager pager;
     private int gestureBottom;
     private IndicatorView indicator;
-    private LinearLayout dock;
+    private DockLayout dock;
     private final List<TileGrid> grids = new ArrayList<>();
     private final List<Item> items = new ArrayList<>();
     private int pages = 2;
@@ -489,6 +490,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         if (pendingAuth == null) authUntil = 0; // uscendo dalla home le app nascoste tornano protette
         DotNotifications.setListener(null);
         if (sensors != null) sensors.stop();
+        stopShake();
         watchTorch(false);
         if (dragSrc >= 0) finishDrag(false);
         exitResize();
@@ -899,11 +901,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         indicator.setOnClickListener(v -> openDrawer(false));
         home.addView(indicator, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(22)));
 
-        dock = new LinearLayout(this);
-        dock.setOrientation(LinearLayout.HORIZONTAL);
+        dock = new DockLayout(this);
         dock.setGravity(Gravity.CENTER);
         // stesso margine laterale dei widget (16dp): la pillola del dock non tocca i bordi dello schermo
-        LinearLayout.LayoutParams dockLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, px(76));
+        LinearLayout.LayoutParams dockLp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                px(dockRows() == 2 ? 140 : 76));
         dockLp.leftMargin = px(16);
         dockLp.rightMargin = px(16);
         home.addView(dock, dockLp);
@@ -918,6 +920,26 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 @Override public void toast(String s) { HomeActivity.this.toast(s); }
                 @Override public void requestCalendar() {
                     requestPermissions(new String[]{Manifest.permission.READ_CALENDAR}, REQ_CAL);
+                }
+                @Override public boolean privatePkg(String pkg) {
+                    if (pkgLocked(pkg)) return true;
+                    for (String k : hidden()) if (k.startsWith(pkg + "/")) return true;
+                    return false;
+                }
+                @Override public void openPkg(String pkg) {
+                    for (AppEntry e : allApps) {
+                        if (e.component.getPackageName().equals(pkg)) {
+                            launch(e, null);
+                            return;
+                        }
+                    }
+                }
+                @Override public Bitmap pkgIcon(String pkg, int size) {
+                    for (AppEntry e : allApps) if (e.component.getPackageName().equals(pkg)) return iconFor(e.key, size);
+                    return null;
+                }
+                @Override public String pkgLabel(String pkg) {
+                    return labelForPkg(pkg);
                 }
                 @Override public void aiTransparency() {
                     HomeActivity.this.closePanel();
@@ -1149,6 +1171,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onNotificationsChanged() {
         if (destroyed) return;
+        if (panel != null) panel.refreshInbox();
         refreshAppViews();
         buildDock();
         if (secView != null) secView.updateBadges();
@@ -1633,6 +1656,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             {"g_two_down", T.t("Due dita in giù"), "qs"},
             {"g_two_up", T.t("Due dita in su"), "search"},
             {"g_pinch", T.t("Pizzica (avvicina le dita)"), "settings"},
+            {"g_shake", T.t("Scuoti il telefono"), "none"},
     };
 
     private static String[] gestureIcon(String key) {
@@ -1643,6 +1667,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             case "g_two_down": return SectionIcons.TWO_DOWN;
             case "g_two_up": return SectionIcons.TWO_UP;
             case "g_pinch": return SectionIcons.PINCH;
+            case "g_shake": return SectionIcons.WAVE;
             default: return SectionIcons.STAR;
         }
     }
@@ -1769,6 +1794,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void chooseGesture(String g, String title) {
         chooseAction(title, gestureAction(g), a -> {
             prefs.edit().putString(g, a).apply();
+            if ("g_shake".equals(g)) {
+                stopShake(); // l'accelerometro si accende solo se il gesto ha un'azione
+                if (started) startShake();
+            }
             refillSettings();
         });
     }
@@ -1959,7 +1988,52 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     /** Accende bussola e contapassi solo se sulla home c'è il widget relativo. */
+    // ---------- scuotimento ----------
+
+    private android.hardware.SensorEventListener shake;
+    private long shakeFirst, shakeLast;
+
+    /** L'accelerometro si ascolta solo con la home davanti e solo se al gesto è assegnata un'azione. */
+    private void startShake() {
+        if (shake != null || "none".equals(gestureAction("g_shake"))) return;
+        android.hardware.SensorManager sm = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
+        android.hardware.Sensor acc = sm == null ? null : sm.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
+        if (acc == null) return;
+        shake = new android.hardware.SensorEventListener() {
+            @Override
+            public void onSensorChanged(android.hardware.SensorEvent e) {
+                float x = e.values[0], y = e.values[1], z = e.values[2];
+                double g = Math.sqrt(x * x + y * y + z * z) / android.hardware.SensorManager.GRAVITY_EARTH;
+                if (g < 2.3) return; // un movimento normale non arriva a 2,3 g
+                long now = System.currentTimeMillis();
+                if (now - shakeLast < 1500) return; // un gesto alla volta
+                // servono due scosse vicine: così non parte se il telefono urta qualcosa una volta
+                if (now - shakeFirst > 700) {
+                    shakeFirst = now;
+                    return;
+                }
+                shakeFirst = 0;
+                shakeLast = now;
+                if (destroyed || !hasWindowFocus() || drawerOpen || settingsOpen || panelOpen || resizer != null) return;
+                getWindow().getDecorView().performHapticFeedback(HapticFeedbackConstants.LONG_PRESS);
+                runAction(gestureAction("g_shake"));
+            }
+
+            @Override
+            public void onAccuracyChanged(android.hardware.Sensor s, int a) {}
+        };
+        sm.registerListener(shake, acc, android.hardware.SensorManager.SENSOR_DELAY_UI);
+    }
+
+    private void stopShake() {
+        if (shake == null) return;
+        android.hardware.SensorManager sm = (android.hardware.SensorManager) getSystemService(SENSOR_SERVICE);
+        if (sm != null) sm.unregisterListener(shake);
+        shake = null;
+    }
+
     private void startSensors() {
+        if (started) startShake();
         if (!started || sensors == null) return;
         boolean compass = false, steps = false;
         for (Item it : Item.leaves(items)) {
@@ -3479,6 +3553,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             tip.setPadding(px(10), px(4), px(10), 0);
             list.addView(tip);
         }
+        // fila di categorie in cima: un tocco porta alla sezione (come le sezioni del cassetto delle app)
+        final Map<String, View> heads = new HashMap<>();
+        LinearLayout chipsRow = null;
+        if (only == null) {
+            android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+            hs.setHorizontalScrollBarEnabled(false);
+            chipsRow = new LinearLayout(this);
+            chipsRow.setOrientation(LinearLayout.HORIZONTAL);
+            chipsRow.setPadding(px(6), px(10), px(6), px(2));
+            hs.addView(chipsRow);
+            list.addView(hs);
+        }
         for (String[] cat : Widgets.CATEGORIES) {
             boolean header = false;
             for (int k = 1; k < cat.length; k++) {
@@ -3489,8 +3575,34 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     sizes = new int[][]{only};
                 }
                 if (!header) {
-                    list.addView(pickerHeader(cat[0]));
+                    View h = pickerHeader(cat[0]);
+                    list.addView(h);
+                    heads.put(cat[0], h);
                     header = true;
+                    if (chipsRow != null) {
+                        TextView chip = new TextView(this);
+                        chip.setText(cat[0]);
+                        chip.setTextColor(th.onTile);
+                        chip.setTypeface(th.bodyFace);
+                        chip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+                        chip.setGravity(Gravity.CENTER);
+                        chip.setMinHeight(px(40));
+                        chip.setPadding(px(14), 0, px(14), 0);
+                        GradientDrawable cg = new GradientDrawable();
+                        cg.setCornerRadius(px(20));
+                        cg.setColor(Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f));
+                        chip.setBackground(cg);
+                        chip.setOnClickListener(v -> {
+                            // il riquadro scorre fino all'intestazione della categoria
+                            View hv = heads.get(cat[0]);
+                            ViewGroup p2 = (ViewGroup) list.getParent();
+                            if (hv != null && p2 instanceof android.widget.ScrollView) ((android.widget.ScrollView) p2).smoothScrollTo(0, hv.getTop());
+                        });
+                        LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT);
+                        cl.rightMargin = px(8);
+                        chipsRow.addView(chip, cl);
+                    }
                 }
                 final int[][] fsizes = sizes;
                 LinearLayout card = pickerCard();
@@ -5034,8 +5146,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         return keys;
     }
 
+    /** App per riga del dock (0 = dock nascosto). */
     private int dockMax() {
         return Math.max(0, Math.min(7, prefs.getInt("dockMax", 5)));
+    }
+
+    private int dockRows() {
+        return prefs.getInt("dockRows", 1) == 2 ? 2 : 1;
+    }
+
+    /** Quante app entrano nel dock in tutto (per riga × righe). */
+    private int dockCap() {
+        return dockMax() * dockRows();
     }
 
     private void buildDock() {
@@ -5048,8 +5170,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (th.stroke != 0) db.setStroke(Math.max(1, px(1)), th.stroke);
             dock.setBackground(db);
         } else dock.setBackground(null);
+        dock.rows = dockRows();
+        dock.perRow = Math.max(1, dockMax());
         List<String> keys = dockKeys();
-        if (keys.size() > dockMax()) keys = new ArrayList<>(keys.subList(0, dockMax()));
+        if (keys.size() > dockCap()) keys = new ArrayList<>(keys.subList(0, dockCap()));
         if (keys.isEmpty() && !prefs.getBoolean("dockInit", false) && !allApps.isEmpty()) {
             keys = defaultDock();
             saveDock(keys);
@@ -5057,7 +5181,15 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         // su schermi stretti (o con "dimensione display" grande) le icone si rimpiccioliscono per starci tutte
         int avail = getResources().getDisplayMetrics().widthPixels - px(16 * 2 + 16);
-        int size = Math.max(px(36), Math.min(px(54 * AppTile.SCALE), avail / Math.max(1, keys.size()) - px(18)));
+        int perRow = Math.min(keys.size(), dockMax());
+        // la seconda riga occupa spazio solo quando serve davvero
+        ViewGroup.LayoutParams dlp = dock.getLayoutParams();
+        int wantH = px(keys.size() > dockMax() && dockRows() == 2 ? 140 : 76);
+        if (dlp != null && dlp.height != wantH) {
+            dlp.height = wantH;
+            dock.setLayoutParams(dlp);
+        }
+        int size = Math.max(px(36), Math.min(px(54 * AppTile.SCALE), avail / Math.max(1, perRow) - px(18)));
         for (String k : keys) {
             AppEntry a = appsByKey.get(k);
             if (a == null) continue;
@@ -5104,8 +5236,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         labels.add(inDock ? T.t("Rimuovi dal dock") : T.t("Aggiungi al dock"));
         acts.add(() -> {
             if (inDock) dk.remove(a.key);
-            else if (dk.size() >= dockMax()) {
-                toast(T.t("Il dock contiene al massimo ") + dockMax() + T.n(dockMax(), " app", " app"));
+            else if (dk.size() >= dockCap()) {
+                toast(T.t("Il dock contiene al massimo ") + dockCap() + T.n(dockCap(), " app", " app"));
                 return;
             } else dk.add(a.key);
             prefs.edit().putBoolean("dockInit", true).apply();
@@ -5426,17 +5558,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         dock.getLocationOnScreen(dl);
         if (lastRawY >= dl[1] - px(6) && dockAccepts()) {
             tKind = T_DOCK;
-            int idx = 0;
-            for (int i = 0; i < dock.getChildCount(); i++) {
-                View c = dock.getChildAt(i);
-                if (!(c instanceof ImageView) || c == dragSourceView) continue;
-                int[] cl = new int[2];
-                c.getLocationOnScreen(cl);
-                if (cl[0] + c.getWidth() / 2f < lastRawX) idx++;
-            }
-            tDockIndex = idx;
+            tDockIndex = dock.dropIndex(lastRawX, lastRawY, dragSourceView);
             List<String> dk = dockKeys();
-            boolean full = dk.size() >= dockMax() && !dk.contains(dragKey);
+            boolean full = dk.size() >= dockCap() && !dk.contains(dragKey);
             GradientDrawable g = new GradientDrawable();
             g.setCornerRadius(px(38));
             g.setColor(Theme.alpha(full ? th.sub : th.accent, 0.18f));
@@ -5801,8 +5925,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 List<String> dk = dockKeys();
                 int idx = tDockIndex;
                 int old = dk.indexOf(key);
-                if (old < 0 && dk.size() >= dockMax()) {
-                    toast(T.t("Il dock contiene al massimo ") + dockMax() + T.n(dockMax(), " app", " app"));
+                if (old < 0 && dk.size() >= dockCap()) {
+                    toast(T.t("Il dock contiene al massimo ") + dockCap() + T.n(dockCap(), " app", " app"));
                     return;
                 }
                 if (old >= 0) {
@@ -6773,10 +6897,18 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             st.section(T.t("Dock"));
             final String[] dockL = {T.t("Nascosto"), "3 app", "4 app", "5 app", "6 app"};
             final int dockCur = dockMax() == 0 ? 0 : Math.max(1, Math.min(4, dockMax() - 2));
-            st.row(SectionIcons.DOCK, T.t("App nel dock"), dockL[dockCur], () -> Sheet.list(this, th, T.t("App nel dock"), dockL, dockCur, w -> {
+            st.row(SectionIcons.DOCK, T.t("App nel dock"), dockL[dockCur] + (dockRows() == 2 && dockMax() > 0 ? T.t(" per riga") : ""),
+                    () -> Sheet.list(this, th, T.t("App nel dock"), dockL, dockCur, w -> {
                 prefs.edit().putInt("dockMax", w == 0 ? 0 : w + 2).apply();
                 recreate();
             }));
+            if (dockMax() > 0) {
+                st.row(SectionIcons.ROWS, T.t("Righe del dock"), dockRows() == 2 ? T.t("Due righe: fino a ") + dockCap() + " app" : T.t("Una riga"),
+                        () -> Sheet.list(this, th, T.t("Righe del dock"), new String[]{T.t("Una riga"), T.t("Due righe")}, dockRows() - 1, w -> {
+                            prefs.edit().putInt("dockRows", w + 1).apply();
+                            recreate();
+                        }));
+            }
             st.toggle(SectionIcons.DOCK, T.t("Sfondo del dock"), T.t("Una pillola dietro le app del dock"),
                     prefs.getBoolean("dockBg", false), on -> toggle("dockBg", !on));
             st.section(T.t("Widget sulla home"));
@@ -6893,6 +7025,14 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             st.row(SectionIcons.PEOPLE, T.t("Contatti nella ricerca"),
                     checkSelfPermission(Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
                             ? T.t("Attivi") : T.t("Tocca per consentire l'accesso"), this::requestContacts);
+            st.row(Draw.PHOTO, T.t("File nella ricerca"), UniversalSearch.filesGranted(this)
+                            ? T.t("Foto, video e audio: attivi") : T.t("Foto, video e audio: tocca per consentire l'accesso"),
+                    () -> {
+                        if (UniversalSearch.filesGranted(this)) {
+                            // si toglie dalle impostazioni di Android: da qui si può solo chiedere
+                            safeStart(new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", getPackageName(), null)));
+                        } else requestPermissions(UniversalSearch.filePermissions(), REQ_FILES);
+                    });
         }
         if (pg == 0 || pg == SP_NOTIF) {
             st.section(T.t("Notifiche"));
@@ -7018,7 +7158,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         st.row(SectionIcons.SWIPE_UP, T.t("Animazioni e gesti"), T.t("Pagine, menu, apertura delle app e gesti"),
                 () -> openSettingsPage(SP_ANIM));
         st.row(SectionIcons.HOME, T.t("Home e dock"), TileGrid.COLS + T.t(" colonne") + " · "
-                + (dockMax() == 0 ? T.t("dock nascosto") : T.t("dock con ") + dockMax() + " app"), () -> openSettingsPage(SP_HOME));
+                + (dockMax() == 0 ? T.t("dock nascosto") : T.t("dock con ") + dockCap() + " app"), () -> openSettingsPage(SP_HOME));
         st.row(SectionIcons.WIDGETS, T.t("Widget"), T.t("Orologio, sveglia, meteo e passi"), () -> openSettingsPage(SP_WIDGETS));
         int nh = hidden().size();
         st.row(SectionIcons.GRID, T.t("App"), (drawerFree() ? T.t("Ordine libero") : Freq.on ? T.t("Più usate prima") : T.t("Ordine alfabetico"))
@@ -7435,6 +7575,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     public void onRequestPermissionsResult(int req, String[] perms, int[] results) {
         super.onRequestPermissionsResult(req, perms, results);
         if (onboarding != null) onboarding.refresh();
+        if (req == REQ_FILES) {
+            if (settingsOpen) refillSettings();
+            if (searchMode) grid.setQuery(search.getText().toString());
+            return;
+        }
         if (req == REQ_CAL || req == REQ_CONTACTS) {
             if (panel != null) panel.refreshCalendar();
             if (req == REQ_CAL) refreshGlance(true);

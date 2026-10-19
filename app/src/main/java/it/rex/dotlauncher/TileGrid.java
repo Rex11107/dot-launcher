@@ -167,6 +167,7 @@ class TileGrid extends ViewGroup {
         if (pMode == PREVIEW_NONE || cell <= 0) return;
         float x = padH + pCol * (cell + gap), y = padTop + pRow * (cell + gap);
         float w = pW * cell + (pW - 1) * gap, h = pH * cell + (pH - 1) * gap;
+        drawGuides(cv, x, y, w, h);
         pr.set(x, y, x + w, y + h);
         float m = Math.min(w, h);
         float rad = pW == 1 || pH == 1 ? m / 2f : Theme.radius(m, dp);
@@ -181,6 +182,35 @@ class TileGrid extends ViewGroup {
         pp.setPathEffect(pMode == PREVIEW_BAD ? new DashPathEffect(new float[]{6 * dp, 6 * dp}, 0) : null);
         pr.inset(dp, dp);
         cv.drawRoundRect(pr, rad, rad, pp);
+    }
+
+    /**
+     * Guide di allineamento mentre si sposta qualcosa: le celle della pagina appena accennate
+     * e due linee tratteggiate che prolungano i bordi della posizione di arrivo fino ai lati.
+     */
+    private void drawGuides(Canvas cv, float x, float y, float w, float h) {
+        pp.setPathEffect(null);
+        pp.setStyle(Paint.Style.STROKE);
+        pp.setStrokeWidth(Math.max(1f, dp));
+        pp.setColor(Theme.alpha(neutral, 0.35f));
+        float rad = cell / 2f;
+        for (int r = 0; r < rows; r++) {
+            for (int c = 0; c < COLS; c++) {
+                float cx = padH + c * (cell + gap), cy = padTop + r * (cell + gap);
+                pr.set(cx + dp, cy + dp, cx + cell - dp, cy + cell - dp);
+                cv.drawRoundRect(pr, rad, rad, pp);
+            }
+        }
+        if (pMode == PREVIEW_BAD) return;
+        pp.setColor(Theme.alpha(accent, 0.45f));
+        pp.setPathEffect(new DashPathEffect(new float[]{4 * dp, 5 * dp}, 0));
+        float left = padH * 0.5f, right = getWidth() - padH * 0.5f;
+        float top = padTop * 0.5f, bottom = padTop + rows * (cell + gap) - gap * 0.5f;
+        cv.drawLine(left, y, right, y, pp);
+        cv.drawLine(left, y + h, right, y + h, pp);
+        cv.drawLine(x, top, x, bottom, pp);
+        cv.drawLine(x + w, top, x + w, bottom, pp);
+        pp.setPathEffect(null);
     }
 
     @Override

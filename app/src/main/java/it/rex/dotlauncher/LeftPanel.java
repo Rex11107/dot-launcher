@@ -64,11 +64,17 @@ class LeftPanel extends FrameLayout {
         void requestCalendar();
         /** Apre la pagina che mostra cosa viene inviato all'IA e a chi. */
         void aiTransparency();
+        /** App bloccata o nascosta: nella casella dei messaggi si mostra solo il conteggio. */
+        boolean privatePkg(String pkg);
+        /** Apre l'app (con lo sblocco, se è bloccata). */
+        void openPkg(String pkg);
+        Bitmap pkgIcon(String pkg, int size);
+        String pkgLabel(String pkg);
     }
 
-    static final String[] BLOCKS = {"ai", "news", "calendar", "tasks", "notes"};
-    static final String DEFAULT_ORDER = "ai,news,calendar,tasks,notes";
-    static final String DEFAULT_OFF = "tasks,notes";
+    static final String[] BLOCKS = {"ai", "news", "calendar", "inbox", "tasks", "notes"};
+    static final String DEFAULT_ORDER = "ai,news,calendar,inbox,tasks,notes";
+    static final String DEFAULT_OFF = "inbox,tasks,notes";
 
     private final Activity act;
     private final Host host;
@@ -186,7 +192,10 @@ class LeftPanel extends FrameLayout {
     }
 
     private Set<String> off() {
-        return new HashSet<>(Arrays.asList(prefs.getString("panelOff", DEFAULT_OFF).split(",")));
+        Set<String> o = new HashSet<>(Arrays.asList(prefs.getString("panelOff", DEFAULT_OFF).split(",")));
+        // blocco nuovo: per chi aveva già scelto i blocchi resta spento finché non lo accende
+        if (!prefs.getBoolean("inboxSeen", false)) o.add("inbox");
+        return o;
     }
 
     static String blockName(String b) {
@@ -195,6 +204,7 @@ class LeftPanel extends FrameLayout {
             case "news": return T.t("Notizie");
             case "calendar": return T.t("Calendario");
             case "tasks": return T.t("Attività");
+            case "inbox": return T.t("Messaggi");
             default: return T.t("Note");
         }
     }
@@ -203,6 +213,7 @@ class LeftPanel extends FrameLayout {
         blocks.removeAllViews();
         newsStrip = null;
         eventsBox = null;
+        inboxBox = null;
         Set<String> off = off();
         boolean any = false;
         for (String b : order()) {
@@ -214,6 +225,7 @@ class LeftPanel extends FrameLayout {
                 case "news": v = newsBlock(); break;
                 case "calendar": v = calendarBlock(); break;
                 case "tasks": v = tasksBlock(); break;
+                case "inbox": v = inboxBlock(); break;
                 default: v = notesBlock(); break;
             }
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
@@ -257,6 +269,7 @@ class LeftPanel extends FrameLayout {
                 PillSwitch sw = new PillSwitch(act, th, !off.contains(b));
                 row.addView(sw, new LinearLayout.LayoutParams(px(48), px(28)));
                 row.setOnClickListener(v -> {
+                    if ("inbox".equals(b)) prefs.edit().putBoolean("inboxSeen", true).apply();
                     Set<String> o2 = off();
                     if (o2.contains(b)) o2.remove(b);
                     else o2.add(b);
@@ -892,6 +905,114 @@ class LeftPanel extends FrameLayout {
         eventsBox.setPadding(0, px(8), 0, 0);
         c.addView(eventsBox);
         return c;
+    }
+
+    // =====================================================================
+    // Messaggi: le notifiche di chat, SMS ed email di tutte le app in un posto solo
+    // =====================================================================
+
+    private LinearLayout inboxBox;
+
+    private View inboxBlock() {
+        LinearLayout c = card(T.t("Messaggi"));
+        inboxBox = new LinearLayout(act);
+        inboxBox.setOrientation(LinearLayout.VERTICAL);
+        c.addView(inboxBox);
+        refreshInbox();
+        return c;
+    }
+
+    void refreshInbox() {
+        if (inboxBox == null) return;
+        inboxBox.removeAllViews();
+        if (!DotNotifications.active()) {
+            TextView t = text(T.t("Serve l'accesso alle notifiche: Impostazioni › Notifiche"), 14, th.sub);
+            t.setPadding(px(4), px(6), px(4), px(4));
+            inboxBox.addView(t);
+            return;
+        }
+        List<android.service.notification.StatusBarNotification> ms = DotNotifications.messages(8);
+        if (ms.isEmpty()) {
+            TextView t = text(T.t("Nessun messaggio da leggere"), 14, th.sub);
+            t.setPadding(px(4), px(6), px(4), px(4));
+            inboxBox.addView(t);
+            return;
+        }
+        SimpleDateFormat tf = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc());
+        java.util.Map<String, Integer> privateCount = new java.util.LinkedHashMap<>();
+        for (android.service.notification.StatusBarNotification n : ms) {
+            final String pkg = n.getPackageName();
+            if (host.privatePkg(pkg)) {
+                // app bloccata o nascosta: niente testo, solo quanti messaggi ci sono
+                Integer k = privateCount.get(pkg);
+                privateCount.put(pkg, k == null ? 1 : k + 1);
+                continue;
+            }
+            android.app.Notification no = n.getNotification();
+            CharSequence title = no.extras.getCharSequence(android.app.Notification.EXTRA_TITLE);
+            CharSequence body = no.extras.getCharSequence(android.app.Notification.EXTRA_TEXT);
+            String app = host.pkgLabel(pkg);
+            LinearLayout row = inboxRow(pkg, (title == null ? app : title) + "", body == null ? "" : body.toString(),
+                    app + " · " + tf.format(new Date(n.getPostTime())));
+            row.setOnClickListener(v -> {
+                try {
+                    if (no.contentIntent != null) no.contentIntent.send();
+                    else host.openPkg(pkg);
+                } catch (Exception e) {
+                    host.openPkg(pkg);
+                }
+            });
+            final android.app.Notification.Action reply = HomeActivity.replyAction(no);
+            if (reply != null) {
+                final String who = title == null ? app : title.toString();
+                View.OnClickListener ask = v -> Sheet.input(act, th, T.t("Rispondi a ") + who, T.t("Scrivi la risposta"), "", true,
+                        txt -> {
+                            boolean ok = DotNotifications.reply(act, reply, txt);
+                            host.toast(ok ? T.t("Risposta inviata") : T.t("Risposta non inviata: apri l'app per rispondere"));
+                        });
+                ImageView r = iconButton(SectionIcons.CHAT, ask, T.t("Rispondi a ") + who);
+                row.addView(r);
+            }
+            inboxBox.addView(row);
+        }
+        for (java.util.Map.Entry<String, Integer> e : privateCount.entrySet()) {
+            final String pkg = e.getKey();
+            int k = e.getValue();
+            LinearLayout row = inboxRow(pkg, host.pkgLabel(pkg), k + T.n(k, " messaggio", " messaggi"), T.t("Protetta: apri per leggere"));
+            row.setOnClickListener(v -> host.openPkg(pkg));
+            inboxBox.addView(row);
+        }
+    }
+
+    private LinearLayout inboxRow(String pkg, String title, String body, String meta) {
+        LinearLayout row = new LinearLayout(act);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        row.setPadding(px(2), px(6), 0, px(6));
+        row.setMinimumHeight(px(56));
+        ImageView ic = new ImageView(act);
+        Bitmap b = host.pkgIcon(pkg, px(36));
+        if (b != null) ic.setImageBitmap(b);
+        ic.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        row.addView(ic, new LinearLayout.LayoutParams(px(36), px(36)));
+        LinearLayout texts = new LinearLayout(act);
+        texts.setOrientation(LinearLayout.VERTICAL);
+        texts.setPadding(px(12), 0, px(4), 0);
+        TextView t = text(title, 15, th.onTile);
+        t.setSingleLine(true);
+        t.setEllipsize(TextUtils.TruncateAt.END);
+        texts.addView(t);
+        if (!body.isEmpty()) {
+            TextView bt = text(body, 13, th.sub);
+            bt.setMaxLines(2);
+            bt.setEllipsize(TextUtils.TruncateAt.END);
+            texts.addView(bt);
+        }
+        TextView m = text(th.upperLabels ? meta.toUpperCase(T.loc()) : meta, 11, th.sub);
+        m.setTypeface(th.labelFace);
+        texts.addView(m);
+        row.addView(texts, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
+        return row;
     }
 
     void refreshCalendar() {

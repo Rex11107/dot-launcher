@@ -31,7 +31,8 @@ Ogni permesso serve a una funzione precisa e quasi tutti si chiedono solo quando
 - **Posizione approssimativa**: il meteo della tua zona.
 - **Calendario e contatti**: widget Calendario e Riepilogo, ricerca di eventi e contatti.
 - **Attività fisica**: contapassi.
-- **Accesso ai dati di utilizzo** e **accesso alle notifiche** (da concedere a mano): benessere digitale, pallini e anteprima delle notifiche.
+- **Accesso ai dati di utilizzo** e **accesso alle notifiche** (da concedere a mano): benessere digitale, pallini, anteprima delle notifiche e casella dei messaggi.
+- **Foto, video e audio** (solo se attivi "File nella ricerca"): trovare i file per nome nella ricerca.
 - **Impronta o PIN**: app nascoste e app bloccate.
 - **Installazione e rimozione di app**: aggiornamenti dell'app e voce Disinstalla.
 - **Solo per Dot Sveglia**: sveglie esatte, notifiche e schermo intero sopra il blocco, servizio in primo piano mentre suona, vibrazione, riattivazione dopo il riavvio ed esclusione dall'ottimizzazione della batteria. Se usi la sveglia di sistema non servono.

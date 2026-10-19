@@ -106,7 +106,7 @@ final class Widgets {
             case "focus": return new int[][]{{1, 1}, {2, 1}};
             case "glance": return new int[][]{{F, 1}, {F, 2}, {2, 2}};
             case "app": return new int[][]{{1, 1}, {2, 2}};
-            case "folder": return new int[][]{{1, 1}, {2, 2}};
+            case "folder": return new int[][]{{1, 1}, {2, 2}, {F, 1}, {F, 2}, {F, 4}}; // le larghe: app tutte toccabili
             case "shortcut": return new int[][]{{1, 1}};
             default: return new int[][]{{1, 1}, {2, 1}, {2, 2}, {F, 1}, {F, 2}, {F, 3}, {F, 4}};
         }
