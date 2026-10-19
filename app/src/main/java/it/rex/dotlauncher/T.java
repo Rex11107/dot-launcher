@@ -668,6 +668,8 @@ final class T {
             "Nessuna galleria disponibile", "No gallery available",
             "Originale", "Original",
             "A puntini (colori)", "Dotted (color)",
+            "Imposta come sfondo", "Set as wallpaper",
+            "Scegli \"Schermata di blocco\": la home resta animata", "Choose \"Lock screen\": the home stays animated",
             " · in carica", " · charging",
             "Installa l'aggiornamento", "Install the update",
             "Solo schermata home (animato)", "Home screen only (animated)",

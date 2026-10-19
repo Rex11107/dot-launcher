@@ -453,13 +453,15 @@ public class WallpaperActivity extends Activity {
     /** Fotogramma fisso della scena sulla schermata di blocco (la home resta animata). */
     private void lockStill(Class<?> svc, int scene) {
         final int[] sz = screen();
-        // circa due terzi della risoluzione: nitido e leggero da preparare anche su telefoni economici
-        final int w = Math.max(1, sz[0] * 2 / 3), h = Math.max(1, sz[1] * 2 / 3);
+        // risoluzione piena: è un solo fotogramma, e la schermata di blocco si guarda da vicino
+        final int w = Math.max(1, sz[0]), h = Math.max(1, sz[1]);
         final int accent = th.accent;
         busy = true;
         toast(T.t("Preparo la schermata di blocco…"));
         exec.execute(() -> {
             Bitmap b = null;
+            //noinspection ResultOfMethodCallIgnored
+            ShareProvider.file(this, ShareProvider.LOCK).delete(); // mai un'immagine vecchia
             try {
                 if (svc == ShaderWallpaper.class) {
                     b = ShaderWallpaper.still(this, scene, w, h, accent);
@@ -468,23 +470,68 @@ public class WallpaperActivity extends Activity {
                     LiveScenes sc = new LiveScenes();
                     sc.accent = accent;
                     sc.ghost = prefs.getBoolean("ghost", true);
-                    sc.draw(new Canvas(b), scene, w, h, 20f, 9 * dp * 2 / 3f, 0);
+                    sc.draw(new Canvas(b), scene, w, h, 20f, 9 * dp, 0);
                 }
                 if (b == null) throw new IllegalStateException();
-                WallpaperManager.getInstance(this).setBitmap(b, null, true, WallpaperManager.FLAG_LOCK);
+                // copia dell'immagine, per l'"Imposta come sfondo" del telefono
+                java.io.File f = ShareProvider.file(this, ShareProvider.LOCK);
+                try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                    b.compress(Bitmap.CompressFormat.JPEG, 92, out);
+                }
+                boolean set = false;
+                if (!systemLock()) {
+                    WallpaperManager wm = WallpaperManager.getInstance(this);
+                    int before = wm.getWallpaperId(WallpaperManager.FLAG_LOCK);
+                    wm.setBitmap(b, null, true, WallpaperManager.FLAG_LOCK);
+                    set = wm.getWallpaperId(WallpaperManager.FLAG_LOCK) != before;
+                }
+                final boolean ok = set;
                 ui.post(() -> {
                     busy = false;
-                    toast(T.t("Home animata, schermata di blocco aggiornata"));
+                    if (ok) toast(T.t("Home animata, schermata di blocco aggiornata"));
+                    else openSystemSetter();
                 });
             } catch (Exception e) {
                 ui.post(() -> {
                     busy = false;
-                    toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
+                    // ultima strada: l'immagine c'è già, la imposta il telefono
+                    if (ShareProvider.file(this, ShareProvider.LOCK).exists()) openSystemSetter();
+                    else toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
                 });
             } finally {
                 if (b != null) b.recycle();
             }
         });
+    }
+
+    /**
+     * Honor e Huawei gestiscono la schermata di blocco con i loro temi: un'immagine impostata dalle app
+     * viene accettata ma non mostrata. Lì la si passa all'"Imposta come sfondo" del telefono.
+     */
+    private static boolean systemLock() {
+        String m = android.os.Build.MANUFACTURER == null ? "" : android.os.Build.MANUFACTURER.toLowerCase(java.util.Locale.ROOT);
+        return m.contains("honor") || m.contains("huawei");
+    }
+
+    private void openSystemSetter() {
+        Uri uri = ShareProvider.uri(ShareProvider.LOCK);
+        Intent i = null;
+        try {
+            i = WallpaperManager.getInstance(this).getCropAndSetWallpaperIntent(uri);
+        } catch (Exception ignored) {
+        }
+        if (i == null) {
+            i = Intent.createChooser(new Intent(Intent.ACTION_ATTACH_DATA)
+                    .setDataAndType(uri, "image/jpeg").putExtra("mimeType", "image/jpeg")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), T.t("Imposta come sfondo"));
+        }
+        i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        try {
+            startActivity(i);
+            toast(T.t("Scegli \"Schermata di blocco\": la home resta animata"));
+        } catch (Exception e) {
+            toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
+        }
     }
 
     private Bitmap assetBitmap(String path) {
