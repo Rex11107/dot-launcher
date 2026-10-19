@@ -228,6 +228,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Sfondi animati realistici, disegnati dalla scheda grafica (buco nero, aurora, nebulosa, gradiente) -->
+        <service
+            android:name=".ShaderWallpaper"
+            android:exported="true"
+            android:label="@string/live_real_label"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/live_wallpaper_real" />
+        </service>
+
         <!-- Sfondo animato a puntini (buco nero, meteo dal vivo, onda) -->
         <service
             android:name=".DotLiveWallpaper"

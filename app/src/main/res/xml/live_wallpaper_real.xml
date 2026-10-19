@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sfondi animati realistici di Dot Launcher: la scena si sceglie nella pagina Sfondi del launcher -->
+<wallpaper xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/live_real_desc" />

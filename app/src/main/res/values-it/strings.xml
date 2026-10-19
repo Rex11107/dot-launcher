@@ -7,4 +7,6 @@
     <string name="import_layout">Importa in Dot Launcher</string>
     <string name="live_label">Sfondo animato Dot</string>
     <string name="live_desc">Scene a puntini: buco nero, meteo dal vivo, onda. La scena si sceglie in Dot Launcher › Sfondi.</string>
+    <string name="live_real_label">Sfondo animato Dot (realistico)</string>
+    <string name="live_real_desc">Buco nero, aurora, nebulosa, gradiente fluido. La scena si sceglie in Dot Launcher › Sfondi.</string>
 </resources>

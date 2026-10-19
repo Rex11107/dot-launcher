@@ -7,4 +7,6 @@
     <string name="import_layout">Import into Dot Launcher</string>
     <string name="live_label">Dot animated wallpaper</string>
     <string name="live_desc">Dot-matrix scenes: black hole, live weather, dot wave. Pick the scene in Dot Launcher › Wallpapers.</string>
+    <string name="live_real_label">Dot animated wallpaper (realistic)</string>
+    <string name="live_real_desc">Black hole, aurora, nebula, fluid gradient. Pick the scene in Dot Launcher › Wallpapers.</string>
 </resources>

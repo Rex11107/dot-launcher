@@ -7,6 +7,7 @@ import android.content.SharedPreferences;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.graphics.Outline;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
@@ -47,6 +48,7 @@ public class WallpaperActivity extends Activity {
     private Adapter adapter;
     private int pw, ph, cardW, cardH;
     private boolean busy;
+    private GridView monoGrid, fixedGrid, liveGrid;
 
     @Override
     protected void onCreate(Bundle s) {
@@ -80,48 +82,22 @@ public class WallpaperActivity extends Activity {
         title.setText(T.t("SFONDI."));
         root.addView(title);
 
-        // sfondi animati: anteprime che si muovono davvero, in una fila che scorre di lato
-        root.addView(sectionLabel(T.t("Animati")));
-        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
-        hs.setHorizontalScrollBarEnabled(false);
-        LinearLayout lives = new LinearLayout(this);
-        lives.setOrientation(LinearLayout.HORIZONTAL);
-        int lw = Math.round(cardW * 0.74f), lh = Math.round(lw * 1.6f);
-        for (int i = 0; i < LiveScenes.NAMES.length; i++) {
-            final int scene = i;
-            LinearLayout col = new LinearLayout(this);
-            col.setOrientation(LinearLayout.VERTICAL);
-            LivePreview pv = new LivePreview(this, scene, th);
-            android.graphics.drawable.GradientDrawable clip = new android.graphics.drawable.GradientDrawable();
-            clip.setCornerRadius(20 * dp);
-            clip.setColor(0xFF000000);
-            pv.setBackground(clip);
-            pv.setClipToOutline(true);
-            pv.setContentDescription(T.t(LiveScenes.NAMES[i]));
-            pv.setOnClickListener(v -> applyLive(scene));
-            col.addView(pv, new LinearLayout.LayoutParams(lw, lh));
-            TextView name = new TextView(this);
-            name.setText(T.t(LiveScenes.NAMES[i]));
-            name.setTextColor(th.onTile);
-            name.setTypeface(th.bodyFace);
-            name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-            name.setPadding(0, Math.round(8 * dp), 0, 0);
-            col.addView(name);
-            TextView desc = new TextView(this);
-            desc.setText(T.t(LiveScenes.DESCS[i]));
-            desc.setTextColor(th.sub);
-            desc.setTypeface(th.bodyFace);
-            desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            desc.setMaxWidth(lw);
-            col.addView(desc);
-            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(lw, ViewGroup.LayoutParams.WRAP_CONTENT);
-            cl.rightMargin = gap;
-            lives.addView(col, cl);
-        }
-        hs.addView(lives);
-        root.addView(hs);
-        root.addView(sectionLabel(T.t("Generati")));
+        // tre schede: monocromatici, fissi e animati
+        LinearLayout tabs = new LinearLayout(this);
+        tabs.setOrientation(LinearLayout.HORIZONTAL);
+        tabs.setPadding(0, Math.round(16 * dp), 0, Math.round(12 * dp));
+        root.addView(tabs);
+        FrameLayout pagesBox = new FrameLayout(this);
+        root.addView(pagesBox, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
+        // 1) monocromatici: tinte unite
+        monoGrid = gridView(gap);
+        monoGrid.setAdapter(new MonoAdapter());
+        monoGrid.setOnItemClickListener((pa, v, pos, id) -> askTarget(which -> applySolid(pos, which)));
+
+        // 2) fissi: gli sfondi generati e le foto
+        LinearLayout fixedPage = new LinearLayout(this);
+        fixedPage.setOrientation(LinearLayout.VERTICAL);
         TextView hint = new TextView(this);
         hint.setText(T.t("Tocca per applicare · tieni premuto per una nuova variante"));
         hint.setTextColor(th.sub);
@@ -131,7 +107,7 @@ public class WallpaperActivity extends Activity {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         hl.topMargin = Math.round(10 * dp);
         hl.bottomMargin = Math.round(16 * dp);
-        root.addView(hint, hl);
+        fixedPage.addView(hint, hl);
 
         GridView grid = new GridView(this);
         grid.setNumColumns(2);
@@ -153,7 +129,39 @@ public class WallpaperActivity extends Activity {
             renderPreview(pos - 1);
             return true;
         });
-        root.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        fixedPage.addView(grid, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+        fixedGrid = grid;
+
+        // 3) animati: realistici (scheda grafica) e a puntini
+        liveGrid = gridView(gap);
+        liveGrid.setAdapter(new LiveAdapter());
+        liveGrid.setOnItemClickListener((pa, v, pos, id) -> {
+            if (pos < ShaderWallpaper.FILES.length) applyShader(pos);
+            else applyLive(pos - ShaderWallpaper.FILES.length);
+        });
+
+        final View[] pages = {monoGrid, fixedPage, liveGrid};
+        final String[] tabNames = {T.t("Monocromatici"), T.t("Fissi"), T.t("Animati")};
+        final TextView[] tabViews = new TextView[3];
+        for (int t = 0; t < 3; t++) {
+            pagesBox.addView(pages[t], new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT));
+            final int tab = t;
+            TextView tv = new TextView(this);
+            tv.setText(tabNames[t]);
+            tv.setTypeface(th.bodyFace);
+            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            tv.setGravity(Gravity.CENTER);
+            tv.setMinHeight(Math.round(40 * dp));
+            tv.setPadding(Math.round(16 * dp), 0, Math.round(16 * dp), 0);
+            tv.setOnClickListener(v -> selectTab(tab, pages, tabViews));
+            LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            tl.rightMargin = Math.round(8 * dp);
+            tabs.addView(tv, tl);
+            tabViews[t] = tv;
+        }
+        selectTab(Math.max(0, Math.min(2, prefs.getInt("wallTab", 1))), pages, tabViews);
         // aperta dalla home: anche qui Honor può tenersi il gesto indietro, quindi lo si legge da qui
         SwipeBackFrame frame = new SwipeBackFrame(this);
         frame.setOnSwipeBack(this::onBackPressed);
@@ -164,7 +172,7 @@ public class WallpaperActivity extends Activity {
         root.setOnApplyWindowInsetsListener((v, in) -> {
             int[] r = SystemBars.read(in);
             root.setPadding(pad + r[0], padTop + r[1], pad + r[2], 0);
-            grid.setPadding(0, 0, 0, Math.round(24 * dp) + r[3]);
+            for (GridView g : new GridView[]{monoGrid, fixedGrid, liveGrid}) g.setPadding(0, 0, 0, Math.round(24 * dp) + r[3]);
             return in;
         });
         root.requestApplyInsets();
@@ -306,6 +314,186 @@ public class WallpaperActivity extends Activity {
         }
     }
 
+    private GridView gridView(int gap) {
+        GridView g = new GridView(this);
+        g.setNumColumns(2);
+        g.setHorizontalSpacing(gap);
+        g.setVerticalSpacing(gap);
+        g.setSelector(new ColorDrawable(0));
+        g.setVerticalScrollBarEnabled(false);
+        g.setClipToPadding(false);
+        g.setPadding(0, 0, 0, Math.round(24 * dp));
+        return g;
+    }
+
+    private void selectTab(int tab, View[] pages, TextView[] tabViews) {
+        prefs.edit().putInt("wallTab", tab).apply();
+        for (int t = 0; t < pages.length; t++) {
+            boolean on = t == tab;
+            pages[t].setVisibility(on ? View.VISIBLE : View.GONE);
+            android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+            g.setCornerRadius(20 * dp);
+            g.setColor(on ? th.onTile : Theme.alpha(th.onTile, th.light ? 0.08f : 0.12f));
+            tabViews[t].setBackground(g);
+            tabViews[t].setTextColor(on ? th.bg | 0xFF000000 : th.onTile);
+            tabViews[t].setSelected(on);
+        }
+    }
+
+    // ---------- monocromatici ----------
+
+    private static final String[] MONO_NAMES = {"Nero", "Antracite", "Ardesia", "Grigio perla", "Bianco caldo",
+            "Blu notte", "Verde bosco", "Bordeaux", "Sabbia", "Colore d'accento"};
+    private static final int[] MONO = {0xFF000000, 0xFF1C1C1E, 0xFF3A3F47, 0xFFC9CCD1, 0xFFF4F1EA,
+            0xFF0E1A33, 0xFF13261D, 0xFF3A0F17, 0xFFCDBB9B, 0};
+
+    private int monoColor(int i) {
+        return MONO[i] == 0 ? (0xFF000000 | th.accent) : MONO[i];
+    }
+
+    private void applySolid(int i, int which) {
+        final int[] sz = screen();
+        final int c = monoColor(i);
+        busy = true;
+        exec.execute(() -> {
+            try {
+                Bitmap b = Bitmap.createBitmap(Math.max(1, sz[0] / 4), Math.max(1, sz[1] / 4), Bitmap.Config.RGB_565);
+                b.eraseColor(c);
+                WallpaperManager.getInstance(this).setBitmap(b, null, true, which);
+                Glass.save(this, b);
+                prefs.edit().putInt("wallStyle", -100 - i).apply(); // per segnare la tinta in uso
+                done();
+            } catch (Exception e) {
+                fail();
+            }
+        });
+    }
+
+    private class MonoAdapter extends BaseAdapter {
+        @Override public int getCount() { return MONO.length; }
+        @Override public Object getItem(int i) { return i; }
+        @Override public long getItemId(int i) { return i; }
+
+        @Override
+        public View getView(int pos, View convert, ViewGroup parent) {
+            int c = monoColor(pos);
+            boolean inUse = prefs.getBoolean("wall", false) && prefs.getInt("wallStyle", 0) == -100 - pos;
+            return card(new ColorDrawable(c), null, T.t(MONO_NAMES[pos]), inUse, Math.round(cardW * 1.1f),
+                    Color.luminance(c) > 0.5f ? 0xFF111111 : 0xFFFFFFFF);
+        }
+    }
+
+    // ---------- animati ----------
+
+    private boolean liveActive(Class<?> svc) {
+        try {
+            android.app.WallpaperInfo info = WallpaperManager.getInstance(this).getWallpaperInfo();
+            return info != null && new android.content.ComponentName(this, svc).equals(info.getComponent());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** Sfondo realistico: come per quelli a puntini, Android chiede conferma se non è già attivo. */
+    private void applyShader(int scene) {
+        prefs.edit().putInt(ShaderWallpaper.PREF, scene).putBoolean("wall", true).apply();
+        if (liveActive(ShaderWallpaper.class)) {
+            toast(T.t("Sfondo animato: ") + T.t(ShaderWallpaper.NAMES[scene]));
+            if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
+            return;
+        }
+        openLivePicker(ShaderWallpaper.class);
+    }
+
+    private void openLivePicker(Class<?> svc) {
+        android.content.ComponentName me = new android.content.ComponentName(this, svc);
+        try {
+            startActivity(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                    .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, me));
+            toast(T.t("Se te lo chiede, scegli \"Home e schermata di blocco\""));
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
+            } catch (Exception e2) {
+                toast(T.t("Questo telefono non permette gli sfondi animati"));
+            }
+        }
+    }
+
+    private Bitmap assetBitmap(String path) {
+        try (InputStream in = getAssets().open(path)) {
+            return BitmapFactory.decodeStream(in);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private class LiveAdapter extends BaseAdapter {
+        private final Bitmap[] shots = new Bitmap[ShaderWallpaper.FILES.length];
+
+        @Override public int getCount() { return ShaderWallpaper.FILES.length + LiveScenes.NAMES.length; }
+        @Override public Object getItem(int i) { return i; }
+        @Override public long getItemId(int i) { return i; }
+
+        @Override
+        public View getView(int pos, View convert, ViewGroup parent) {
+            int real = ShaderWallpaper.FILES.length;
+            if (pos < real) {
+                if (shots[pos] == null) shots[pos] = assetBitmap("live/" + ShaderWallpaper.FILES[pos] + ".jpg");
+                ImageView iv = new ImageView(WallpaperActivity.this);
+                iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+                if (shots[pos] != null) iv.setImageBitmap(shots[pos]);
+                boolean inUse = liveActive(ShaderWallpaper.class) && prefs.getInt(ShaderWallpaper.PREF, 0) == pos;
+                return card(null, iv, T.t(ShaderWallpaper.NAMES[pos]), inUse, cardH, 0xFFFFFFFF);
+            }
+            int scene = pos - real;
+            LivePreview pv = new LivePreview(WallpaperActivity.this, scene, th);
+            boolean inUse = liveActive(DotLiveWallpaper.class) && prefs.getInt(DotLiveWallpaper.PREF, 0) == scene;
+            return card(null, pv, T.t(LiveScenes.NAMES[scene]) + " · " + T.t("puntini"), inUse, cardH, 0xFFFFFFFF);
+        }
+    }
+
+    /** Scheda di uno sfondo: anteprima (colore o vista), nome in basso e bordo se è in uso. */
+    private View card(android.graphics.drawable.Drawable bg, View content, String name, boolean inUse, int height, int textColor) {
+        FrameLayout card = new FrameLayout(this);
+        card.setLayoutParams(new android.widget.AbsListView.LayoutParams(cardW, height));
+        final float radius = 20 * dp;
+        card.setOutlineProvider(new ViewOutlineProvider() {
+            @Override
+            public void getOutline(View v, Outline o) {
+                o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), radius);
+            }
+        });
+        card.setClipToOutline(true);
+        if (bg != null) card.setBackground(bg);
+        if (content != null) card.addView(content, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT));
+        if (textColor == 0xFFFFFFFF) {
+            View scrim = new View(this);
+            scrim.setBackground(new android.graphics.drawable.GradientDrawable(
+                    android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                    new int[]{0x00000000, 0x59000000, 0xB3000000}));
+            card.addView(scrim, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.round(84 * dp), Gravity.BOTTOM));
+        }
+        TextView label = new TextView(this);
+        label.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        label.setTypeface(th.titleFace);
+        label.setPadding(Math.round(12 * dp), 0, Math.round(12 * dp), Math.round(12 * dp));
+        label.setText(inUse ? name + "  ·  " + T.t("in uso") : name);
+        label.setTextColor(textColor);
+        if (textColor == 0xFFFFFFFF) label.setShadowLayer(4 * dp, 0, 0, 0x99000000);
+        card.addView(label, new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM));
+        if (inUse) {
+            android.graphics.drawable.GradientDrawable ring = new android.graphics.drawable.GradientDrawable();
+            ring.setCornerRadius(radius);
+            ring.setStroke(Math.round(3 * dp), th.accent);
+            card.setForeground(ring);
+        }
+        card.setContentDescription(label.getText());
+        return card;
+    }
+
     private TextView sectionLabel(String s) {
         TextView t = new TextView(this);
         t.setText(th.upperLabels ? s.toUpperCase(T.loc()) : s);
@@ -332,6 +520,11 @@ public class WallpaperActivity extends Activity {
         android.content.ComponentName me = new android.content.ComponentName(this, DotLiveWallpaper.class);
         if (info != null && me.equals(info.getComponent())) {
             toast(T.t("Sfondo animato: ") + T.t(LiveScenes.NAMES[scene]));
+            if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
+            return;
+        }
+        if (me != null) {
+            openLivePicker(DotLiveWallpaper.class);
             return;
         }
         try {
