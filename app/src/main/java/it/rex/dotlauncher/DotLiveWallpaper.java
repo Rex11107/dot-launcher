@@ -11,7 +11,7 @@ import android.view.SurfaceHolder;
 /**
  * Sfondo animato di Dot Launcher (buco nero, meteo dal vivo, onda di puntini).
  * Per la batteria: disegna solo quando è visibile (si ferma con un'app aperta o lo schermo spento),
- * al massimo 30 fotogrammi al secondo, e su Canvas accelerato senza motori 3D.
+ * circa 25 fotogrammi al secondo, in pausa mentre si tocca la home (LiveQuiet), e su Canvas accelerato senza motori 3D.
  */
 public class DotLiveWallpaper extends WallpaperService {
     static final String PREF = "liveStyle";
@@ -24,7 +24,8 @@ public class DotLiveWallpaper extends WallpaperService {
     private final class DotEngine extends Engine implements SharedPreferences.OnSharedPreferenceChangeListener {
         private final Handler h = new Handler(Looper.getMainLooper());
         private final LiveScenes scenes = new LiveScenes();
-        private final long start = System.nanoTime();
+        private float clock, shown = 0.5f; // tempo della scena e parallasse disegnata (raggiunge piano quella vera)
+        private long lastNs;
         private SharedPreferences prefs;
         private boolean visible;
         private int scene;
@@ -68,6 +69,7 @@ public class DotLiveWallpaper extends WallpaperService {
         public void onVisibilityChanged(boolean v) {
             visible = v;
             h.removeCallbacks(frame);
+            lastNs = 0;
             if (v) drawFrame();
         }
 
@@ -80,24 +82,32 @@ public class DotLiveWallpaper extends WallpaperService {
 
         @Override
         public void onOffsetsChanged(float xOff, float yOff, float xStep, float yStep, int xPx, int yPx) {
-            xOffset = xOff;
-            if (visible) {
-                h.removeCallbacks(frame);
-                drawFrame();
-            }
+            xOffset = xOff; // lo raccoglie il prossimo fotogramma: niente disegni extra durante lo scorrimento
         }
 
         private void drawFrame() {
             if (!visible) return;
+            h.removeCallbacks(frame);
+            long wait = LiveQuiet.remaining();
+            if (wait > 0) {
+                // la home si sta muovendo sotto il dito: fotogramma fermo, si riparte subito dopo
+                lastNs = 0;
+                h.postDelayed(frame, wait + 16);
+                return;
+            }
+            long now = System.nanoTime();
+            if (lastNs != 0) clock += Math.min(0.1f, (now - lastNs) / 1e9f);
+            lastNs = now;
+            shown += (xOffset - shown) * 0.2f;
             SurfaceHolder sh = getSurfaceHolder();
             Canvas cv = null;
             try {
                 cv = Build.VERSION.SDK_INT >= 26 ? sh.lockHardwareCanvas() : sh.lockCanvas();
                 if (cv != null) {
                     float dp = getResources().getDisplayMetrics().density;
-                    float t = (System.nanoTime() - start) / 1e9f;
+                    float t = clock;
                     // parallasse leggera: passando da una pagina all'altra la scena scorre di poco
-                    float shift = (0.5f - xOffset) * 60 * dp;
+                    float shift = (0.5f - shown) * 60 * dp;
                     scenes.draw(cv, scene, cv.getWidth(), cv.getHeight(), t, 9 * dp, shift);
                 }
             } catch (Exception ignored) {
@@ -109,8 +119,8 @@ public class DotLiveWallpaper extends WallpaperService {
                     }
                 }
             }
-            h.removeCallbacks(frame);
-            if (visible) h.postDelayed(frame, 33); // circa 30 fotogrammi al secondo
+            // circa 25 fotogrammi al secondo (16 sui telefoni economici)
+            if (visible) h.postDelayed(frame, ShaderWallpaper.lowEnd(DotLiveWallpaper.this) ? 60 : 40);
         }
     }
 }

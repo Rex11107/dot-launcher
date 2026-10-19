@@ -36,6 +36,7 @@ import java.util.concurrent.Executors;
 /** Galleria di sfondi generati, più la scelta di una foto (anche trasformata a puntini). */
 public class WallpaperActivity extends Activity {
     private static final int REQ_IMAGE = 7;
+    private static final int REQ_LIVE = 8;
 
     private SharedPreferences prefs;
     private Theme th;
@@ -49,6 +50,9 @@ public class WallpaperActivity extends Activity {
     private int pw, ph, cardW, cardH;
     private boolean busy;
     private GridView monoGrid, fixedGrid, liveGrid;
+    private Class<?> pendingSvc;   // sfondo animato in attesa della conferma di Android
+    private int pendingScene;
+    private boolean pendingLock;
 
     @Override
     protected void onCreate(Bundle s) {
@@ -136,8 +140,8 @@ public class WallpaperActivity extends Activity {
         liveGrid = gridView(gap);
         liveGrid.setAdapter(new LiveAdapter());
         liveGrid.setOnItemClickListener((pa, v, pos, id) -> {
-            if (pos < ShaderWallpaper.FILES.length) applyShader(pos);
-            else applyLive(pos - ShaderWallpaper.FILES.length);
+            if (pos < ShaderWallpaper.FILES.length) applyAnimated(ShaderWallpaper.class, ShaderWallpaper.PREF, pos);
+            else applyAnimated(DotLiveWallpaper.class, DotLiveWallpaper.PREF, pos - ShaderWallpaper.FILES.length);
         });
 
         final View[] pages = {monoGrid, fixedPage, liveGrid};
@@ -263,6 +267,17 @@ public class WallpaperActivity extends Activity {
     @Override
     protected void onActivityResult(int req, int res, Intent data) {
         super.onActivityResult(req, res, data);
+        if (req == REQ_LIVE) {
+            // tornati dalla conferma di Android: se lo sfondo è attivo e serve, si prepara la schermata di blocco
+            Class<?> svc = pendingSvc;
+            pendingSvc = null;
+            if (svc != null && liveActive(svc)) {
+                if (pendingLock) lockStill(svc, pendingScene);
+                else toast(T.t("Sfondo animato applicato"));
+            }
+            if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
+            return;
+        }
         if (req != REQ_IMAGE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
         String[] modes = {T.t("Originale"), T.t("A puntini (colori)"), T.t("A puntini (bianco e nero)"), T.t("A strisce (vetro rigato)")};
@@ -394,30 +409,82 @@ public class WallpaperActivity extends Activity {
         }
     }
 
-    /** Sfondo realistico: come per quelli a puntini, Android chiede conferma se non è già attivo. */
-    private void applyShader(int scene) {
-        prefs.edit().putInt(ShaderWallpaper.PREF, scene).putBoolean("wall", true).apply();
-        if (liveActive(ShaderWallpaper.class)) {
-            toast(T.t("Sfondo animato: ") + T.t(ShaderWallpaper.NAMES[scene]));
-            if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
-            return;
-        }
-        openLivePicker(ShaderWallpaper.class);
+    private String animatedName(Class<?> svc, int scene) {
+        return T.t(svc == ShaderWallpaper.class ? ShaderWallpaper.NAMES[scene] : LiveScenes.NAMES[scene]);
     }
 
-    private void openLivePicker(Class<?> svc) {
-        android.content.ComponentName me = new android.content.ComponentName(this, svc);
-        try {
-            startActivity(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
-                    .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, me));
-            toast(T.t("Se te lo chiede, scegli \"Home e schermata di blocco\""));
-        } catch (Exception e) {
-            try {
-                startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
-            } catch (Exception e2) {
-                toast(T.t("Questo telefono non permette gli sfondi animati"));
+    /**
+     * Sfondo animato. Android non lascia impostarlo in silenzio: la prima volta compare la sua conferma.
+     * Molti telefoni (Honor compreso) non mostrano gli sfondi animati sulla schermata di blocco, quindi lì
+     * si può mettere un fotogramma fisso della stessa scena.
+     */
+    private void applyAnimated(Class<?> svc, String pref, int scene) {
+        if (busy) return;
+        String[] items = {T.t("Solo schermata home (animato)"), T.t("Home animata e blocco con la stessa immagine fissa")};
+        Sheet.list(this, th, animatedName(svc, scene), items, -1, which -> {
+            // la home deve lasciar vedere lo sfondo del telefono, altrimenti lo coprirebbe con la tinta del tema
+            prefs.edit().putInt(pref, scene).putBoolean("wall", true).apply();
+            boolean lock = which == 1;
+            if (liveActive(svc)) {
+                if (lock) lockStill(svc, scene);
+                else toast(T.t("Sfondo animato: ") + animatedName(svc, scene));
+                if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
+                return;
             }
-        }
+            pendingSvc = svc;
+            pendingScene = scene;
+            pendingLock = lock;
+            android.content.ComponentName me = new android.content.ComponentName(this, svc);
+            try {
+                startActivityForResult(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                        .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, me), REQ_LIVE);
+            } catch (Exception e) {
+                try {
+                    startActivityForResult(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER), REQ_LIVE);
+                    toast(T.t("Scegli \"Sfondo animato Dot\" dall'elenco"));
+                } catch (Exception e2) {
+                    pendingSvc = null;
+                    toast(T.t("Questo telefono non permette gli sfondi animati"));
+                }
+            }
+        });
+    }
+
+    /** Fotogramma fisso della scena sulla schermata di blocco (la home resta animata). */
+    private void lockStill(Class<?> svc, int scene) {
+        final int[] sz = screen();
+        // circa due terzi della risoluzione: nitido e leggero da preparare anche su telefoni economici
+        final int w = Math.max(1, sz[0] * 2 / 3), h = Math.max(1, sz[1] * 2 / 3);
+        final int accent = th.accent;
+        busy = true;
+        toast(T.t("Preparo la schermata di blocco…"));
+        exec.execute(() -> {
+            Bitmap b = null;
+            try {
+                if (svc == ShaderWallpaper.class) {
+                    b = ShaderWallpaper.still(this, scene, w, h, accent);
+                } else {
+                    b = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+                    LiveScenes sc = new LiveScenes();
+                    sc.accent = accent;
+                    sc.ghost = prefs.getBoolean("ghost", true);
+                    sc.draw(new Canvas(b), scene, w, h, 20f, 9 * dp * 2 / 3f, 0);
+                }
+                if (b == null) throw new IllegalStateException();
+                WallpaperManager.getInstance(this).setBitmap(b, null, true, WallpaperManager.FLAG_LOCK);
+                ui.post(() -> {
+                    busy = false;
+                    toast(T.t("Home animata, schermata di blocco aggiornata"));
+                });
+            } catch (Exception e) {
+                ui.post(() -> {
+                    busy = false;
+                    toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
+                });
+            } finally {
+                if (b != null) b.recycle();
+            }
+        });
     }
 
     private Bitmap assetBitmap(String path) {
@@ -492,52 +559,6 @@ public class WallpaperActivity extends Activity {
         }
         card.setContentDescription(label.getText());
         return card;
-    }
-
-    private TextView sectionLabel(String s) {
-        TextView t = new TextView(this);
-        t.setText(th.upperLabels ? s.toUpperCase(T.loc()) : s);
-        t.setTypeface(th.labelFace);
-        t.setTextColor(th.sub);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        t.setPadding(0, Math.round(18 * dp), 0, Math.round(8 * dp));
-        return t;
-    }
-
-    /**
-     * Sfondo animato: si salva la scena e, se lo sfondo di Dot non è già attivo, si apre la schermata di Android
-     * che chiede conferma (un'app non può impostare da sola uno sfondo animato).
-     */
-    private void applyLive(int scene) {
-        // la home deve lasciar vedere lo sfondo del telefono, altrimenti lo coprirebbe con la tinta del tema
-        prefs.edit().putInt(DotLiveWallpaper.PREF, scene).putBoolean("wall", true).apply();
-        WallpaperManager wm = WallpaperManager.getInstance(this);
-        android.app.WallpaperInfo info = null;
-        try {
-            info = wm.getWallpaperInfo();
-        } catch (Exception ignored) {
-        }
-        android.content.ComponentName me = new android.content.ComponentName(this, DotLiveWallpaper.class);
-        if (info != null && me.equals(info.getComponent())) {
-            toast(T.t("Sfondo animato: ") + T.t(LiveScenes.NAMES[scene]));
-            if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
-            return;
-        }
-        if (me != null) {
-            openLivePicker(DotLiveWallpaper.class);
-            return;
-        }
-        try {
-            startActivity(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
-                    .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, me));
-        } catch (Exception e) {
-            try {
-                startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
-                toast(T.t("Scegli \"Sfondo animato Dot\" dall'elenco"));
-            } catch (Exception e2) {
-                toast(T.t("Questo telefono non permette gli sfondi animati"));
-            }
-        }
     }
 
     /** Anteprima animata di una scena: si muove solo mentre è sullo schermo, a circa 20 fotogrammi al secondo. */

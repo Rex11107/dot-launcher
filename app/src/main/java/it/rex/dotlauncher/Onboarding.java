@@ -187,7 +187,7 @@ class Onboarding extends FrameLayout {
             icons = IconFactory.COLOR;
             show(page);
         });
-        text(T.t("Forma, dimensione e pacchetti di icone sono in Impostazioni → Personalizzazione."));
+        text(T.t("Forma, dimensione e pacchetti di icone sono in Impostazioni → Aspetto e icone."));
     }
 
     private void drawer() {

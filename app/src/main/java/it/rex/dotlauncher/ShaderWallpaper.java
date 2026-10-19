@@ -7,8 +7,10 @@ import android.opengl.EGLContext;
 import android.opengl.EGLDisplay;
 import android.opengl.EGLSurface;
 import android.opengl.GLES20;
+import android.graphics.Bitmap;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Process;
 import android.service.wallpaper.WallpaperService;
 import android.util.DisplayMetrics;
 import android.view.SurfaceHolder;
@@ -23,7 +25,8 @@ import java.util.concurrent.TimeUnit;
 /**
  * Sfondi animati realistici (buco nero, aurora, nebulosa, gradiente fluido), disegnati dalla scheda grafica
  * con piccoli programmi (shader) in assets/shaders. Per la batteria: si ferma quando non è visibile,
- * al massimo 30 fotogrammi al secondo, e lavora a risoluzione ridotta (le scene sono morbide, non si nota).
+ * da 15 a 25 fotogrammi al secondo secondo la scena, lavora a risoluzione ridotta e si mette in pausa mentre
+ * si tocca o si scorre la home (vedi LiveQuiet), così le animazioni del launcher restano fluide.
  */
 public class ShaderWallpaper extends WallpaperService {
     static final String PREF = "glStyle";
@@ -32,8 +35,31 @@ public class ShaderWallpaper extends WallpaperService {
     static final String[] DESCS = {"Il disco di luce piegato dalla gravità, come nei film",
             "Tende di luce verde e viola sopra le montagne", "Gas colorato che si muove piano tra le stelle",
             "Macchie morbide nel tuo colore d'accento"};
-    /** Risoluzione di lavoro rispetto allo schermo, per scena. */
-    private static final float[] SCALE = {0.55f, 0.5f, 0.5f, 0.35f};
+    /** Risoluzione di lavoro rispetto allo schermo, per scena (le scene sono morbide: non si nota). */
+    private static final float[] SCALE = {0.42f, 0.36f, 0.33f, 0.25f};
+    /** Pausa tra due fotogrammi, per scena: il buco nero gira, le altre si muovono piano. */
+    private static final int[] FRAME_MS = {40, 50, 66, 66};
+
+    private static Boolean lowEnd;
+
+    /**
+     * Telefono economico o con poca memoria (meno di 4 GB): gli sfondi animati lavorano ancora più leggeri,
+     * con meno pixel e meno fotogrammi. Le scene restano le stesse.
+     */
+    static boolean lowEnd(android.content.Context c) {
+        if (lowEnd == null) {
+            boolean low = false;
+            try {
+                android.app.ActivityManager am = (android.app.ActivityManager) c.getSystemService(ACTIVITY_SERVICE);
+                android.app.ActivityManager.MemoryInfo mi = new android.app.ActivityManager.MemoryInfo();
+                am.getMemoryInfo(mi);
+                low = am.isLowRamDevice() || mi.totalMem < 3_800_000_000L;
+            } catch (Exception ignored) {
+            }
+            lowEnd = low;
+        }
+        return lowEnd;
+    }
 
     @Override
     public Engine onCreateEngine() {
@@ -52,8 +78,10 @@ public class ShaderWallpaper extends WallpaperService {
         private int prog = 0, progScene = -1, w = 1, h = 1;
         private volatile int scene;
         private volatile float shift;
+        private float shown;      // parallasse disegnata: raggiunge piano quella vera
+        private float clock;      // tempo della scena: si ferma con le pause, così non salta
+        private long lastNs;
         private volatile float[] accent = {0.84f, 0.1f, 0.13f};
-        private final long start = System.nanoTime();
         private FloatBuffer quad;
         private final Runnable frame = this::drawFrame;
 
@@ -65,12 +93,11 @@ public class ShaderWallpaper extends WallpaperService {
             readPrefs();
             setOffsetNotificationsEnabled(true);
             applySize(holder);
-            thread = new HandlerThread("dot-gl");
+            // priorità bassa: il disegno della home viene sempre prima
+            thread = new HandlerThread("dot-gl", Process.THREAD_PRIORITY_BACKGROUND);
             thread.start();
             gl = new Handler(thread.getLooper());
-            float[] v = {-1, -1, 1, -1, -1, 1, 1, 1};
-            quad = ByteBuffer.allocateDirect(v.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
-            quad.put(v).position(0);
+            quad = quad();
         }
 
         /** Superficie più piccola dello schermo: il compositore la allarga, la scheda grafica lavora meno. */
@@ -79,7 +106,7 @@ public class ShaderWallpaper extends WallpaperService {
                 DisplayMetrics m = new DisplayMetrics();
                 android.view.WindowManager wm = (android.view.WindowManager) getSystemService(WINDOW_SERVICE);
                 wm.getDefaultDisplay().getRealMetrics(m);
-                float s = SCALE[scene];
+                float s = SCALE[scene] * (lowEnd(ShaderWallpaper.this) ? 0.8f : 1f);
                 holder.setFixedSize(Math.max(1, Math.round(m.widthPixels * s)), Math.max(1, Math.round(m.heightPixels * s)));
             } catch (Exception ignored) {
             }
@@ -144,7 +171,10 @@ public class ShaderWallpaper extends WallpaperService {
         public void onVisibilityChanged(boolean v) {
             visible = v;
             gl.removeCallbacks(frame);
-            if (v) gl.post(frame);
+            if (v) gl.post(() -> {
+                lastNs = 0;
+                drawFrame();
+            });
         }
 
         @Override
@@ -160,7 +190,8 @@ public class ShaderWallpaper extends WallpaperService {
                 destroySurface();
                 if (prog != 0) GLES20.glDeleteProgram(prog);
                 if (ctx != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(dpy, ctx);
-                if (dpy != EGL14.EGL_NO_DISPLAY) EGL14.eglTerminate(dpy);
+                // niente eglTerminate: la connessione grafica è condivisa con il resto del launcher
+                EGL14.eglReleaseThread();
                 ctx = EGL14.EGL_NO_CONTEXT;
                 dpy = EGL14.EGL_NO_DISPLAY;
                 thread.quitSafely();
@@ -204,78 +235,162 @@ public class ShaderWallpaper extends WallpaperService {
             }
         }
 
-        // ---------- shader ----------
-
-        private String asset(String name) throws Exception {
-            try (InputStream in = getAssets().open("shaders/" + name)) {
-                byte[] b = new byte[in.available()];
-                int off = 0, r;
-                while (off < b.length && (r = in.read(b, off, b.length - off)) > 0) off += r;
-                return new String(b, 0, off, "UTF-8");
-            }
-        }
-
-        private int compile(int type, String src) {
-            int s = GLES20.glCreateShader(type);
-            GLES20.glShaderSource(s, src);
-            GLES20.glCompileShader(s);
-            int[] ok = new int[1];
-            GLES20.glGetShaderiv(s, GLES20.GL_COMPILE_STATUS, ok, 0);
-            if (ok[0] == 0) {
-                android.util.Log.w("DotWallpaper", "shader: " + GLES20.glGetShaderInfoLog(s));
-                GLES20.glDeleteShader(s);
-                return 0;
-            }
-            return s;
-        }
-
-        private void ensureProgram() {
-            if (prog != 0 && progScene == scene) return;
-            if (prog != 0) GLES20.glDeleteProgram(prog);
-            prog = 0;
-            progScene = scene;
-            try {
-                String frag = "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n"
-                        + asset("common.glsl") + asset(FILES[scene] + ".glsl")
-                        + "\nvoid main(){ vec4 c; mainImage(c, gl_FragCoord.xy); gl_FragColor = c; }\n";
-                int vs = compile(GLES20.GL_VERTEX_SHADER, "attribute vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }");
-                int fs = compile(GLES20.GL_FRAGMENT_SHADER, frag);
-                if (vs == 0 || fs == 0) return;
-                int p = GLES20.glCreateProgram();
-                GLES20.glAttachShader(p, vs);
-                GLES20.glAttachShader(p, fs);
-                GLES20.glBindAttribLocation(p, 0, "aPos");
-                GLES20.glLinkProgram(p);
-                GLES20.glDeleteShader(vs);
-                GLES20.glDeleteShader(fs);
-                prog = p;
-            } catch (Exception e) {
-                prog = 0;
-            }
-        }
-
         private void drawFrame() {
             if (!visible || surf == EGL14.EGL_NO_SURFACE) return;
-            ensureProgram();
-            GLES20.glViewport(0, 0, w, h);
-            if (prog != 0) {
-                GLES20.glUseProgram(prog);
-                float t = ((System.nanoTime() - start) / 1e9f) % 3600f;
-                GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "uRes"), w, h);
-                GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "uTime"), t);
-                GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "uShift"), shift);
-                float[] a = accent;
-                GLES20.glUniform3f(GLES20.glGetUniformLocation(prog, "uAccent"), a[0], a[1], a[2]);
-                GLES20.glEnableVertexAttribArray(0);
-                GLES20.glVertexAttribPointer(0, 2, GLES20.GL_FLOAT, false, 0, quad);
-                GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
-            } else {
-                GLES20.glClearColor(0, 0, 0, 1);
-                GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
-            }
-            EGL14.eglSwapBuffers(dpy, surf);
             gl.removeCallbacks(frame);
-            if (visible) gl.postDelayed(frame, 33); // circa 30 fotogrammi al secondo
+            long wait = LiveQuiet.remaining();
+            if (wait > 0) {
+                // l'utente sta toccando o scorrendo la home: si lascia il fotogramma fermo
+                lastNs = 0;
+                gl.postDelayed(frame, wait + 16);
+                return;
+            }
+            if (prog == 0 || progScene != scene) {
+                if (prog != 0) GLES20.glDeleteProgram(prog);
+                prog = buildProgram(ShaderWallpaper.this, scene);
+                progScene = scene;
+            }
+            long now = System.nanoTime();
+            if (lastNs != 0) clock += Math.min(0.1f, (now - lastNs) / 1e9f);
+            lastNs = now;
+            if (clock > 3600f) clock -= 3600f;
+            shown += (shift - shown) * 0.2f;
+            if (Math.abs(shift - shown) < 0.002f) shown = shift;
+            draw(prog, w, h, clock, shown, accent, quad);
+            EGL14.eglSwapBuffers(dpy, surf);
+            if (visible) gl.postDelayed(frame, lowEnd(ShaderWallpaper.this) ? FRAME_MS[scene] * 3 / 2 : FRAME_MS[scene]);
+        }
+    }
+
+    // ---------- shader (usati sia dallo sfondo sia per l'immagine fissa) ----------
+
+    private static String asset(android.content.Context c, String name) throws Exception {
+        try (InputStream in = c.getAssets().open("shaders/" + name)) {
+            java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+            byte[] b = new byte[4096];
+            int r;
+            while ((r = in.read(b)) > 0) out.write(b, 0, r);
+            return out.toString("UTF-8");
+        }
+    }
+
+    private static int compile(int type, String src) {
+        int s = GLES20.glCreateShader(type);
+        GLES20.glShaderSource(s, src);
+        GLES20.glCompileShader(s);
+        int[] ok = new int[1];
+        GLES20.glGetShaderiv(s, GLES20.GL_COMPILE_STATUS, ok, 0);
+        if (ok[0] == 0) {
+            android.util.Log.w("DotWallpaper", "shader: " + GLES20.glGetShaderInfoLog(s));
+            GLES20.glDeleteShader(s);
+            return 0;
+        }
+        return s;
+    }
+
+    /** Programma della scena (0 se la scheda grafica non lo accetta: si disegna nero). */
+    private static int buildProgram(android.content.Context c, int scene) {
+        try {
+            String frag = "#ifdef GL_FRAGMENT_PRECISION_HIGH\nprecision highp float;\n#else\nprecision mediump float;\n#endif\n"
+                    + asset(c, "common.glsl") + asset(c, FILES[scene] + ".glsl")
+                    + "\nvoid main(){ vec4 c; mainImage(c, gl_FragCoord.xy); gl_FragColor = c; }\n";
+            int vs = compile(GLES20.GL_VERTEX_SHADER, "attribute vec2 aPos; void main(){ gl_Position = vec4(aPos, 0.0, 1.0); }");
+            int fs = compile(GLES20.GL_FRAGMENT_SHADER, frag);
+            if (vs == 0 || fs == 0) {
+                if (vs != 0) GLES20.glDeleteShader(vs);
+                if (fs != 0) GLES20.glDeleteShader(fs);
+                return 0;
+            }
+            int p = GLES20.glCreateProgram();
+            GLES20.glAttachShader(p, vs);
+            GLES20.glAttachShader(p, fs);
+            GLES20.glBindAttribLocation(p, 0, "aPos");
+            GLES20.glLinkProgram(p);
+            GLES20.glDeleteShader(vs);
+            GLES20.glDeleteShader(fs);
+            int[] ok = new int[1];
+            GLES20.glGetProgramiv(p, GLES20.GL_LINK_STATUS, ok, 0);
+            if (ok[0] == 0) {
+                GLES20.glDeleteProgram(p);
+                return 0;
+            }
+            return p;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    private static void draw(int prog, int w, int h, float t, float shift, float[] a, FloatBuffer quad) {
+        GLES20.glViewport(0, 0, w, h);
+        if (prog == 0) {
+            GLES20.glClearColor(0, 0, 0, 1);
+            GLES20.glClear(GLES20.GL_COLOR_BUFFER_BIT);
+            return;
+        }
+        GLES20.glUseProgram(prog);
+        GLES20.glUniform2f(GLES20.glGetUniformLocation(prog, "uRes"), w, h);
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "uTime"), t);
+        GLES20.glUniform1f(GLES20.glGetUniformLocation(prog, "uShift"), shift);
+        GLES20.glUniform3f(GLES20.glGetUniformLocation(prog, "uAccent"), a[0], a[1], a[2]);
+        GLES20.glEnableVertexAttribArray(0);
+        GLES20.glVertexAttribPointer(0, 2, GLES20.GL_FLOAT, false, 0, quad);
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4);
+    }
+
+    private static FloatBuffer quad() {
+        float[] v = {-1, -1, 1, -1, -1, 1, 1, 1};
+        FloatBuffer q = ByteBuffer.allocateDirect(v.length * 4).order(ByteOrder.nativeOrder()).asFloatBuffer();
+        q.put(v).position(0);
+        return q;
+    }
+
+    /**
+     * Un fotogramma della scena come immagine, per la schermata di blocco (dove molti telefoni non mostrano
+     * gli sfondi animati). Va chiamato da un thread di lavoro; restituisce null se la grafica non è disponibile.
+     */
+    static Bitmap still(android.content.Context c, int scene, int w, int h, int accentColor) {
+        EGLDisplay d = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY);
+        EGLContext cx = EGL14.EGL_NO_CONTEXT;
+        EGLSurface sf = EGL14.EGL_NO_SURFACE;
+        try {
+            int[] ver = new int[2];
+            if (!EGL14.eglInitialize(d, ver, 0, ver, 1)) return null;
+            int[] attrs = {EGL14.EGL_RED_SIZE, 8, EGL14.EGL_GREEN_SIZE, 8, EGL14.EGL_BLUE_SIZE, 8, EGL14.EGL_ALPHA_SIZE, 8,
+                    EGL14.EGL_RENDERABLE_TYPE, EGL14.EGL_OPENGL_ES2_BIT, EGL14.EGL_SURFACE_TYPE, EGL14.EGL_PBUFFER_BIT,
+                    EGL14.EGL_NONE};
+            EGLConfig[] cs = new EGLConfig[1];
+            int[] n = new int[1];
+            if (!EGL14.eglChooseConfig(d, attrs, 0, cs, 0, 1, n, 0) || n[0] == 0) return null;
+            cx = EGL14.eglCreateContext(d, cs[0], EGL14.EGL_NO_CONTEXT,
+                    new int[]{EGL14.EGL_CONTEXT_CLIENT_VERSION, 2, EGL14.EGL_NONE}, 0);
+            sf = EGL14.eglCreatePbufferSurface(d, cs[0], new int[]{EGL14.EGL_WIDTH, w, EGL14.EGL_HEIGHT, h, EGL14.EGL_NONE}, 0);
+            if (cx == EGL14.EGL_NO_CONTEXT || sf == EGL14.EGL_NO_SURFACE || !EGL14.eglMakeCurrent(d, sf, sf, cx)) return null;
+            int p = buildProgram(c, scene);
+            if (p == 0) return null;
+            float[] a = {((accentColor >> 16) & 255) / 255f, ((accentColor >> 8) & 255) / 255f, (accentColor & 255) / 255f};
+            draw(p, w, h, 20f, 0f, a, quad());
+            GLES20.glFinish();
+            ByteBuffer px = ByteBuffer.allocateDirect(w * h * 4).order(ByteOrder.nativeOrder());
+            GLES20.glReadPixels(0, 0, w, h, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, px);
+            GLES20.glDeleteProgram(p);
+            Bitmap raw = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            px.rewind();
+            raw.copyPixelsFromBuffer(px);
+            // OpenGL legge dal basso verso l'alto: si capovolge
+            android.graphics.Matrix flip = new android.graphics.Matrix();
+            flip.preScale(1, -1);
+            Bitmap out = Bitmap.createBitmap(raw, 0, 0, w, h, flip, false);
+            if (out != raw) raw.recycle();
+            return out;
+        } catch (Throwable t) {
+            return null;
+        } finally {
+            if (d != EGL14.EGL_NO_DISPLAY) {
+                EGL14.eglMakeCurrent(d, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_SURFACE, EGL14.EGL_NO_CONTEXT);
+                if (sf != EGL14.EGL_NO_SURFACE) EGL14.eglDestroySurface(d, sf);
+                if (cx != EGL14.EGL_NO_CONTEXT) EGL14.eglDestroyContext(d, cx);
+                EGL14.eglReleaseThread();
+            }
         }
     }
 }

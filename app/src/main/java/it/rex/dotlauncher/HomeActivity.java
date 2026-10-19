@@ -652,6 +652,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
         int action = ev.getActionMasked();
+        // sfondo animato in pausa mentre il dito è sullo schermo: le animazioni della home restano fluide
+        if (th.wall) LiveQuiet.hush();
         if (action == MotionEvent.ACTION_DOWN) {
             fingerDown = true;
             flingTook = false;
@@ -891,11 +893,12 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         pager = new Pager(this);
         if (th.wall) {
             // lo sfondo (animato o no) sa a che punto delle pagine si è: per la parallasse
+            final android.app.WallpaperManager wm = android.app.WallpaperManager.getInstance(this);
             pager.scrollHook = pos -> {
+                LiveQuiet.hush(); // anche lo scorrimento che continua da solo dopo il dito
                 try {
                     android.os.IBinder tok = getWindow().getDecorView().getWindowToken();
                     if (tok == null) return;
-                    android.app.WallpaperManager wm = android.app.WallpaperManager.getInstance(this);
                     int n = Math.max(2, pager.getChildCount());
                     wm.setWallpaperOffsetSteps(1f / (n - 1), 1f);
                     wm.setWallpaperOffsets(tok, pos, 0.5f);

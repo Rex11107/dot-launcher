@@ -23,10 +23,10 @@ void mainImage(out vec4 fragColor, vec2 fragCoord) {
     // sfondo: stelle e un velo di galassia, spostati dalla gravità attorno all'ombra
     vec2 q = p * (1.0 + (sh * sh * 2.2) / max(r * r, 0.0004));
     vec3 col = stars(q + vec2(uTime * 0.002, 0.0), 120.0) + stars(q * 1.7 + 4.0, 90.0) * 0.6;
-    col += vec3(0.05, 0.04, 0.07) * fbm(q * 2.5 + 10.0) * smoothstep(0.0, 0.6, abs(q.y + q.x * 0.4));
+    col += vec3(0.05, 0.04, 0.07) * fbm3(q * 2.5 + 10.0) * smoothstep(0.0, 0.6, abs(q.y + q.x * 0.4));
 
     // immagine secondaria: il lato lontano del disco, piegato in un anello attorno all'ombra
-    if (r > sh) {
+    if (r > sh && r < sh * 2.2) {           // oltre, l'anello è già spento: si salta
         float a = atan(p.y, p.x);
         float k = (r - sh) / (sh * 0.6);
         float rd2 = rin + k * (rout - rin) * 0.35;

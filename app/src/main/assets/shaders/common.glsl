@@ -27,6 +27,15 @@ float fbm(vec2 p) {
     return v;
 }
 
+// versione più leggera (3 ottave) per le deformazioni morbide, dove i dettagli fini non si vedono
+float fbm3(vec2 p) {
+    float v = 0.5 * noise(p);
+    p = p * 2.03 + vec2(1.7, 9.2);
+    v += 0.25 * noise(p);
+    p = p * 2.03 + vec2(1.7, 9.2);
+    return v + 0.125 * noise(p) + 0.0625;
+}
+
 // stelle: una per cella, con luminosità e scintillio diversi
 vec3 stars(vec2 p, float density) {
     vec2 g = p * density;
