@@ -12,14 +12,14 @@ import android.graphics.drawable.Drawable;
 import android.os.Build;
 
 /**
- * Icone in stile Nothing: glifo monocromatico su cerchio.
+ * Icone monocromatiche: glifo su cerchio, nello stile a puntini del launcher.
  *
  * Approccio prudente: si trasforma un'icona solo quando si è sicuri del risultato.
  *  1) Icona tematica ufficiale dell'app (Android 13+): si usa sempre.
  *  2) Icona "piatta" (pochi colori, es. simbolo bianco su sfondo colorato): si ricava il simbolo,
  *     e lo si usa solo se supera tutti i controlli di qualità.
  *  3) Tutto il resto (immagini, giochi, sfumature, foto): icona originale, non modificata.
- * L'utente può comunque forzare "originale" o "Nothing" per ogni singola app.
+ * L'utente può comunque forzare "originale" o "monocromatica" per ogni singola app.
  */
 final class IconFactory {
     static final String AUTO = "auto";        // cerchio come le tessere, glifo a contrasto

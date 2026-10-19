@@ -21,11 +21,11 @@ import java.text.SimpleDateFormat;
 import java.util.Date;
 
 /**
- * StandBy: mentre il telefono è in carica, un orologio a puntini a tutto schermo con data, meteo e batteria.
+ * Orologio in carica: mentre il telefono si carica, un orologio a puntini a tutto schermo con data, meteo e batteria.
  * Si chiude toccandolo o staccando il caricatore. Il contenuto si sposta piano ogni minuto
  * e la luminosità resta bassa, così sugli schermi AMOLED non resta il segno.
  */
-public class StandbyActivity extends Activity {
+public class ChargeClockActivity extends Activity {
     private final Handler ui = new Handler(Looper.getMainLooper());
     private Face face;
 
@@ -80,7 +80,7 @@ public class StandbyActivity extends Activity {
         SharedPreferences prefs = getSharedPreferences("dot", MODE_PRIVATE);
         face = new Face(this, Theme.build(this, prefs), prefs.getBoolean("h24", DateFormat.is24HourFormat(this)));
         face.setOnClickListener(v -> finish());
-        face.setContentDescription(T.t("StandBy: tocca per chiudere"));
+        face.setContentDescription(T.t("Orologio in carica: tocca per chiudere"));
         setContentView(face);
     }
 
@@ -101,7 +101,7 @@ public class StandbyActivity extends Activity {
         } catch (Exception ignored) {
         }
         ui.removeCallbacks(tick);
-        // uscendo (Home, spegnimento dello schermo) StandBy si chiude: si riapre alla prossima carica
+        // uscendo (Home, spegnimento dello schermo) l'orologio si chiude: si riapre alla prossima carica
         finish();
     }
 

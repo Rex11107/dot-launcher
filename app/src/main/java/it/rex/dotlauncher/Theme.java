@@ -13,7 +13,7 @@ final class Theme {
     static final int RED = 0xFFD71921;
 
     final boolean light;
-    final boolean grey;          // tema scuro grigio (Classic Nothing) invece di nero pieno
+    final boolean grey;          // tema scuro grigio (come nello stile Classico) invece di nero pieno
     final boolean nuovo;
     final boolean wall;
     final boolean glass;         // vetro smerigliato vero (sfondo sfocato dentro le tessere)

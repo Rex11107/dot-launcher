@@ -18,7 +18,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-/** Pannelli e menu in stile Nothing, con i caratteri del launcher (non quelli di sistema). */
+/** Pannelli e menu nello stile del launcher, con i caratteri del launcher (non quelli di sistema). */
 final class Sheet {
     interface OnPick {
         void pick(int which);

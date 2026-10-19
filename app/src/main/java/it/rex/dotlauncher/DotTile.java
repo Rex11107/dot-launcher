@@ -17,8 +17,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.TimeZone;
 
-/** Widget in stile Nothing disegnato interamente sul Canvas. */
-class NothingTile extends View {
+/** Widget a puntini di Dot Launcher, disegnato interamente sul Canvas. */
+class DotTile extends View {
     final Item item;
     private final Theme th;
     private final boolean h24;
@@ -79,7 +79,7 @@ class NothingTile extends View {
         if (v == VISIBLE) invalidate();
     }
 
-    NothingTile(Context c, Item item, Theme th, boolean h24) {
+    DotTile(Context c, Item item, Theme th, boolean h24) {
         super(c);
         this.item = item;
         this.th = th;

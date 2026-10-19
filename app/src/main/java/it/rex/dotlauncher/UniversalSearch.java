@@ -268,9 +268,11 @@ class UniversalSearch extends ScrollView {
             run(() -> {
                 List<Object[]> contacts = contacts(q);
                 List<Object[]> events = events(q);
+                List<Object[]> files = files(q);
                 ui.post(() -> {
                     if (gen != generation) return;
                     showPeople(contacts, events, q);
+                    showFiles(files);
                     webRow(q);
                 });
             });
@@ -523,6 +525,66 @@ class UniversalSearch extends ScrollView {
         } catch (Exception ignored) {
         }
         return out;
+    }
+
+    // ---------- file: foto, video e audio, solo se l'utente ha dato il permesso nelle impostazioni ----------
+
+    static String[] filePermissions() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            return new String[]{"android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+                    "android.permission.READ_MEDIA_AUDIO"};
+        }
+        return new String[]{android.Manifest.permission.READ_EXTERNAL_STORAGE};
+    }
+
+    static boolean filesGranted(Context c) {
+        for (String p : filePermissions()) if (c.checkSelfPermission(p) == PackageManager.PERMISSION_GRANTED) return true;
+        return false;
+    }
+
+    /** {uri, nome, tipo mime, data} dei file che contengono il testo nel nome; null senza permesso. */
+    private List<Object[]> files(String q) {
+        if (!filesGranted(act)) return null;
+        List<Object[]> out = new ArrayList<>();
+        Uri base = android.provider.MediaStore.Files.getContentUri("external");
+        String[] proj = {android.provider.MediaStore.MediaColumns._ID, android.provider.MediaStore.MediaColumns.DISPLAY_NAME,
+                android.provider.MediaStore.MediaColumns.MIME_TYPE, android.provider.MediaStore.MediaColumns.DATE_MODIFIED,
+                android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE};
+        String sel = android.provider.MediaStore.MediaColumns.DISPLAY_NAME + " LIKE ? AND "
+                + android.provider.MediaStore.Files.FileColumns.MEDIA_TYPE + " IN (1,2,3)";
+        String like = "%" + q.replace("%", "").replace("_", "") + "%";
+        try (Cursor c = act.getContentResolver().query(base, proj, sel, new String[]{like},
+                android.provider.MediaStore.MediaColumns.DATE_MODIFIED + " DESC")) {
+            while (c != null && c.moveToNext() && out.size() < 6) {
+                long id = c.getLong(0);
+                int type = c.getInt(4);
+                Uri coll = type == 1 ? android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+                        : type == 3 ? android.provider.MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                        : android.provider.MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+                out.add(new Object[]{ContentUris.withAppendedId(coll, id), c.getString(1), c.getString(2), c.getLong(3) * 1000L, type});
+            }
+        } catch (Exception ignored) {
+        }
+        return out;
+    }
+
+    private void showFiles(List<Object[]> files) {
+        if (files == null || files.isEmpty()) return;
+        header(T.t("File"));
+        SimpleDateFormat f = new SimpleDateFormat("d MMM yyyy", T.loc());
+        for (Object[] e : files) {
+            final Uri u = (Uri) e[0];
+            final String mime = (String) e[2];
+            int type = (Integer) e[4];
+            String[] icon = type == 1 ? Draw.PHOTO : type == 3 ? SectionIcons.FILM : SectionIcons.MUSIC;
+            String kind = type == 1 ? T.t("Foto") : type == 3 ? T.t("Video") : T.t("Audio");
+            row(SectionIcons.bitmap(icon, px(40), th.onTile, th.accent, circle()), (String) e[1],
+                    kind + " · " + f.format(new Date((Long) e[3])), () -> {
+                        Intent i = new Intent(Intent.ACTION_VIEW).setDataAndType(u, mime == null ? "*/*" : mime)
+                                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        host.startSafe(i);
+                    }, null);
+        }
     }
 
     private void showPeople(List<Object[]> contacts, List<Object[]> events, String q) {

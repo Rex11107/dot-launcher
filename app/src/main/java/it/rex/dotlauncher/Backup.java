@@ -30,7 +30,7 @@ final class Backup {
     private static final Set<String> BOOLS = new HashSet<>(Arrays.asList("anim", "askedLoc", "dockInit",
             "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock", "hiddenSearch", "standby", "oneHand"));
     private static final Set<String> INTS = new HashSet<>(Arrays.asList("blurWallId", "cols", "pages", "stepAcc",
-            "stepGoal", "stepToday", "wallVer", "accentC", "iconShape", "rows", "dockMax", "pageAnim", "menuAnim", "animSpeed", "openAnim",
+            "stepGoal", "stepToday", "wallVer", "dockRows", "accentC", "iconShape", "rows", "dockMax", "pageAnim", "menuAnim", "animSpeed", "openAnim",
             "badgeStyle", "badgeSize", "badgePos", "badgeColor"));
     private static final Set<String> LONGS = new HashSet<>(Arrays.asList("mlat", "mlon", "newsTime", "updCheck", "wt"));
     private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast", "iconScale"));
@@ -54,7 +54,7 @@ final class Backup {
      */
     static final Set<String> SHARE_KEYS = new HashSet<>(Arrays.asList(
             "style", "mode", "icons", "accentC", "iconShape", "iconScale", "iconPack", "rows", "cols", "pages",
-            "dock", "dockMax", "dockBg", "labels", "h24", "hideStatus", "wall", "wallStyle", "wallVer", "ghost",
+            "dock", "dockMax", "dockRows", "dockBg", "labels", "h24", "hideStatus", "wall", "wallStyle", "wallVer", "ghost",
             "anim", "animSpeed", "pageAnim", "menuAnim", "openAnim", "badges", "badgeStyle", "badgeSize", "badgePos",
             "badgeColor", "drawerOrder", "drawerAll", "sections", "panel", "panelOrder", "panelOff", "engine",
             "swipeActs", "redApps", "origApps", "glyphApps", "layout", "oneHand"));

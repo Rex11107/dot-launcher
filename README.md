@@ -1,6 +1,6 @@
 # Dot Launcher
 
-Launcher Android minimale in stile dot-matrix, ispirato all'estetica Nothing ma scritto da zero: nessun codice, carattere, sfondo o marchio di Nothing.
+Launcher Android minimale in stile dot-matrix (a puntini), scritto da zero.
 
 *English below.*
 
@@ -15,7 +15,7 @@ Launcher Android minimale in stile dot-matrix, ispirato all'estetica Nothing ma 
 - **Pagina a sinistra**: chat con un'IA (Claude, ChatGPT, Gemini, OpenRouter o un servizio compatibile), notizie da feed RSS, calendario, attività e note.
 - **Personalizzazione**: colore d'accento, forma e dimensione delle icone, pacchetti di icone, nomi e icone delle app, righe della home, dock, carattere, animazioni di pagine e menu.
 - **Impostazioni a categorie** con ricerca, e trascinamento laterale per tornare indietro.
-- **StandBy**: orologio a puntini a tutto schermo quando colleghi il caricatore (facoltativo).
+- **Orologio in carica**: orologio a puntini a tutto schermo quando colleghi il caricatore (facoltativo).
 - **Gesti configurabili** (anche a due dita e pizzico; scorrendo in su su un'icona si può aprire un'azione o un widget dell'app), pallini di notifica personalizzabili (punto o numero, dimensione, angolo, colore) e anteprima delle notifiche.
 - **Benessere digitale**: tempo di utilizzo, limiti giornalieri, pausa prima di aprire, modalità focus.
 - **Privacy**: app nascoste e singole app bloccate con impronta, volto o PIN; le chiavi API restano solo sul telefono e sono escluse dai backup; nessun server, nessuna statistica.
@@ -31,7 +31,8 @@ Ogni permesso serve a una funzione precisa e quasi tutti si chiedono solo quando
 - **Posizione approssimativa**: il meteo della tua zona.
 - **Calendario e contatti**: widget Calendario e Riepilogo, ricerca di eventi e contatti.
 - **Attività fisica**: contapassi.
-- **Accesso ai dati di utilizzo** e **accesso alle notifiche** (da concedere a mano): benessere digitale, pallini e anteprima delle notifiche.
+- **Accesso ai dati di utilizzo** e **accesso alle notifiche** (da concedere a mano): benessere digitale, pallini, anteprima delle notifiche e casella dei messaggi.
+- **Foto, video e audio** (solo se attivi "File nella ricerca"): trovare i file per nome nella ricerca.
 - **Impronta o PIN**: app nascoste e app bloccate.
 - **Installazione e rimozione di app**: aggiornamenti dell'app e voce Disinstalla.
 - **Solo per Dot Sveglia**: sveglie esatte, notifiche e schermo intero sopra il blocco, servizio in primo piano mentre suona, vibrazione, riattivazione dopo il riavvio ed esclusione dall'ottimizzazione della batteria. Se usi la sveglia di sistema non servono.
@@ -66,6 +67,6 @@ I caratteri Geist, Space Mono e Doto sono distribuiti con licenza SIL Open Font 
 
 ## English
 
-Minimal dot-matrix Android launcher inspired by the Nothing look, written from scratch (no Nothing code, fonts, wallpapers or trademarks). Classic and Modern styles, 30+ dotted widgets with stacks (including an At a glance widget and a step counter with distance), an optional sunrise alarm (Dot Sveglia), a sectioned app drawer with a Work section, home folders whose cover can open an app, universal search, a left page with AI chat, RSS news, calendar, tasks and notes, configurable gestures, customizable notification badges, digital wellbeing tools, hidden and locked apps protected by fingerprint or PIN, and no servers or analytics. Every permission is tied to a feature and most are only requested when you use it; the alarm permissions are only needed for Dot Sveglia. Italian and English. The alarm builds on Fossify Clock and FakeDawn (GPL-3.0).
+Minimal dot-matrix Android launcher, written from scratch. Classic and Modern styles, 30+ dotted widgets with stacks (including a Summary widget and a step counter with distance), an optional sunrise alarm (Dot Sveglia), a sectioned app drawer with a Work section, home folders whose cover can open an app, universal search, a left page with AI chat, RSS news, calendar, tasks and notes, configurable gestures, customizable notification badges, digital wellbeing tools, hidden and locked apps protected by fingerprint or PIN, and no servers or analytics. Every permission is tied to a feature and most are only requested when you use it; the alarm permissions are only needed for Dot Sveglia. Italian and English. The alarm builds on Fossify Clock and FakeDawn (GPL-3.0).
 
 Download: https://github.com/Rex11107/dot-launcher/releases/latest/download/DotLauncher.apk · License: GPL-3.0.
