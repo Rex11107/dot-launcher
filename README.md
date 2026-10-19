@@ -15,6 +15,7 @@ Launcher Android minimale in stile dot-matrix (a puntini), scritto da zero.
 - **Pagina a sinistra**: chat con un'IA (Claude, ChatGPT, Gemini, OpenRouter o un servizio compatibile), notizie da feed RSS, calendario, attività e note.
 - **Personalizzazione**: colore d'accento, forma e dimensione delle icone, pacchetti di icone, nomi e icone delle app, righe della home, dock, carattere, animazioni di pagine e menu.
 - **Impostazioni a categorie** con ricerca, e trascinamento laterale per tornare indietro.
+- **Barra del volume Dot** (facoltativa): pillola a puntini al posto della barra del telefono; toccandola si apre il pannello con media, suoneria, notifiche, sveglia e modalità suoneria. Usa il servizio di accessibilità, che riceve i tasti solo quando la barra è accesa; durante le chiamate decide il telefono.
 - **Sfondi** in tre sezioni: monocromatici, fissi (generati o foto) e animati.
 - **Sfondi animati**: quattro realistici disegnati dalla scheda grafica (buco nero, aurora, nebulosa, gradiente fluido) e tre a puntini (buco nero, meteo dal vivo, onda). Si fermano quando non si vedono e mentre si tocca la home, così le animazioni restano fluide; sui telefoni con poca memoria lavorano ancora più leggeri. Sulla schermata di blocco si può mettere un fotogramma fisso della stessa scena.
 - **Orologio in carica**: orologio a puntini a tutto schermo quando colleghi il caricatore (facoltativo).

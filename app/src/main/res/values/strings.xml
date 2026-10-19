@@ -2,7 +2,7 @@
 <resources>
     <string name="alarm_label">Dot Alarm</string>
     <string name="a11y_label">Dot Launcher gestures</string>
-    <string name="a11y_desc">Lets home gestures lock the screen, take a screenshot, open recent apps or the power menu. If you turn on the digital wellbeing strict block, it sends you home when you open a paused app: to do that it only checks which app is in the foreground. Dot Launcher doesn\'t read the screen content and doesn\'t collect data.</string>
+    <string name="a11y_desc">Lets home gestures lock the screen, take a screenshot, open recent apps or the power menu. If you turn on the digital wellbeing strict block, it sends you home when you open a paused app: to do that it only checks which app is in the foreground. If you turn on the Dot volume bar, it also receives the volume keys to show its own bar. Dot Launcher doesn\'t read the screen content and doesn\'t collect data.</string>
     <string name="wallpapers">Wallpapers</string>
     <string name="import_layout">Import into Dot Launcher</string>
     <string name="live_label">Dot animated wallpaper</string>

@@ -4921,6 +4921,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 {"Nome e icona di un'app", "Tieni premuta l'app → Rinomina o Cambia icona.", null},
                 {"Colori, forme, caratteri e animazioni", "Impostazioni → Aspetto e icone, e Animazioni e gesti.", openLook},
                 {"Gesti", "Impostazioni → Animazioni e gesti: scegli cosa fanno scorrimenti, doppio tocco, due dita e pizzico.", openGest},
+                {"Barra del volume", "Impostazioni → Animazioni e gesti → Volume: una pillola a puntini al posto della barra del telefono. Toccala per media, suoneria, notifiche e sveglia.", null},
                 {"Indietro trascinando di lato", "Nelle impostazioni trascina di lato per tornare indietro. Su Honor e Huawei, se non funziona bene, spegni il dock in Impostazioni del telefono → Funzioni di accessibilità → Multi-finestra.", null},
                 {"Benessere digitale"},
                 {"Tempo di utilizzo", "Quanto usi ogni app oggi, con il numero di aperture.", (Runnable) this::showUsage},
@@ -6895,6 +6896,38 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             st.row(SectionIcons.A11Y, T.t("Servizio per i gesti di sistema"), DotAccessibility.active()
                             ? T.t("Attivo: blocco schermo, screenshot, recenti") : T.t("Spento: serve per bloccare lo schermo e altro"),
                     () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+            st.section(T.t("Volume"));
+            st.toggle(SectionIcons.VOLUME, T.t("Barra del volume Dot"),
+                    T.t("Al posto di quella del telefono: pillola a puntini, tocca per tutti i volumi (usa il servizio di accessibilità)"),
+                    VolumePanel.enabled(prefs), on -> {
+                        prefs.edit().putBoolean(VolumePanel.PREF, on).apply();
+                        DotAccessibility.volumeChanged();
+                        if (on && !DotAccessibility.active()) {
+                            Sheet.confirm(this, th, T.t("Attiva il servizio"),
+                                    T.t("La barra del volume usa il servizio \"Gesti di Dot Launcher\" in Accessibilità: riceve i tasti del volume, ")
+                                            + T.t("mai il contenuto dello schermo. Se era già attivo e la barra non compare, spegnilo e riaccendilo.\n\n")
+                                            + T.t("Se Android dice che è un'impostazione con restrizioni: Impostazioni → App → Dot Launcher → ")
+                                            + T.t("menu ⋮ → \"Consenti impostazioni con restrizioni\", poi riprova."),
+                                    T.t("Apri Accessibilità"), () -> safeStart(new Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)));
+                        }
+                        refillSettings();
+                    });
+            if (VolumePanel.enabled(prefs)) {
+                final boolean left = "left".equals(prefs.getString("volSide", "right"));
+                st.row(SectionIcons.PANEL, T.t("Lato della barra"), left ? T.t("Sinistra") : T.t("Destra"),
+                        () -> Sheet.list(this, th, T.t("Lato della barra"), new String[]{T.t("Destra"), T.t("Sinistra")},
+                                left ? 1 : 0, w -> {
+                                    prefs.edit().putString("volSide", w == 1 ? "left" : "right").apply();
+                                    refillSettings();
+                                }));
+                final boolean ring = "ring".equals(prefs.getString("volIdle", "media"));
+                st.row(SectionIcons.MUSIC, T.t("Tasti senza musica in corso"), ring ? T.t("Cambiano la suoneria") : T.t("Cambiano il volume dei media"),
+                        () -> Sheet.list(this, th, T.t("Tasti senza musica in corso"),
+                                new String[]{T.t("Cambiano il volume dei media"), T.t("Cambiano la suoneria")}, ring ? 1 : 0, w -> {
+                                    prefs.edit().putString("volIdle", w == 1 ? "ring" : "media").apply();
+                                    refillSettings();
+                                }));
+            }
         }
         if (pg == 0 || pg == SP_HOME) {
             st.section(T.t("Home"));
