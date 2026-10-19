@@ -881,7 +881,7 @@ class LeftPanel extends FrameLayout {
             host.startSafe(i);
         }, T.t("Nuovo evento")));
         Item fake = new Item("calendar", 0, 0, 4, 3, 0, 0);
-        NothingTile cal = new NothingTile(act, fake, th, h24);
+        DotTile cal = new DotTile(act, fake, th, h24);
         cal.setOnClickListener(v -> {
             host.startSafe(HomeActivity.calendarIntent());
         });

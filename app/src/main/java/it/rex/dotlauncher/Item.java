@@ -8,7 +8,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Un elemento della home: widget Nothing, widget di sistema ("sys") o app ("app"). */
+/** Un elemento della home: widget a puntini, widget di sistema ("sys") o app ("app"). */
 final class Item {
     String type;
     String data = "";

@@ -12,7 +12,7 @@ import android.graphics.Shader;
 
 import java.util.Random;
 
-/** Sfondi originali generati al volo, nello spirito dell'estetica Nothing. */
+/** Sfondi originali generati al volo, nello stile a puntini e a linee del launcher. */
 final class WallpaperGen {
     static final String[] NAMES = {
             T.t("Puntini"), T.t("Onde scure"), T.t("Sfere"), T.t("Rosso e nero"),
@@ -401,7 +401,7 @@ final class WallpaperGen {
     }
 
 
-    // ---------- composizioni ispirate a Nothing OS (riviste) ----------
+    // ---------- composizioni geometriche a puntini e cerchi ----------
 
     private static int lerp(int a, int b, float t) {
         t = Math.max(0f, Math.min(1f, t));

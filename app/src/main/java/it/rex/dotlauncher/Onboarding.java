@@ -137,7 +137,7 @@ class Onboarding extends FrameLayout {
 
     private void welcome() {
         title(T.t("Ciao."));
-        text(T.t("Dot Launcher è una home minimale in stile Nothing: widget a puntini, cassetto a sezioni, "
+        text(T.t("Dot Launcher è una home minimale a puntini: widget a puntini, cassetto a sezioni, "
                 + "ricerca universale e benessere digitale. Tutto resta sul telefono."));
         header(T.t("Lingua"));
         String lang = prefs.getString("lang", "auto");
@@ -174,7 +174,7 @@ class Onboarding extends FrameLayout {
 
     private void iconsPage() {
         title(T.t("Icone"));
-        text(T.t("Le icone delle app possono diventare monocromatiche, come su Nothing OS, o restare a colori."));
+        text(T.t("Le icone delle app possono diventare monocromatiche, con un simbolo chiaro su un cerchio, o restare a colori."));
         option(T.t("Monocromatiche"), T.t("Simbolo chiaro su fondo scuro"), IconFactory.AUTO.equals(icons), () -> {
             icons = IconFactory.AUTO;
             show(page);

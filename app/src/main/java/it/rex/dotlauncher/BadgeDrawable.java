@@ -12,7 +12,7 @@ import android.graphics.Typeface;
 import android.graphics.drawable.Drawable;
 
 /**
- * Pallino di notifica su un'icona. Di base è un solo punto in alto a destra (stile Nothing);
+ * Pallino di notifica su un'icona. Di base è un solo punto in alto a destra (lo stile del launcher);
  * nelle impostazioni si possono scegliere colore, dimensione, angolo e il numero delle notifiche.
  */
 class BadgeDrawable extends Drawable {

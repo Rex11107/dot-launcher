@@ -1,6 +1,6 @@
 package it.rex.dotlauncher;
 
-/** Catalogo dei widget Nothing integrati: nome e misure consentite (colonne x righe). */
+/** Catalogo dei widget a puntini integrati: nome e misure consentite (colonne x righe). */
 final class Widgets {
     static final String[] TYPES = {
             "clock_dots", "clock_analog", "clock_pill", "date_big", "date_dot", "calendar",

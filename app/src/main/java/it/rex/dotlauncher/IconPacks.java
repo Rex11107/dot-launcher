@@ -20,7 +20,8 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Pacchetti di icone nel formato standard (ADW / Nova / Lawnchair):
+ * Pacchetti di icone nel formato standard diffuso (appfilter.xml). Le azioni qui sotto sono gli identificativi
+ * tecnici con cui i pacchetti si fanno trovare: servono solo per compatibilità e non compaiono mai all'utente.
  * il pacchetto contiene appfilter.xml, che associa ogni app a un disegno.
  */
 final class IconPacks {

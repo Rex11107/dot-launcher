@@ -181,13 +181,13 @@
             </intent-filter>
         </receiver>
 
-        <!-- StandBy: orologio a tutto schermo in carica -->
+        <!-- Orologio in carica: a tutto schermo mentre il telefono si carica -->
         <activity
-            android:name=".StandbyActivity"
+            android:name=".ChargeClockActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTask"
-            android:taskAffinity=".standby"
+            android:taskAffinity=".chargeclock"
             android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen" />
 
         <!-- Layout condivisi: un file da inviare e la ricezione di quelli altrui -->

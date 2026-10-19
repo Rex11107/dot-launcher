@@ -211,21 +211,21 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
     };
 
-    /** Caricatore collegato mentre si è sulla home: si apre StandBy, se l'opzione è attiva. */
+    /** Caricatore collegato mentre si è sulla home: si apre l'orologio in carica, se l'opzione è attiva. */
     private final BroadcastReceiver powerReceiver = new BroadcastReceiver() {
         @Override
         public void onReceive(Context c, Intent i) {
             if (!prefs.getBoolean("standby", false) || destroyed) return;
             // solo se la home è davvero davanti (non dietro un'app o un pannello)
             ui.postDelayed(() -> {
-                if (!destroyed && hasWindowFocus() && !settingsOpen && resizer == null && onboarding == null) openStandby();
+                if (!destroyed && hasWindowFocus() && !settingsOpen && resizer == null && onboarding == null) openChargeClock();
             }, 600);
         }
     };
 
-    private void openStandby() {
+    private void openChargeClock() {
         try {
-            startActivity(new Intent(this, StandbyActivity.class));
+            startActivity(new Intent(this, ChargeClockActivity.class));
         } catch (Exception ignored) {
         }
     }
@@ -1663,7 +1663,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             {"torch", T.t("Torcia")},
             {"focus", T.t("Modalità focus")},
             {"usage", T.t("Tempo di utilizzo")},
-            {"standby", "StandBy"},
+            {"standby", T.t("Orologio in carica")},
             {"app", T.t("Apri un'app…")},
     };
 
@@ -1718,7 +1718,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 } else focusMenu();
                 break;
             case "usage": showUsage(); break;
-            case "standby": openStandby(); break;
+            case "standby": openChargeClock(); break;
             case "lock":
                 if (Build.VERSION.SDK_INT >= 28) globalAction(android.accessibilityservice.AccessibilityService.GLOBAL_ACTION_LOCK_SCREEN);
                 else toast(T.t("Bloccare lo schermo richiede Android 9 o successivo"));
@@ -2040,7 +2040,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             if (it.kids().isEmpty()) return null;
             v = new StackTile(this, it, th, this);
         } else {
-            v = new NothingTile(this, it, th, h24);
+            v = new DotTile(this, it, th, h24);
             v.setOnClickListener(x -> onTileClick(it));
             if ("glance".equals(it.type)) refreshGlance(false);
         }
@@ -2078,7 +2078,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     private void refreshTiles(String prefix) {
         for (Item it : Item.leaves(items)) {
-            if (it.view instanceof NothingTile && (prefix == null || it.type.startsWith(prefix))) {
+            if (it.view instanceof DotTile && (prefix == null || it.type.startsWith(prefix))) {
                 it.view.invalidate();
             }
         }
@@ -2102,7 +2102,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             }
             v = info == null ? missingWidget() : host.createView(getApplicationContext(), id, info);
         } else {
-            v = new NothingTile(this, kid, th, h24);
+            v = new DotTile(this, kid, th, h24);
             v.setOnClickListener(x -> onTileClick(kid));
             if ("glance".equals(kid.type)) refreshGlance(false);
         }
@@ -2335,9 +2335,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 break;
             }
             case "moon": {
-                double age = NothingTile.moonAge();
-                int next = (int) Math.round((NothingTile.SYNODIC / 2 - age + NothingTile.SYNODIC) % NothingTile.SYNODIC);
-                toast(NothingTile.moonName(age) + T.t(" · luna piena tra ") + next + T.n(next, " giorno", " giorni"));
+                double age = DotTile.moonAge();
+                int next = (int) Math.round((DotTile.SYNODIC / 2 - age + DotTile.SYNODIC) % DotTile.SYNODIC);
+                toast(DotTile.moonName(age) + T.t(" · luna piena tra ") + next + T.n(next, " giorno", " giorni"));
                 break;
             }
             case "counter":
@@ -2352,8 +2352,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 if (it.view != null) it.view.invalidate();
                 break;
             case "dice":
-                if (it.view instanceof NothingTile) {
-                    ((NothingTile) it.view).roll();
+                if (it.view instanceof DotTile) {
+                    ((DotTile) it.view).roll();
                     it.view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
                     saveLayout();
                 }
@@ -2378,7 +2378,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     askNotificationAccess();
                     break;
                 }
-                int hit = it.view instanceof NothingTile ? ((NothingTile) it.view).mediaHit() : 0;
+                int hit = it.view instanceof DotTile ? ((DotTile) it.view).mediaHit() : 0;
                 if (hit > 0 && DotNotifications.mActive) {
                     DotNotifications.control(hit);
                     if (it.view != null) it.view.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
@@ -3337,7 +3337,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 labels.add(T.t("Copia il proverbio"));
                 acts.add(() -> {
                     android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
-                    if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("proverbio", NothingTile.proverb(it)));
+                    if (cm != null) cm.setPrimaryClip(android.content.ClipData.newPlainText("proverbio", DotTile.proverb(it)));
                     toast(T.t("Copiato"));
                 });
                 break;
@@ -3371,7 +3371,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         }
         Sheet.list(this, th, "Home", opts.toArray(new String[0]), bm, -1, w -> {
             switch (w) {
-                case 0: pickNothingWidget(page, col, row); break;
+                case 0: pickDotWidget(page, col, row); break;
                 case 1: pickSysWidget(page, col, row); break;
                 case 2: pickAppForHome(page, col, row); break;
                 case 3:
@@ -3458,7 +3458,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         void pick(String type, int[] size);
     }
 
-    private void pickNothingWidget(int page, int col, int row) {
+    private void pickDotWidget(int page, int col, int row) {
         widgetPicker(T.t("Widget Dot"), null, (type, sz) -> addDotWidget(type, sz, page, col, row));
     }
 
@@ -3625,7 +3625,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 break;
             case "world_clock": WData.put(it, "z", WData.DEFAULT_ZONES); break;
         }
-        NothingTile v = new NothingTile(this, it, th, h24);
+        DotTile v = new DotTile(this, it, th, h24);
         v.measure(View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
         v.layout(0, 0, w, h);
@@ -4707,11 +4707,11 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     private void wellbeingSettings(SettingsScreen st) {
         st.section(T.t("Benessere digitale"));
         boolean granted = Usage.granted(this);
-        st.row(NothingTile.HOURGLASS, T.t("Tempo di utilizzo"), granted
+        st.row(DotTile.HOURGLASS, T.t("Tempo di utilizzo"), granted
                 ? (Usage.computedAt > 0 ? T.t("Oggi: ") + Usage.fmt(Usage.total) : T.t("Tocca per vedere le app di oggi"))
                 : T.t("Tocca per consentire l'accesso ai dati di utilizzo"), this::showUsage);
         long until = prefs.getLong("focusUntil", 0);
-        st.row(NothingTile.TARGET, T.t("Modalità focus"), Usage.focusOn(prefs)
+        st.row(DotTile.TARGET, T.t("Modalità focus"), Usage.focusOn(prefs)
                 ? (until == Long.MAX_VALUE ? T.t("Attiva") : T.t("Attiva fino alle ") + hhmm(until)) : T.t("Spenta: tocca per iniziare"),
                 this::focusMenu);
         int nf = Usage.focusApps(prefs).size();
@@ -4769,7 +4769,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         Object[][] g = {
                 {"Home"},
                 {"Aggiungere un widget", "Tieni premuto uno spazio vuoto della home → Widget Dot.",
-                        (Runnable) () -> pickNothingWidget(pager.getCurrent(), 0, 0)},
+                        (Runnable) () -> pickDotWidget(pager.getCurrent(), 0, 0)},
                 {"Widget delle altre app", "Tieni premuto uno spazio vuoto → Widget di sistema.",
                         (Runnable) () -> pickSysWidget(pager.getCurrent(), 0, 0)},
                 {"Pila di widget", "Trascina un widget sopra un altro della stessa misura, poi scorri in verticale per cambiarlo.", null},
@@ -6782,7 +6782,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             st.section(T.t("Widget sulla home"));
             st.row(SectionIcons.WIDGETS, T.t("Aggiungi un widget Dot"), Widgets.TYPES.length + T.t(" widget con anteprima"), () -> {
                 closeSettings();
-                pickNothingWidget(pager.getCurrent(), 0, 0);
+                pickDotWidget(pager.getCurrent(), 0, 0);
             });
             st.row(SectionIcons.PHONE, T.t("Aggiungi un widget di sistema"), T.t("Widget delle app installate"), () -> {
                 closeSettings();
@@ -6796,10 +6796,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             st.row(SettingsScreen.CLOCK, T.t("Sveglia del widget"), DotAlarms.enabled(this)
                     ? T.t("Dot Sveglia, con l'alba") : T.t("App di sistema o un'altra app"),
                     () -> safeStart(new Intent(this, AlarmsActivity.class)));
-            st.toggle(SectionIcons.BATTERY, T.t("StandBy in carica"),
+            st.toggle(SectionIcons.BATTERY, T.t("Orologio in carica"),
                     T.t("Collegando il caricatore sulla home compare un orologio a tutto schermo. Tocca per chiuderlo"),
                     prefs.getBoolean("standby", false), on -> prefs.edit().putBoolean("standby", on).apply());
-            st.row(SectionIcons.MOON, T.t("Prova StandBy"), T.t("Si può aprire anche con un gesto"), this::openStandby);
+            st.row(SectionIcons.MOON, T.t("Prova l'orologio in carica"), T.t("Si può aprire anche con un gesto"), this::openChargeClock);
             st.section(T.t("Meteo e passi"));
             st.row(Draw.SUN, T.t("Città per il meteo"), city.isEmpty() ? T.t("Posizione automatica") : city, this::askCity);
             st.row(Draw.STEPS, T.t("Obiettivo di passi"), State.stepGoal + T.t(" passi al giorno"), this::editStepGoal);
@@ -7025,7 +7025,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 + (nh == 0 ? "" : " · " + nh + T.n(nh, " app nascosta", " app nascoste")), () -> openSettingsPage(SP_APPS));
         st.row(Draw.BELL, T.t("Notifiche"), DotNotifications.active() ? T.t("Pallini: ") + badgeSummary()
                 : T.t("Accesso alle notifiche spento"), () -> openSettingsPage(SP_NOTIF));
-        st.row(NothingTile.HOURGLASS, T.t("Benessere digitale"), Usage.focusOn(prefs) ? T.t("Focus attivo")
+        st.row(DotTile.HOURGLASS, T.t("Benessere digitale"), Usage.focusOn(prefs) ? T.t("Focus attivo")
                 : T.t("Tempo di utilizzo, focus e limiti"), () -> openSettingsPage(SP_WELL));
         st.row(SectionIcons.GEAR, T.t("Sistema"), T.t("Lingua, launcher predefinito, backup e privacy"), () -> openSettingsPage(SP_SYSTEM));
         st.row(SectionIcons.INFO, T.t("Informazioni"), T.t("Versione ") + versionName(), () -> openSettingsPage(SP_INFO));
@@ -7033,7 +7033,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
 
     static final int[] ACCENTS = {0, 0xFFD71921, 0xFFFF6A13, 0xFFF5A623, 0xFF2EBD59, 0xFF14B8A6, 0xFF2F6BFF,
             0xFF8B5CF6, 0xFFEC4899, 0xFF9CA3AF};
-    static final String[] ACCENT_NAMES = {T.t("Predefinito"), T.t("Rosso Nothing"), T.t("Arancio"), T.t("Ambra"), T.t("Verde"), T.t("Acqua"), T.t("Blu"),
+    static final String[] ACCENT_NAMES = {T.t("Predefinito"), T.t("Rosso"), T.t("Arancio"), T.t("Ambra"), T.t("Verde"), T.t("Acqua"), T.t("Blu"),
             T.t("Viola"), T.t("Rosa"), T.t("Grigio")};
 
     private String accentName(int c) {
