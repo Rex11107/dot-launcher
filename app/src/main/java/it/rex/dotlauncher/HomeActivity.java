@@ -889,6 +889,20 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         home.setPadding(0, px(32), 0, px(6));
 
         pager = new Pager(this);
+        if (th.wall) {
+            // lo sfondo (animato o no) sa a che punto delle pagine si è: per la parallasse
+            pager.scrollHook = pos -> {
+                try {
+                    android.os.IBinder tok = getWindow().getDecorView().getWindowToken();
+                    if (tok == null) return;
+                    android.app.WallpaperManager wm = android.app.WallpaperManager.getInstance(this);
+                    int n = Math.max(2, pager.getChildCount());
+                    wm.setWallpaperOffsetSteps(1f / (n - 1), 1f);
+                    wm.setWallpaperOffsets(tok, pos, 0.5f);
+                } catch (Exception ignored) {
+                }
+            };
+        }
         pager.setListener(p -> {
             indicator.setCurrent(p);
             ui.postDelayed(() -> refreshTiles("battery"), 450);

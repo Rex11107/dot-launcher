@@ -80,6 +80,48 @@ public class WallpaperActivity extends Activity {
         title.setText(T.t("SFONDI."));
         root.addView(title);
 
+        // sfondi animati: anteprime che si muovono davvero, in una fila che scorre di lato
+        root.addView(sectionLabel(T.t("Animati")));
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        LinearLayout lives = new LinearLayout(this);
+        lives.setOrientation(LinearLayout.HORIZONTAL);
+        int lw = Math.round(cardW * 0.74f), lh = Math.round(lw * 1.6f);
+        for (int i = 0; i < LiveScenes.NAMES.length; i++) {
+            final int scene = i;
+            LinearLayout col = new LinearLayout(this);
+            col.setOrientation(LinearLayout.VERTICAL);
+            LivePreview pv = new LivePreview(this, scene, th);
+            android.graphics.drawable.GradientDrawable clip = new android.graphics.drawable.GradientDrawable();
+            clip.setCornerRadius(20 * dp);
+            clip.setColor(0xFF000000);
+            pv.setBackground(clip);
+            pv.setClipToOutline(true);
+            pv.setContentDescription(T.t(LiveScenes.NAMES[i]));
+            pv.setOnClickListener(v -> applyLive(scene));
+            col.addView(pv, new LinearLayout.LayoutParams(lw, lh));
+            TextView name = new TextView(this);
+            name.setText(T.t(LiveScenes.NAMES[i]));
+            name.setTextColor(th.onTile);
+            name.setTypeface(th.bodyFace);
+            name.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
+            name.setPadding(0, Math.round(8 * dp), 0, 0);
+            col.addView(name);
+            TextView desc = new TextView(this);
+            desc.setText(T.t(LiveScenes.DESCS[i]));
+            desc.setTextColor(th.sub);
+            desc.setTypeface(th.bodyFace);
+            desc.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            desc.setMaxWidth(lw);
+            col.addView(desc);
+            LinearLayout.LayoutParams cl = new LinearLayout.LayoutParams(lw, ViewGroup.LayoutParams.WRAP_CONTENT);
+            cl.rightMargin = gap;
+            lives.addView(col, cl);
+        }
+        hs.addView(lives);
+        root.addView(hs);
+        root.addView(sectionLabel(T.t("Generati")));
+
         TextView hint = new TextView(this);
         hint.setText(T.t("Tocca per applicare · tieni premuto per una nuova variante"));
         hint.setTextColor(th.sub);
@@ -261,6 +303,69 @@ public class WallpaperActivity extends Activity {
         o2.inSampleSize = sample;
         try (InputStream in = getContentResolver().openInputStream(uri)) {
             return BitmapFactory.decodeStream(in, null, o2);
+        }
+    }
+
+    private TextView sectionLabel(String s) {
+        TextView t = new TextView(this);
+        t.setText(th.upperLabels ? s.toUpperCase(T.loc()) : s);
+        t.setTypeface(th.labelFace);
+        t.setTextColor(th.sub);
+        t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+        t.setPadding(0, Math.round(18 * dp), 0, Math.round(8 * dp));
+        return t;
+    }
+
+    /**
+     * Sfondo animato: si salva la scena e, se lo sfondo di Dot non è già attivo, si apre la schermata di Android
+     * che chiede conferma (un'app non può impostare da sola uno sfondo animato).
+     */
+    private void applyLive(int scene) {
+        // la home deve lasciar vedere lo sfondo del telefono, altrimenti lo coprirebbe con la tinta del tema
+        prefs.edit().putInt(DotLiveWallpaper.PREF, scene).putBoolean("wall", true).apply();
+        WallpaperManager wm = WallpaperManager.getInstance(this);
+        android.app.WallpaperInfo info = null;
+        try {
+            info = wm.getWallpaperInfo();
+        } catch (Exception ignored) {
+        }
+        android.content.ComponentName me = new android.content.ComponentName(this, DotLiveWallpaper.class);
+        if (info != null && me.equals(info.getComponent())) {
+            toast(T.t("Sfondo animato: ") + T.t(LiveScenes.NAMES[scene]));
+            return;
+        }
+        try {
+            startActivity(new Intent(WallpaperManager.ACTION_CHANGE_LIVE_WALLPAPER)
+                    .putExtra(WallpaperManager.EXTRA_LIVE_WALLPAPER_COMPONENT, me));
+        } catch (Exception e) {
+            try {
+                startActivity(new Intent(WallpaperManager.ACTION_LIVE_WALLPAPER_CHOOSER));
+                toast(T.t("Scegli \"Sfondo animato Dot\" dall'elenco"));
+            } catch (Exception e2) {
+                toast(T.t("Questo telefono non permette gli sfondi animati"));
+            }
+        }
+    }
+
+    /** Anteprima animata di una scena: si muove solo mentre è sullo schermo, a circa 20 fotogrammi al secondo. */
+    static final class LivePreview extends View {
+        private final LiveScenes scenes = new LiveScenes();
+        private final int scene;
+        private final long start = System.nanoTime();
+        private final float dp;
+
+        LivePreview(android.content.Context c, int scene, Theme th) {
+            super(c);
+            this.scene = scene;
+            scenes.accent = th.accent;
+            dp = c.getResources().getDisplayMetrics().density;
+        }
+
+        @Override
+        protected void onDraw(Canvas cv) {
+            float t = (System.nanoTime() - start) / 1e9f;
+            scenes.draw(cv, scene, getWidth(), getHeight(), t, 5 * dp, 0);
+            if (isShown()) postInvalidateDelayed(50);
         }
     }
 

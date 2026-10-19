@@ -5,4 +5,6 @@
     <string name="a11y_desc">Permette ai gesti della home di bloccare lo schermo, fare uno screenshot, aprire le app recenti o il menu di spegnimento. Se attivi il blocco rigido del benessere digitale, riporta alla home quando apri un\'app in pausa: per farlo guarda solo quale app è in primo piano. Dot Launcher non legge il contenuto dello schermo e non raccoglie dati.</string>
     <string name="wallpapers">Sfondi</string>
     <string name="import_layout">Importa in Dot Launcher</string>
+    <string name="live_label">Sfondo animato Dot</string>
+    <string name="live_desc">Scene a puntini: buco nero, meteo dal vivo, onda. La scena si sceglie in Dot Launcher › Sfondi.</string>
 </resources>

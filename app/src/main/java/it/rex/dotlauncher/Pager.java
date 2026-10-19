@@ -81,10 +81,20 @@ class Pager extends ViewGroup {
         applyTransition();
     }
 
+    /** Avvisato a ogni scorrimento con la posizione da 0 (prima pagina) a 1 (ultima): serve allo sfondo animato. */
+    interface ScrollHook {
+        void onScroll(float position);
+    }
+
+    ScrollHook scrollHook;
+
     @Override
     protected void onScrollChanged(int l, int t, int oldl, int oldt) {
         super.onScrollChanged(l, t, oldl, oldt);
         applyTransition();
+        if (scrollHook != null && getWidth() > 0 && getChildCount() > 1) {
+            scrollHook.onScroll(Math.max(0f, Math.min(1f, l / (float) (getWidth() * (getChildCount() - 1)))));
+        }
     }
 
     /** Effetto sulle pagine in base a quanto sono lontane dal centro (0 = al centro, ±1 = fuori). */

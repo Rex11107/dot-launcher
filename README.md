@@ -15,6 +15,7 @@ Launcher Android minimale in stile dot-matrix (a puntini), scritto da zero.
 - **Pagina a sinistra**: chat con un'IA (Claude, ChatGPT, Gemini, OpenRouter o un servizio compatibile), notizie da feed RSS, calendario, attività e note.
 - **Personalizzazione**: colore d'accento, forma e dimensione delle icone, pacchetti di icone, nomi e icone delle app, righe della home, dock, carattere, animazioni di pagine e menu.
 - **Impostazioni a categorie** con ricerca, e trascinamento laterale per tornare indietro.
+- **Sfondi animati a puntini**: buco nero, meteo dal vivo (pioggia, neve, sole o stelle in base al meteo) e onda; si fermano quando non si vedono, per la batteria.
 - **Orologio in carica**: orologio a puntini a tutto schermo quando colleghi il caricatore (facoltativo).
 - **Gesti configurabili** (anche a due dita e pizzico; scorrendo in su su un'icona si può aprire un'azione o un widget dell'app), pallini di notifica personalizzabili (punto o numero, dimensione, angolo, colore) e anteprima delle notifiche.
 - **Benessere digitale**: tempo di utilizzo, limiti giornalieri, pausa prima di aprire, modalità focus.

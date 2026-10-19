@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- lo sfondo animato è facoltativo: l'app si installa anche dove non è supportato -->
+    <uses-feature
+        android:name="android.software.live_wallpaper"
+        android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
@@ -223,6 +227,20 @@
                 <data android:mimeType="application/json" />
             </intent-filter>
         </activity>
+
+        <!-- Sfondo animato a puntini (buco nero, meteo dal vivo, onda) -->
+        <service
+            android:name=".DotLiveWallpaper"
+            android:exported="true"
+            android:label="@string/live_label"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/live_wallpaper" />
+        </service>
 
         <activity
             android:name=".WallpaperActivity"
