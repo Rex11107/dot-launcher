@@ -227,11 +227,11 @@ final class VolumePanel {
         }
 
         private int W() {
-            return Math.round((expanded ? 252 : 56) * dp);
+            return Math.round((expanded ? 220 : 44) * dp);
         }
 
         private int H() {
-            return Math.round((expanded ? 380 : 300) * dp);
+            return Math.round((expanded ? 390 : 290) * dp);
         }
 
         @Override
@@ -245,37 +245,49 @@ final class VolumePanel {
             p.setStyle(Paint.Style.FILL);
             p.setColor(bg);
             r.set(0, 0, w, h);
-            float rad = expanded ? 30 * dp : 28 * dp;
+            float rad = expanded ? 28 * dp : 22 * dp;
             cv.drawRoundRect(r, rad, rad, p);
             if (expanded) drawPanel(cv, w, h);
             else drawPill(cv, w, h);
+        }
+
+        /** Colonna di puntini (due file) accesa dal basso fino al livello. */
+        private void dots(Canvas cv, float cx, float top, float bot, int rows, float lv, int on) {
+            float step = (bot - top) / (rows - 1), rr = 3.3f * dp;
+            int lit = Math.round(lv * rows);
+            for (int i = 0; i < rows; i++) {
+                float y = bot - i * step;
+                p.setColor(i < lit ? on : off);
+                cv.drawCircle(cx - 6 * dp, y, rr, p);
+                cv.drawCircle(cx + 6 * dp, y, rr, p);
+            }
+        }
+
+        private float pillTop() {
+            return 50 * dp;
+        }
+
+        private float pillBot() {
+            return getHeight() - 56 * dp;
         }
 
         private void drawPill(Canvas cv, float w, float h) {
             float lv = level(stream);
             p.setTypeface(digits);
             p.setTextAlign(Paint.Align.CENTER);
-            p.setTextSize(20 * dp);
+            p.setTextSize(18 * dp);
             p.setColor(fg);
-            cv.drawText(String.valueOf(Math.round(lv * 100)), w / 2, 34 * dp, p);
-            int rows = 20;
-            float top = 56 * dp, bot = h - 62 * dp, step = (bot - top) / (rows - 1);
-            float rr = 3.6f * dp;
-            int lit = Math.round(lv * rows);
-            for (int i = 0; i < rows; i++) {
-                float y = bot - i * step;
-                p.setColor(i < lit ? th.accent : off);
-                for (int j = -1; j <= 1; j++) cv.drawCircle(w / 2 + j * 12 * dp, y, rr, p);
-            }
-            drawIcon(cv, w / 2, h - 30 * dp, stream, lv <= 0f, fg, 1f);
+            cv.drawText(String.valueOf(Math.round(lv * 100)), w / 2, 32 * dp, p);
+            dots(cv, w / 2, pillTop(), pillBot(), 20, lv, th.accent);
+            drawIcon(cv, w / 2, h - 28 * dp, stream, lv <= 0f, fg, 0.9f);
         }
 
         private float barTop() {
-            return 30 * dp;
+            return 34 * dp;
         }
 
         private float barBot() {
-            return getHeight() - 116 * dp;
+            return getHeight() - 132 * dp;
         }
 
         private float colW() {
@@ -283,36 +295,35 @@ final class VolumePanel {
         }
 
         private void drawPanel(Canvas cv, float w, float h) {
-            float top = barTop(), bot = barBot(), half = 17 * dp;
-            p.setTypeface(th.bodyFace);
+            float top = barTop(), bot = barBot();
             p.setTextAlign(Paint.Align.CENTER);
             for (int k = 0; k < 4; k++) {
                 float cx = 12 * dp + colW() * k + colW() / 2;
-                p.setColor(off);
-                r.set(cx - half, top, cx + half, bot);
-                cv.drawRoundRect(r, half, half, p);
                 float lv = level(STREAMS[k]);
-                float fy = bot - (bot - top - 2 * half) * lv - 2 * half;
-                p.setColor(STREAMS[k] == stream ? th.accent : fg);
-                r.set(cx - half, fy, cx + half, bot);
-                cv.drawRoundRect(r, half, half, p);
-                boolean onFill = (bot - fy) > 40 * dp;
-                drawIcon(cv, cx, bot - half, STREAMS[k], lv <= 0f,
-                        onFill ? (STREAMS[k] == stream ? 0xFFFFFFFF : bg | 0xFF000000) : fg, 0.8f);
+                boolean sel = STREAMS[k] == stream;
+                // percentuale sopra la colonna, a puntini come il resto
+                p.setTypeface(digits);
+                p.setTextSize(13 * dp);
+                p.setColor(sel ? th.accent : sub);
+                cv.drawText(String.valueOf(Math.round(lv * 100)), cx, top - 12 * dp, p);
+                dots(cv, cx, top, bot, 18, lv, sel ? th.accent : fg);
+                drawIcon(cv, cx, bot + 24 * dp, STREAMS[k], lv <= 0f, sel ? th.accent : fg, 0.75f);
+                p.setTypeface(th.bodyFace);
                 p.setColor(sub);
-                p.setTextSize(11 * dp);
-                cv.drawText(T.t(NAMES[k]), cx, bot + 20 * dp, p);
+                p.setTextSize(10 * dp);
+                cv.drawText(T.t(NAMES[k]), cx, bot + 50 * dp, p);
             }
-            // modalità suoneria
-            int sel = ringerIndex();
-            float by = h - 48 * dp, bw = (w - 40 * dp) / 3f;
+            // modalità suoneria: tre pastiglie, quella attiva piena
+            int selMode = ringerIndex();
+            float by = h - 40 * dp, bw = (w - 28 * dp) / 3f;
+            p.setTypeface(th.bodyFace);
             for (int i = 0; i < 3; i++) {
-                float bx = 20 * dp + i * bw;
-                r.set(bx + 3 * dp, by - 18 * dp, bx + bw - 3 * dp, by + 18 * dp);
-                p.setColor(i == sel ? fg : off);
-                cv.drawRoundRect(r, 18 * dp, 18 * dp, p);
-                p.setColor(i == sel ? (bg | 0xFF000000) : fg);
-                p.setTextSize(12 * dp);
+                float bx = 14 * dp + i * bw;
+                r.set(bx + 3 * dp, by - 16 * dp, bx + bw - 3 * dp, by + 16 * dp);
+                p.setColor(i == selMode ? fg : off);
+                cv.drawRoundRect(r, 16 * dp, 16 * dp, p);
+                p.setColor(i == selMode ? (bg | 0xFF000000) : fg);
+                p.setTextSize(11 * dp);
                 cv.drawText(T.t(MODES[i]), bx + bw / 2, by + 4 * dp, p);
             }
         }
@@ -379,7 +390,7 @@ final class VolumePanel {
                     dragging = false;
                     dragBar = -1;
                     ui.removeCallbacks(hide);
-                    if (expanded && e.getY() >= barTop() && e.getY() <= barBot()) {
+                    if (expanded && e.getY() >= barTop() - 24 * dp && e.getY() <= barBot() + 60 * dp) {
                         dragBar = (int) Math.max(0, Math.min(3, (e.getX() - 12 * dp) / colW()));
                     }
                     return true;
@@ -388,8 +399,7 @@ final class VolumePanel {
                     if (!dragging && Math.abs(e.getY() - downY) > slop) dragging = true;
                     if (dragging) {
                         if (!expanded) {
-                            float top = 56 * dp, bot = getHeight() - 62 * dp;
-                            set(stream, (bot - e.getY()) / (bot - top));
+                            set(stream, (pillBot() - e.getY()) / (pillBot() - pillTop()));
                         } else if (dragBar >= 0) {
                             stream = STREAMS[dragBar];
                             set(stream, (barBot() - e.getY()) / (barBot() - barTop()));
@@ -400,9 +410,9 @@ final class VolumePanel {
                 case MotionEvent.ACTION_UP:
                     if (!dragging) {
                         if (!expanded) expand();
-                        else if (e.getY() > getHeight() - 70 * dp) {
-                            float bw = (getWidth() - 40 * dp) / 3f;
-                            int i = (int) Math.max(0, Math.min(2, (e.getX() - 20 * dp) / bw));
+                        else if (e.getY() > getHeight() - 64 * dp) {
+                            float bw = (getWidth() - 28 * dp) / 3f;
+                            int i = (int) Math.max(0, Math.min(2, (e.getX() - 14 * dp) / bw));
                             setRinger(i);
                         } else if (dragBar >= 0) {
                             stream = STREAMS[dragBar];

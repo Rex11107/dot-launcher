@@ -478,24 +478,27 @@ public class WallpaperActivity extends Activity {
                 try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
                     b.compress(Bitmap.CompressFormat.JPEG, 92, out);
                 }
-                boolean set = false;
-                if (!systemLock()) {
-                    WallpaperManager wm = WallpaperManager.getInstance(this);
-                    int before = wm.getWallpaperId(WallpaperManager.FLAG_LOCK);
+                WallpaperManager wm = WallpaperManager.getInstance(this);
+                int before = wm.getWallpaperId(WallpaperManager.FLAG_LOCK);
+                try {
                     wm.setBitmap(b, null, true, WallpaperManager.FLAG_LOCK);
-                    set = wm.getWallpaperId(WallpaperManager.FLAG_LOCK) != before;
+                } catch (Exception ignored) {
                 }
+                boolean set = !systemLock() && wm.getWallpaperId(WallpaperManager.FLAG_LOCK) != before;
+                // Honor e Huawei mostrano sulla schermata di blocco solo le immagini scelte dalla Galleria:
+                // si salva il fotogramma lì e si apre "Imposta come" su quella foto
+                final Uri gallery = set ? null : saveToGallery(b, scene);
                 final boolean ok = set;
                 ui.post(() -> {
                     busy = false;
                     if (ok) toast(T.t("Home animata, schermata di blocco aggiornata"));
-                    else openSystemSetter();
+                    else openSystemSetter(gallery);
                 });
             } catch (Exception e) {
                 ui.post(() -> {
                     busy = false;
                     // ultima strada: l'immagine c'è già, la imposta il telefono
-                    if (ShareProvider.file(this, ShareProvider.LOCK).exists()) openSystemSetter();
+                    if (ShareProvider.file(this, ShareProvider.LOCK).exists()) openSystemSetter(null);
                     else toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
                 });
             } finally {
@@ -513,25 +516,65 @@ public class WallpaperActivity extends Activity {
         return m.contains("honor") || m.contains("huawei");
     }
 
-    private void openSystemSetter() {
-        Uri uri = ShareProvider.uri(ShareProvider.LOCK);
-        Intent i = null;
+    /** Salva il fotogramma in Galleria (Immagini/Dot Launcher). Su Android 10+ non servono permessi. */
+    private Uri saveToGallery(Bitmap b, int scene) {
+        if (android.os.Build.VERSION.SDK_INT < 29) return null;
         try {
-            i = WallpaperManager.getInstance(this).getCropAndSetWallpaperIntent(uri);
-        } catch (Exception ignored) {
+            android.content.ContentResolver cr = getContentResolver();
+            android.content.ContentValues v = new android.content.ContentValues();
+            v.put(android.provider.MediaStore.Images.Media.DISPLAY_NAME, "dot-blocco-" + scene + "-" + System.currentTimeMillis() + ".jpg");
+            v.put(android.provider.MediaStore.Images.Media.MIME_TYPE, "image/jpeg");
+            v.put(android.provider.MediaStore.Images.Media.RELATIVE_PATH, "Pictures/Dot Launcher");
+            v.put(android.provider.MediaStore.Images.Media.IS_PENDING, 1);
+            Uri uri = cr.insert(android.provider.MediaStore.Images.Media.EXTERNAL_CONTENT_URI, v);
+            if (uri == null) return null;
+            try (java.io.OutputStream out = cr.openOutputStream(uri)) {
+                if (out == null || !b.compress(Bitmap.CompressFormat.JPEG, 94, out)) {
+                    cr.delete(uri, null, null);
+                    return null;
+                }
+            }
+            v.clear();
+            v.put(android.provider.MediaStore.Images.Media.IS_PENDING, 0);
+            cr.update(uri, v, null, null);
+            return uri;
+        } catch (Exception e) {
+            return null;
         }
-        if (i == null) {
+    }
+
+    private void openSystemSetter(Uri gallery) {
+        Uri uri = gallery != null ? gallery : ShareProvider.uri(ShareProvider.LOCK);
+        Intent i;
+        if (gallery != null) {
+            // "Imposta come" della Galleria: è la strada che Honor accetta per la schermata di blocco
             i = Intent.createChooser(new Intent(Intent.ACTION_ATTACH_DATA)
                     .setDataAndType(uri, "image/jpeg").putExtra("mimeType", "image/jpeg")
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), T.t("Imposta come sfondo"));
+        } else {
+            i = null;
+            try {
+                i = WallpaperManager.getInstance(this).getCropAndSetWallpaperIntent(uri);
+            } catch (Exception ignored) {
+            }
+            if (i == null) {
+                i = Intent.createChooser(new Intent(Intent.ACTION_ATTACH_DATA)
+                        .setDataAndType(uri, "image/jpeg").putExtra("mimeType", "image/jpeg")
+                        .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION), T.t("Imposta come sfondo"));
+            }
         }
         i.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-        try {
-            startActivity(i);
-            toast(T.t("Scegli \"Schermata di blocco\": la home resta animata"));
-        } catch (Exception e) {
-            toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
-        }
+        final Intent go = i;
+        String msg = gallery != null
+                ? T.t("L'immagine è in Galleria, album \"Dot Launcher\". Ora scegli Galleria → \"Schermata di blocco\" (non \"Entrambe\", o la home smette di muoversi).")
+                : T.t("Scegli \"Schermata di blocco\": la home resta animata");
+        Sheet.confirm(this, th, T.t("Schermata di blocco"), msg, T.t("Continua"), () -> {
+            try {
+                startActivity(go);
+            } catch (Exception e) {
+                toast(T.t("La schermata di blocco non si può cambiare su questo telefono"));
+            }
+        });
     }
 
     private Bitmap assetBitmap(String path) {
