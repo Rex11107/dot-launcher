@@ -179,7 +179,7 @@ jobs:
             cls=$(find "$GITHUB_WORKSPACE/app/build/intermediates" -type d -path "*javac/release*classes" | head -1)
             jar="$ANDROID_HOME/platforms/android-34/android.jar"
             if [ -z "$cls" ]; then echo "Classi compilate non trovate"; else
-              ./spotbugs-*/bin/spotbugs -textui -effort:max -medium -auxclasspath "$jar" -onlyAnalyze 'it.rex.dotlauncher.-' "$cls" > sb.txt 2> sb.err
+              java -jar spotbugs-*/lib/spotbugs.jar -textui -effort:max -medium -auxclasspath "$jar" -onlyAnalyze 'it.rex.dotlauncher.-' "$cls" > sb.txt 2> sb.err
               echo "uscita $?, classi in ${cls#$GITHUB_WORKSPACE/}"
               if [ -s sb.txt ]; then head -400 sb.txt; else echo "Nessun problema di priorità media o alta"; fi
               grep -v "^WARNING\|^$" sb.err | tail -5

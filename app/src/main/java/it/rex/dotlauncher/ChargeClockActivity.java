@@ -108,16 +108,15 @@ public class ChargeClockActivity extends Activity {
     /** Il quadrante: ora a sinistra, data, meteo e batteria a destra (in verticale uno sotto l'altro). */
     static final class Face extends View {
         private final Theme th;
-        private final boolean h24;
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         // formati creati una volta: il quadrante si ridisegna ogni minuto per ore
         private final SimpleDateFormat timeFmt, dateFmt;
+        private final Date now = new Date();
         int shift;
 
         Face(Context c, Theme th, boolean h24) {
             super(c);
             this.th = th;
-            this.h24 = h24;
             timeFmt = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc());
             dateFmt = new SimpleDateFormat("EEEE d MMMM", T.loc());
             setBackgroundColor(0xFF000000);
@@ -130,7 +129,7 @@ public class ChargeClockActivity extends Activity {
             float dx = (float) Math.sin(shift * 1.7) * W * 0.02f, dy = (float) Math.cos(shift * 1.3) * H * 0.02f;
             cv.save();
             cv.translate(dx, dy);
-            Date now = new Date();
+            now.setTime(System.currentTimeMillis());
             String time = timeFmt.format(now);
             String date = dateFmt.format(now);
             int fg = 0xFFE6E6E6, sub = 0xFF8A8A8A;

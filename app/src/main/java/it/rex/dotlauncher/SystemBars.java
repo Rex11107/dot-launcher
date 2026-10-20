@@ -93,7 +93,7 @@ final class SystemBars {
     }
 
     /**
-     * Sfumatura dietro barra di stato e barra di navigazione, come nel launcher Pixel:
+     * Sfumatura dietro barra di stato e barra di navigazione, come nei launcher moderni:
      * le icone di sistema restano leggibili su qualsiasi sfondo.
      */
     static class Scrim extends android.view.View {
@@ -112,22 +112,30 @@ final class SystemBars {
             invalidate();
         }
 
+        // sfumature create solo quando cambiano misura o colore, non a ogni disegno
+        private android.graphics.Shader topShader, bottomShader;
+        private int shaderKey;
+
         @Override
         protected void onDraw(android.graphics.Canvas c) {
             if (color == 0) return;
             int clear = color & 0x00FFFFFF;
+            int key = java.util.Objects.hash(top, bottom, color, getHeight());
+            if (key != shaderKey || topShader == null) {
+                shaderKey = key;
+                topShader = new android.graphics.LinearGradient(0, 0, 0, top * 2.4f, color, clear,
+                        android.graphics.Shader.TileMode.CLAMP);
+                float y = getHeight() - bottom * 2.2f;
+                bottomShader = new android.graphics.LinearGradient(0, y, 0, getHeight(), clear, color,
+                        android.graphics.Shader.TileMode.CLAMP);
+            }
             if (top > 0) {
-                float h = top * 2.4f;
-                p.setShader(new android.graphics.LinearGradient(0, 0, 0, h, color, clear,
-                        android.graphics.Shader.TileMode.CLAMP));
-                c.drawRect(0, 0, getWidth(), h, p);
+                p.setShader(topShader);
+                c.drawRect(0, 0, getWidth(), top * 2.4f, p);
             }
             if (bottom > 0) {
-                float h = bottom * 2.2f;
-                float y = getHeight() - h;
-                p.setShader(new android.graphics.LinearGradient(0, y, 0, getHeight(), clear, color,
-                        android.graphics.Shader.TileMode.CLAMP));
-                c.drawRect(0, y, getWidth(), getHeight(), p);
+                p.setShader(bottomShader);
+                c.drawRect(0, getHeight() - bottom * 2.2f, getWidth(), getHeight(), p);
             }
         }
     }
