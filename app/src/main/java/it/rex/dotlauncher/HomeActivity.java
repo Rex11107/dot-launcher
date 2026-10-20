@@ -463,10 +463,35 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     protected void onResume() {
         super.onResume();
-        // nessun pannello aperto: lo sfondo animato può muoversi (protezione se una chiusura è saltata)
-        if (!drawerOpen && !panelOpen && !settingsOpen) LiveQuiet.setCovered(false);
+        homeResumed = true;
+        updateLiveCover();
         consumePendingShortcuts();
         if (onboarding != null) onboarding.refresh();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        homeResumed = false;
+        updateLiveCover();
+    }
+
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        homeFocused = hasFocus;
+        updateLiveCover();
+    }
+
+    private boolean homeResumed, homeFocused = true;
+
+    /**
+     * Lo sfondo animato si muove solo quando la home è davvero in vista: niente pannelli aperti, nessuna
+     * tendina delle notifiche e nessuna schermata delle app recenti sopra. Quelle schermate sfocano lo sfondo:
+     * se lo sfondo cambiasse a ogni fotogramma, il telefono dovrebbe rifare la sfocatura di continuo (forte lag).
+     */
+    private void updateLiveCover() {
+        LiveQuiet.setCovered(!homeResumed || !homeFocused || drawerOpen || panelOpen || settingsOpen);
     }
 
     @Override
@@ -1602,7 +1627,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void recedeHome(float scale, float dx) {
-        LiveQuiet.setCovered(true); // sfondo animato fermo mentre un pannello lo copre
+        updateLiveCover(); // sfondo animato fermo mentre un pannello lo copre
         homeBox.animate().cancel();
         homeBox.setVisibility(View.VISIBLE);
         // withLayer: la home viene disegnata una volta in un'immagine e poi solo spostata e sfumata.
@@ -1615,7 +1640,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     private void restoreHome(boolean animated) {
-        LiveQuiet.setCovered(false);
+        updateLiveCover();
         homeBox.animate().cancel();
         homeBox.setVisibility(View.VISIBLE);
         if (animated) {

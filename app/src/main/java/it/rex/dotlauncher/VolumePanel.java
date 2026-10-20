@@ -69,12 +69,39 @@ final class VolumePanel {
         // chiamate, videochiamate e squillo in arrivo: meglio il comportamento del telefono
         if (mode == AudioManager.MODE_IN_CALL || mode == AudioManager.MODE_IN_COMMUNICATION
                 || mode == AudioManager.MODE_RINGTONE || mode == AudioManager.MODE_CALL_SCREENING) return false;
+        final int dir = k == KeyEvent.KEYCODE_VOLUME_UP ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER;
         if (e.getAction() == KeyEvent.ACTION_DOWN) {
+            // le ripetizioni del sistema si ignorano: la pressione lunga la gestisce il nostro timer,
+            // così funziona uguale anche sui telefoni che non le mandano al servizio di accessibilità
+            if (e.getRepeatCount() > 0) return true;
             if (!shown) stream = defaultStream();
-            adjust(stream, k == KeyEvent.KEYCODE_VOLUME_UP ? AudioManager.ADJUST_RAISE : AudioManager.ADJUST_LOWER);
-            show();
+            step(dir);
+            ui.removeCallbacks(repeat);
+            repeatDir = dir;
+            ui.postDelayed(repeat, HOLD_DELAY);
+        } else if (e.getAction() == KeyEvent.ACTION_UP) {
+            ui.removeCallbacks(repeat);
         }
         return true;
+    }
+
+    /** Tenendo premuto: dopo un attimo il volume continua a salire o scendere finché si lascia il tasto. */
+    private static final long HOLD_DELAY = 380, HOLD_EVERY = 90;
+    private int repeatDir;
+    private final Runnable repeat = new Runnable() {
+        @Override
+        public void run() {
+            float before = level(stream);
+            step(repeatDir);
+            float after = level(stream);
+            // arrivati in cima o in fondo ci si ferma (il tasto può restare premuto senza far nulla)
+            if (after != before) ui.postDelayed(this, HOLD_EVERY);
+        }
+    };
+
+    private void step(int dir) {
+        adjust(stream, dir);
+        show();
     }
 
     private int defaultStream() {
@@ -153,6 +180,7 @@ final class VolumePanel {
 
     void hide() {
         ui.removeCallbacks(hide);
+        ui.removeCallbacks(repeat);
         if (!shown || view == null) return;
         final View v = view;
         shown = false;
