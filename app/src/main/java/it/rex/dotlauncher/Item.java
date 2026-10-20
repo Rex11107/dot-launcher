@@ -12,7 +12,7 @@ import java.util.List;
 final class Item {
     String type;
     String data = "";
-    int page, col, row, w = 1, h = 1;
+    int page, col, row, w, h;
     int tone; // 0 standard, 1 contrasto, 2 accento
     transient View view;
 

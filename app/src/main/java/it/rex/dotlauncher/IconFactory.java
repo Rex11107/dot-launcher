@@ -283,7 +283,7 @@ final class IconFactory {
 
         // 3) controllo di qualità del risultato
         Rect box = bounds(b);
-        if (box == null || !looksLikeSymbol(mask, w, h, box)) return null;
+        if (box == null || !looksLikeSymbol(mask, w, box)) return null;
         return b;
     }
 
@@ -392,7 +392,7 @@ final class IconFactory {
      * - bordi netti (non "polvere" di pixel semitrasparenti);
      * - poche parti separate (le immagini estratte male si spezzano in tanti frammenti).
      */
-    private static boolean looksLikeSymbol(int[] m, int w, int h, Rect box) {
+    private static boolean looksLikeSymbol(int[] m, int w, Rect box) {
         int bw = box.width(), bh = box.height();
         if (bw < 8 || bh < 8) return false;
 

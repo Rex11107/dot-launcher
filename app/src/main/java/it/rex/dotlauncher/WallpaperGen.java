@@ -667,13 +667,13 @@ final class WallpaperGen {
         p.setStrokeJoin(Paint.Join.ROUND);
         if (r.nextBoolean()) {
             // bande diagonali larghe con una zona forata
-            perforated(c, w, h, r, light);
+            perforated(c, w, h, light);
             for (int i = 0; i < 2; i++) {
                 Path path = new Path();
                 float y = h * (0.15f + i * 0.5f + r.nextFloat() * 0.1f);
                 path.moveTo(-w * 0.3f, y + h * 0.25f);
                 path.cubicTo(w * 0.3f, y + h * 0.05f, w * 0.6f, y - h * 0.05f, w * 1.3f, y - h * 0.3f);
-                tube(c, p, path, w * 0.38f, dark, light, w);
+                tube(c, p, path, w * 0.38f, dark, light);
             }
         } else {
             // anelli allungati annidati che escono dal bordo
@@ -683,14 +683,14 @@ final class WallpaperGen {
                 Path path = new Path();
                 path.addRoundRect(new android.graphics.RectF(cx - rw, cy - rh, cx + rw, cy + rh), rh, rh,
                         Path.Direction.CW);
-                tube(c, p, path, w * 0.13f, dark, light, w);
+                tube(c, p, path, w * 0.13f, dark, light);
             }
         }
         grain(c, w, h, r, 0.02f);
     }
 
     /** Tubo: ombra sfocata, poi strisce sempre più strette e chiare verso il centro (effetto cilindro). */
-    private static void tube(Canvas c, Paint p, Path path, float width, int dark, int light, int w) {
+    private static void tube(Canvas c, Paint p, Path path, float width, int dark, int light) {
         p.setShader(null);
         p.setMaskFilter(new android.graphics.BlurMaskFilter(width * 0.35f, android.graphics.BlurMaskFilter.Blur.NORMAL));
         p.setStrokeWidth(width * 1.1f);
@@ -710,7 +710,7 @@ final class WallpaperGen {
         }
     }
 
-    private static void perforated(Canvas c, int w, int h, Random r, int light) {
+    private static void perforated(Canvas c, int w, int h, int light) {
         Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
         float pitch = w / 40f;
         float x0 = w * 0.35f, y0 = h * 0.6f;

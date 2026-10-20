@@ -2,7 +2,6 @@ package it.rex.dotlauncher;
 
 import android.content.SharedPreferences;
 import android.graphics.Canvas;
-import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
 import android.service.wallpaper.WallpaperService;
@@ -116,7 +115,7 @@ public class DotLiveWallpaper extends WallpaperService {
             SurfaceHolder sh = getSurfaceHolder();
             Canvas cv = null;
             try {
-                cv = Build.VERSION.SDK_INT >= 26 ? sh.lockHardwareCanvas() : sh.lockCanvas();
+                cv = sh.lockHardwareCanvas();
                 if (cv != null) {
                     float dp = getResources().getDisplayMetrics().density;
                     float t = clock;

@@ -37,7 +37,6 @@ import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -271,7 +270,7 @@ class UniversalSearch extends ScrollView {
                 List<Object[]> files = files(q);
                 ui.post(() -> {
                     if (gen != generation) return;
-                    showPeople(contacts, events, q);
+                    showPeople(contacts, events);
                     showFiles(files);
                     webRow(q);
                 });
@@ -530,6 +529,10 @@ class UniversalSearch extends ScrollView {
     // ---------- file: foto, video e audio, solo se l'utente ha dato il permesso nelle impostazioni ----------
 
     static String[] filePermissions() {
+        if (android.os.Build.VERSION.SDK_INT >= 34) {
+            return new String[]{"android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
+                    "android.permission.READ_MEDIA_AUDIO", "android.permission.READ_MEDIA_VISUAL_USER_SELECTED"};
+        }
         if (android.os.Build.VERSION.SDK_INT >= 33) {
             return new String[]{"android.permission.READ_MEDIA_IMAGES", "android.permission.READ_MEDIA_VIDEO",
                     "android.permission.READ_MEDIA_AUDIO"};
@@ -587,7 +590,7 @@ class UniversalSearch extends ScrollView {
         }
     }
 
-    private void showPeople(List<Object[]> contacts, List<Object[]> events, String q) {
+    private void showPeople(List<Object[]> contacts, List<Object[]> events) {
         if (contacts == null) {
             header(T.t("Contatti"));
             row(SectionIcons.bitmap(SectionIcons.PEOPLE, px(40), th.onTile, th.accent, circle()),

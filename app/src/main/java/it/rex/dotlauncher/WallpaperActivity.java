@@ -496,7 +496,6 @@ public class WallpaperActivity extends Activity {
 
     private final class AnimatedPreview {
         private final Class<?> svc;
-        private final String pref;
         private final int scene;
         private final android.app.Dialog dlg;
         private final FrameLayout pages;
@@ -513,7 +512,6 @@ public class WallpaperActivity extends Activity {
 
         AnimatedPreview(Class<?> svc, String pref, int scene) {
             this.svc = svc;
-            this.pref = pref;
             this.scene = scene;
             dlg = new android.app.Dialog(WallpaperActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
             final int[] sz = screen();
@@ -604,7 +602,7 @@ public class WallpaperActivity extends Activity {
             dlg.setContentView(root);
             dlg.setOnDismissListener(d -> {
                 if (gl != null) gl.onPause();
-                if (stillBmp != null) stillBmp.recycle();
+                // niente recycle(): l'immagine potrebbe essere ancora in uso da "Imposta…" in background
                 stillBmp = null;
             });
             dlg.setOnShowListener(d -> layoutPages(0, false));

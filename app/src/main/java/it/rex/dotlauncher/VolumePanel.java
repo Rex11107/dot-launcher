@@ -234,7 +234,7 @@ final class VolumePanel {
         private final Path icon = new Path();
         private final int bg, fg, off, sub;
         private final Typeface digits;
-        private float downX, downY;
+        private float downY;
         private boolean dragging;
         private int dragBar = -1;
 
@@ -413,7 +413,6 @@ final class VolumePanel {
                     hide();
                     return true;
                 case MotionEvent.ACTION_DOWN:
-                    downX = e.getX();
                     downY = e.getY();
                     dragging = false;
                     dragBar = -1;
