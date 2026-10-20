@@ -65,6 +65,20 @@ final class CameraRing implements SharedPreferences.OnSharedPreferenceChangeList
     }
     private static CameraRing instance;
 
+    /** Il timer di Dot Launcher è partito, cambiato o finito. */
+    static void timerChanged() {
+        CameraRing r = instance;
+        if (r != null) r.ui.post(r::refresh);
+    }
+
+    /** {fine, totale} del timer da mostrare: prima quello di Dot Launcher, poi quello letto dalle notifiche. */
+    private long[] timerNow() {
+        long e = DotTimer.end(svc);
+        if (e > 0) return new long[]{e, DotTimer.total(svc)};
+        if (timerEnd > System.currentTimeMillis()) return new long[]{timerEnd, timerTotal};
+        return null;
+    }
+
     /** Dalle notifiche attive (chiamato dal servizio delle notifiche a ogni cambiamento). */
     static void readNotifications(StatusBarNotification[] all) {
         float tr = -1f;
@@ -211,7 +225,7 @@ final class CameraRing implements SharedPreferences.OnSharedPreferenceChangeList
     private int mode() {
         if (prefs.getBoolean("ringTest", false)) return 4;
         if (prefs.getBoolean("ringTransfer", true) && transfer != -1f) return 1;
-        if (prefs.getBoolean("ringTimer", true) && timerEnd > System.currentTimeMillis()) return 2;
+        if (prefs.getBoolean("ringTimer", true) && timerNow() != null) return 2;
         if (prefs.getBoolean("ringCharge", true) && charging && battery >= 0) return 3;
         return 0;
     }
@@ -356,8 +370,9 @@ final class CameraRing implements SharedPreferences.OnSharedPreferenceChangeList
                     label = spin ? "" : Math.round(transfer * 100) + "%";
                     break;
                 case 2:
-                    long left = Math.max(0, timerEnd - now);
-                    frac = timerTotal > 0 ? left / (float) timerTotal : 0f;
+                    long[] tm = timerNow();
+                    long left = tm == null ? 0 : Math.max(0, tm[0] - now);
+                    frac = tm == null ? 0f : left / (float) tm[1];
                     col = 0xFFF2F2F2;
                     long s = (left + 999) / 1000;
                     label = s >= 3600 ? (s / 3600) + ":" + two((s / 60) % 60) + ":" + two(s % 60) : (s / 60) + ":" + two(s % 60);

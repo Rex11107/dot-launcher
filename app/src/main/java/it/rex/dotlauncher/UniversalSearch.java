@@ -178,7 +178,12 @@ class UniversalSearch extends ScrollView {
         if (sec > 0) {
             final String d = SearchTools.duration(sec);
             header(T.t("Timer"));
+            // il timer di Dot: lo vede anche l'anello della fotocamera
             Runnable set = () -> {
+                DotTimer.start(act, sec);
+                host.toast(T.t("Timer di ") + d + T.t(" avviato"));
+            };
+            Runnable clock = () -> {
                 Intent i = new Intent(android.provider.AlarmClock.ACTION_SET_TIMER)
                         .putExtra(android.provider.AlarmClock.EXTRA_LENGTH, sec)
                         .putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true);
@@ -186,7 +191,9 @@ class UniversalSearch extends ScrollView {
                 host.toast(T.t("Timer di ") + d + T.t(" avviato"));
             };
             row(SectionIcons.bitmap(SectionIcons.TIMER, px(40), th.onTile, th.accent, circle()),
-                    T.t("Timer di ") + d, T.t("Con l'app Orologio"), set, null);
+                    T.t("Timer di ") + d, T.t("Timer di Dot Launcher"), set, null);
+            row(SectionIcons.bitmap(SectionIcons.TIMER, px(40), th.onTile, th.accent, circle()),
+                    T.t("Timer di ") + d, T.t("Con l'app Orologio"), clock, null);
             if (firstAction == null) firstAction = set;
         }
 

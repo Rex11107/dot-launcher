@@ -7037,7 +7037,7 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                 prefs.getBoolean("ringText", true), on -> prefs.edit().putBoolean("ringText", on).apply());
         st.toggle(SectionIcons.ARROW_DOWN, T.t("Download e caricamenti"), T.t("Dalle notifiche con la barra di avanzamento"),
                 prefs.getBoolean("ringTransfer", true), on -> prefs.edit().putBoolean("ringTransfer", on).apply());
-        st.toggle(SectionIcons.CALENDAR, T.t("Timer"), T.t("Il tempo che resta di un timer dell'orologio"),
+        st.toggle(SectionIcons.CALENDAR, T.t("Timer"), T.t("Il timer di Dot Launcher (e quello dell'Orologio, se il telefono lo permette)"),
                 prefs.getBoolean("ringTimer", true), on -> prefs.edit().putBoolean("ringTimer", on).apply());
         st.toggle(SectionIcons.WAVE, T.t("Ricarica"), T.t("La percentuale della batteria mentre è in carica"),
                 prefs.getBoolean("ringCharge", true), on -> prefs.edit().putBoolean("ringCharge", on).apply());
