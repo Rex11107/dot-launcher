@@ -149,11 +149,44 @@ final class VolumePanel {
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
                         | WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
                 PixelFormat.TRANSLUCENT);
-        boolean left = "left".equals(prefs.getString("volSide", "right"));
-        lp.gravity = (left ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL;
-        lp.x = Math.round(14 * dp);
+        if (top()) {
+            // capsula in alto, sotto la barra di stato
+            lp.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
+            lp.y = statusBar() + Math.round(10 * dp);
+        } else {
+            boolean left = "left".equals(prefs.getString("volSide", "right"));
+            lp.gravity = (left ? Gravity.LEFT : Gravity.RIGHT) | Gravity.CENTER_VERTICAL;
+            lp.x = Math.round(14 * dp);
+        }
         lp.windowAnimations = 0;
         return lp;
+    }
+
+    /** Stile scelto nelle impostazioni: pillola laterale (predefinita) o capsula in alto. */
+    private boolean top() {
+        return "top".equals(prefs.getString("volStyle", "side"));
+    }
+
+    /** File di puntini della pillola laterale: 1, 2 (predefinito) o 3. */
+    private int lines() {
+        return Math.max(1, Math.min(3, prefs.getInt("volDots", 2)));
+    }
+
+    private int statusBar() {
+        int id = svc.getResources().getIdentifier("status_bar_height", "dimen", "android");
+        return id > 0 ? svc.getResources().getDimensionPixelSize(id) : Math.round(24 * dp);
+    }
+
+    /** Da dove entra il pannello: dal lato scelto, o dall'alto. */
+    private void enterFrom(View v, float f) {
+        if (top()) {
+            v.setTranslationX(0);
+            v.setTranslationY(-f * 24 * dp);
+        } else {
+            boolean left = "left".equals(prefs.getString("volSide", "right"));
+            v.setTranslationY(0);
+            v.setTranslationX((left ? -1 : 1) * f * 24 * dp);
+        }
     }
 
     private void show() {
@@ -168,10 +201,9 @@ final class VolumePanel {
                 view = null;
                 return;
             }
-            boolean left = "left".equals(prefs.getString("volSide", "right"));
             view.setAlpha(0f);
-            view.setTranslationX((left ? -1 : 1) * 24 * dp);
-            view.animate().alpha(1f).translationX(0).setDuration(160).setInterpolator(Motion.EASE_OUT).start();
+            enterFrom(view, 1f);
+            view.animate().alpha(1f).translationX(0).translationY(0).setDuration(160).setInterpolator(Motion.EASE_OUT).start();
         } else {
             view.invalidate();
         }
@@ -185,8 +217,9 @@ final class VolumePanel {
         final View v = view;
         shown = false;
         view = null;
-        boolean left = "left".equals(prefs.getString("volSide", "right"));
-        v.animate().alpha(0f).translationX((left ? -1 : 1) * 24 * dp).setDuration(140).setInterpolator(Motion.EASE_IN)
+        boolean up = top(), left = "left".equals(prefs.getString("volSide", "right"));
+        v.animate().alpha(0f).translationX(up ? 0 : (left ? -1 : 1) * 24 * dp).translationY(up ? -24 * dp : 0)
+                .setDuration(140).setInterpolator(Motion.EASE_IN)
                 .withEndAction(() -> {
                     try {
                         wm.removeView(v);
@@ -234,7 +267,7 @@ final class VolumePanel {
         private final Path icon = new Path();
         private final int bg, fg, off, sub;
         private final Typeface digits;
-        private float downY;
+        private float downX, downY;
         private boolean dragging;
         private int dragBar = -1;
 
@@ -255,11 +288,14 @@ final class VolumePanel {
         }
 
         private int W() {
-            return Math.round((expanded ? 220 : 44) * dp);
+            if (expanded) return Math.round(220 * dp);
+            if (top()) return Math.round(Math.min(340 * dp, getResources().getDisplayMetrics().widthPixels - 48 * dp));
+            return Math.round((20 + 12 * lines()) * dp); // 32, 44 o 56 dp
         }
 
         private int H() {
-            return Math.round((expanded ? 390 : 290) * dp);
+            if (expanded) return Math.round(390 * dp);
+            return Math.round((top() ? 52 : 290) * dp);
         }
 
         @Override
@@ -273,22 +309,48 @@ final class VolumePanel {
             p.setStyle(Paint.Style.FILL);
             p.setColor(bg);
             r.set(0, 0, w, h);
-            float rad = expanded ? 28 * dp : 22 * dp;
+            float rad = expanded ? 28 * dp : top() ? h / 2f : Math.min(22 * dp, w / 2f);
             cv.drawRoundRect(r, rad, rad, p);
             if (expanded) drawPanel(cv, w, h);
+            else if (top()) drawCapsule(cv, w, h);
             else drawPill(cv, w, h);
         }
 
-        /** Colonna di puntini (due file) accesa dal basso fino al livello. */
-        private void dots(Canvas cv, float cx, float top, float bot, int rows, float lv, int on) {
+        /** Colonna di puntini (da 1 a 3 file) accesa dal basso fino al livello. */
+        private void dots(Canvas cv, float cx, float top, float bot, int rows, float lv, int on, int files) {
             float step = (bot - top) / (rows - 1), rr = 3.3f * dp;
             int lit = Math.round(lv * rows);
             for (int i = 0; i < rows; i++) {
                 float y = bot - i * step;
                 p.setColor(i < lit ? on : off);
-                cv.drawCircle(cx - 6 * dp, y, rr, p);
-                cv.drawCircle(cx + 6 * dp, y, rr, p);
+                for (int j = 0; j < files; j++) cv.drawCircle(cx + (j - (files - 1) / 2f) * 12 * dp, y, rr, p);
             }
+        }
+
+        // capsula in alto: altoparlante, una riga di puntini, percentuale
+        private float rowLeft() {
+            return 52 * dp;
+        }
+
+        private float rowRight() {
+            return getWidth() - 52 * dp;
+        }
+
+        private void drawCapsule(Canvas cv, float w, float h) {
+            float lv = level(stream), cy = h / 2f;
+            drawIcon(cv, 28 * dp, cy, stream, lv <= 0f, fg, 0.85f);
+            int n = Math.max(8, (int) ((rowRight() - rowLeft()) / (11 * dp)) + 1);
+            float step = (rowRight() - rowLeft()) / (n - 1), rr = 3.6f * dp;
+            int lit = Math.round(lv * n);
+            for (int i = 0; i < n; i++) {
+                p.setColor(i < lit ? th.accent : off);
+                cv.drawCircle(rowLeft() + i * step, cy, rr, p);
+            }
+            p.setTypeface(digits);
+            p.setTextAlign(Paint.Align.CENTER);
+            p.setTextSize(16 * dp);
+            p.setColor(fg);
+            cv.drawText(String.valueOf(Math.round(lv * 100)), w - 26 * dp, cy + 6 * dp, p);
         }
 
         private float pillTop() {
@@ -303,10 +365,10 @@ final class VolumePanel {
             float lv = level(stream);
             p.setTypeface(digits);
             p.setTextAlign(Paint.Align.CENTER);
-            p.setTextSize(18 * dp);
+            p.setTextSize((lines() == 1 ? 14 : 18) * dp);
             p.setColor(fg);
             cv.drawText(String.valueOf(Math.round(lv * 100)), w / 2, 32 * dp, p);
-            dots(cv, w / 2, pillTop(), pillBot(), 20, lv, th.accent);
+            dots(cv, w / 2, pillTop(), pillBot(), 20, lv, th.accent, lines());
             drawIcon(cv, w / 2, h - 28 * dp, stream, lv <= 0f, fg, 0.9f);
         }
 
@@ -334,7 +396,7 @@ final class VolumePanel {
                 p.setTextSize(13 * dp);
                 p.setColor(sel ? th.accent : sub);
                 cv.drawText(String.valueOf(Math.round(lv * 100)), cx, top - 12 * dp, p);
-                dots(cv, cx, top, bot, 18, lv, sel ? th.accent : fg);
+                dots(cv, cx, top, bot, 18, lv, sel ? th.accent : fg, 2);
                 drawIcon(cv, cx, bot + 24 * dp, STREAMS[k], lv <= 0f, sel ? th.accent : fg, 0.75f);
                 p.setTypeface(th.bodyFace);
                 p.setColor(sub);
@@ -414,6 +476,7 @@ final class VolumePanel {
                     return true;
                 case MotionEvent.ACTION_DOWN:
                     downY = e.getY();
+                    downX = e.getX();
                     dragging = false;
                     dragBar = -1;
                     ui.removeCallbacks(hide);
@@ -423,9 +486,12 @@ final class VolumePanel {
                     return true;
                 case MotionEvent.ACTION_MOVE:
                     int slop = ViewConfiguration.get(getContext()).getScaledTouchSlop();
-                    if (!dragging && Math.abs(e.getY() - downY) > slop) dragging = true;
+                    boolean capsule = !expanded && top();
+                    if (!dragging && (capsule ? Math.abs(e.getX() - downX) : Math.abs(e.getY() - downY)) > slop) dragging = true;
                     if (dragging) {
-                        if (!expanded) {
+                        if (capsule) {
+                            set(stream, (e.getX() - rowLeft()) / (rowRight() - rowLeft()));
+                        } else if (!expanded) {
                             set(stream, (pillBot() - e.getY()) / (pillBot() - pillTop()));
                         } else if (dragBar >= 0) {
                             stream = STREAMS[dragBar];

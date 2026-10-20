@@ -6941,6 +6941,23 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                     refillSettings();
                 });
         if (VolumePanel.enabled(prefs)) {
+            final boolean topBar = "top".equals(prefs.getString("volStyle", "side"));
+            st.row(SectionIcons.VOLUME, T.t("Come si mostra"), topBar ? T.t("Capsula in alto") : T.t("Pillola laterale"),
+                    () -> Sheet.list(this, th, T.t("Come si mostra"), new String[]{T.t("Pillola laterale"), T.t("Capsula in alto")},
+                            topBar ? 1 : 0, w -> {
+                                prefs.edit().putString("volStyle", w == 1 ? "top" : "side").apply();
+                                refillSettings();
+                            }));
+        }
+        if (VolumePanel.enabled(prefs) && !"top".equals(prefs.getString("volStyle", "side"))) {
+            final int dots = Math.max(1, Math.min(3, prefs.getInt("volDots", 2)));
+            final String[] dotNames = {T.t("1 fila di puntini (sottile)"), T.t("2 file di puntini"), T.t("3 file di puntini (larga)")};
+            st.row(SectionIcons.SLIDERS, T.t("Spessore della pillola"), dotNames[dots - 1],
+                    () -> Sheet.list(this, th, T.t("Spessore della pillola"), new String[]{dotNames[2], dotNames[1], dotNames[0]},
+                            3 - dots, w -> {
+                                prefs.edit().putInt("volDots", 3 - w).apply();
+                                refillSettings();
+                            }));
             final boolean left = "left".equals(prefs.getString("volSide", "right"));
             st.row(SectionIcons.PANEL, T.t("Lato della barra"), left ? T.t("Sinistra") : T.t("Destra"),
                     () -> Sheet.list(this, th, T.t("Lato della barra"), new String[]{T.t("Destra"), T.t("Sinistra")},

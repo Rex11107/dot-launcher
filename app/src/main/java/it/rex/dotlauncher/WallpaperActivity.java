@@ -37,6 +37,7 @@ import java.util.concurrent.Executors;
 public class WallpaperActivity extends Activity {
     private static final int REQ_IMAGE = 7;
     private static final int REQ_LIVE = 8;
+    private static final int REQ_MY = 9;
 
     private SharedPreferences prefs;
     private Theme th;
@@ -49,7 +50,7 @@ public class WallpaperActivity extends Activity {
     private Adapter adapter;
     private int pw, ph, cardW, cardH;
     private boolean busy;
-    private GridView monoGrid, fixedGrid, liveGrid;
+    private GridView monoGrid, fixedGrid, liveGrid, myGrid;
     private Class<?> pendingSvc;   // sfondo animato in attesa della conferma di Android
 
     @Override
@@ -84,11 +85,14 @@ public class WallpaperActivity extends Activity {
         title.setText(T.t("SFONDI."));
         root.addView(title);
 
-        // tre schede: monocromatici, fissi e animati
+        // quattro schede: monocromatici, fissi, animati e i miei (scorrono se lo schermo è stretto)
         LinearLayout tabs = new LinearLayout(this);
         tabs.setOrientation(LinearLayout.HORIZONTAL);
         tabs.setPadding(0, Math.round(16 * dp), 0, Math.round(12 * dp));
-        root.addView(tabs);
+        android.widget.HorizontalScrollView tabScroll = new android.widget.HorizontalScrollView(this);
+        tabScroll.setHorizontalScrollBarEnabled(false);
+        tabScroll.addView(tabs);
+        root.addView(tabScroll);
         FrameLayout pagesBox = new FrameLayout(this);
         root.addView(pagesBox, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
 
@@ -142,10 +146,23 @@ public class WallpaperActivity extends Activity {
             else applyAnimated(DotLiveWallpaper.class, DotLiveWallpaper.PREF, pos - ShaderWallpaper.FILES.length);
         });
 
-        final View[] pages = {monoGrid, fixedPage, liveGrid};
-        final String[] tabNames = {T.t("Monocromatici"), T.t("Fissi"), T.t("Animati")};
-        final TextView[] tabViews = new TextView[3];
-        for (int t = 0; t < 3; t++) {
+        // 4) i miei: immagini caricate, da sistemare sullo schermo
+        myGrid = gridView(gap);
+        myGrid.setAdapter(new MyAdapter());
+        myGrid.setOnItemClickListener((pa, v, pos, id) -> {
+            if (pos == 0) pickMine();
+            else new CropEditor((java.io.File) myGrid.getAdapter().getItem(pos)).show();
+        });
+        myGrid.setOnItemLongClickListener((pa, v, pos, id) -> {
+            if (pos == 0) return false;
+            deleteMine((java.io.File) myGrid.getAdapter().getItem(pos));
+            return true;
+        });
+
+        final View[] pages = {monoGrid, fixedPage, liveGrid, myGrid};
+        final String[] tabNames = {T.t("Monocromatici"), T.t("Fissi"), T.t("Animati"), T.t("I miei")};
+        final TextView[] tabViews = new TextView[4];
+        for (int t = 0; t < 4; t++) {
             pagesBox.addView(pages[t], new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT));
             final int tab = t;
@@ -163,7 +180,7 @@ public class WallpaperActivity extends Activity {
             tabs.addView(tv, tl);
             tabViews[t] = tv;
         }
-        selectTab(Math.max(0, Math.min(2, prefs.getInt("wallTab", 1))), pages, tabViews);
+        selectTab(Math.max(0, Math.min(3, prefs.getInt("wallTab", 1))), pages, tabViews);
         // aperta dalla home: anche qui Honor può tenersi il gesto indietro, quindi lo si legge da qui
         SwipeBackFrame frame = new SwipeBackFrame(this);
         frame.setOnSwipeBack(this::onBackPressed);
@@ -174,7 +191,7 @@ public class WallpaperActivity extends Activity {
         root.setOnApplyWindowInsetsListener((v, in) -> {
             int[] r = SystemBars.read(in);
             root.setPadding(pad + r[0], padTop + r[1], pad + r[2], 0);
-            for (GridView g : new GridView[]{monoGrid, fixedGrid, liveGrid}) g.setPadding(0, 0, 0, Math.round(24 * dp) + r[3]);
+            for (GridView g : new GridView[]{monoGrid, fixedGrid, liveGrid, myGrid}) g.setPadding(0, 0, 0, Math.round(24 * dp) + r[3]);
             return in;
         });
         root.requestApplyInsets();
@@ -205,9 +222,9 @@ public class WallpaperActivity extends Activity {
 
     private void askTarget(Target t) {
         if (busy) return;
-        String[] items = {T.t("Schermata home"), T.t("Home e schermata di blocco")};
+        String[] items = {T.t("Schermata home"), T.t("Home e schermata di blocco"), T.t("Solo schermata di blocco")};
         Sheet.list(this, th, T.t("Applica sfondo"), items, -1, w ->
-                t.go(w == 0 ? WallpaperManager.FLAG_SYSTEM
+                t.go(w == 0 ? WallpaperManager.FLAG_SYSTEM : w == 2 ? WallpaperManager.FLAG_LOCK
                         : WallpaperManager.FLAG_SYSTEM | WallpaperManager.FLAG_LOCK));
     }
 
@@ -226,16 +243,30 @@ public class WallpaperActivity extends Activity {
             try {
                 Bitmap b = WallpaperGen.make(style, sz[0], sz[1], seed);
                 WallpaperManager.getInstance(this).setBitmap(b, null, true, which);
-                Glass.save(this, b);
-                prefs.edit().putInt("wallStyle", style).apply(); // per segnare lo sfondo in uso
-                done();
+                if (home(which)) {
+                    Glass.save(this, b);
+                    prefs.edit().putInt("wallStyle", style).apply(); // per segnare lo sfondo in uso
+                }
+                done(which);
             } catch (Exception e) {
                 fail();
             }
         });
     }
 
-    private void done() {
+    private static boolean home(int which) {
+        return (which & WallpaperManager.FLAG_SYSTEM) != 0;
+    }
+
+    /** Fatto. Se è cambiata solo la schermata di blocco, la home e le sue impostazioni restano come sono. */
+    private void done(int which) {
+        if (!home(which)) {
+            ui.post(() -> {
+                busy = false;
+                toast(T.t("Schermata di blocco impostata"));
+            });
+            return;
+        }
         prefs.edit().putBoolean("wall", true).putInt("wallVer", prefs.getInt("wallVer", 0) + 1).apply();
         ui.post(() -> {
             busy = false;
@@ -273,6 +304,15 @@ public class WallpaperActivity extends Activity {
             if (liveGrid != null) ((BaseAdapter) liveGrid.getAdapter()).notifyDataSetChanged();
             return;
         }
+        if (req == REQ_MY) {
+            if (res != RESULT_OK || data == null) return;
+            java.util.List<Uri> uris = new java.util.ArrayList<>();
+            if (data.getClipData() != null) {
+                for (int i = 0; i < data.getClipData().getItemCount(); i++) uris.add(data.getClipData().getItemAt(i).getUri());
+            } else if (data.getData() != null) uris.add(data.getData());
+            if (!uris.isEmpty()) importMine(uris);
+            return;
+        }
         if (req != REQ_IMAGE || res != RESULT_OK || data == null || data.getData() == null) return;
         final Uri uri = data.getData();
         String[] modes = {T.t("Originale"), T.t("A puntini (colori)"), T.t("A puntini (bianco e nero)"), T.t("A strisce (vetro rigato)")};
@@ -291,7 +331,7 @@ public class WallpaperActivity extends Activity {
                     try (InputStream in = getContentResolver().openInputStream(uri)) {
                         wm.setStream(in, null, true, which);
                     }
-                    Bitmap src = decode(uri, Math.max(sz[0], sz[1]) / 4);
+                    Bitmap src = home(which) ? decode(uri, Math.max(sz[0], sz[1]) / 4) : null;
                     if (src != null) Glass.save(this, WallpaperGen.cover(src, sz[0] / 4, sz[1] / 4));
                 } else {
                     Bitmap src = decode(uri, Math.max(sz[0], sz[1]) / 2);
@@ -299,10 +339,10 @@ public class WallpaperActivity extends Activity {
                     Bitmap b = mode == 3 ? WallpaperGen.ribbed(src, sz[0], sz[1], System.nanoTime())
                             : WallpaperGen.dotify(src, sz[0], sz[1], mode == 2);
                     wm.setBitmap(b, null, true, which);
-                    Glass.save(this, b);
+                    if (home(which)) Glass.save(this, b);
                 }
-                prefs.edit().putInt("wallStyle", -1).apply(); // foto: nessuno sfondo generato in uso
-                done();
+                if (home(which)) prefs.edit().putInt("wallStyle", -1).apply(); // foto: nessuno sfondo generato in uso
+                done(which);
             } catch (Exception e) {
                 fail();
             }
@@ -370,9 +410,11 @@ public class WallpaperActivity extends Activity {
                 Bitmap b = Bitmap.createBitmap(Math.max(1, sz[0] / 4), Math.max(1, sz[1] / 4), Bitmap.Config.RGB_565);
                 b.eraseColor(c);
                 WallpaperManager.getInstance(this).setBitmap(b, null, true, which);
-                Glass.save(this, b);
-                prefs.edit().putInt("wallStyle", -100 - i).apply(); // per segnare la tinta in uso
-                done();
+                if (home(which)) {
+                    Glass.save(this, b);
+                    prefs.edit().putInt("wallStyle", -100 - i).apply(); // per segnare la tinta in uso
+                }
+                done(which);
             } catch (Exception e) {
                 fail();
             }
@@ -852,6 +894,312 @@ public class WallpaperActivity extends Activity {
             return uri;
         } catch (Exception e) {
             return null;
+        }
+    }
+
+    // ---------- i miei sfondi: immagini caricate dall'utente ----------
+
+    private java.io.File myDir() {
+        java.io.File d = new java.io.File(getFilesDir(), "mywalls");
+        if (!d.isDirectory() && !d.mkdirs()) android.util.Log.w("DotWallpaper", "cartella degli sfondi non creata");
+        return d;
+    }
+
+    /** Immagini caricate, dalla più recente. */
+    private java.io.File[] myFiles() {
+        java.io.File[] f = myDir().listFiles((dir, name) -> name.endsWith(".jpg"));
+        if (f == null) return new java.io.File[0];
+        java.util.Arrays.sort(f, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+        return f;
+    }
+
+    private void pickMine() {
+        Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.setType("image/*");
+        i.addCategory(Intent.CATEGORY_OPENABLE);
+        i.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+        try {
+            startActivityForResult(Intent.createChooser(i, T.t("Scegli le immagini")), REQ_MY);
+        } catch (Exception e) {
+            toast(T.t("Nessuna galleria disponibile"));
+        }
+    }
+
+    /**
+     * Copia le immagini scelte tra i miei sfondi, ridotte a una misura sensata per lo schermo
+     * (al massimo una volta e mezzo la sua altezza sul lato lungo): restano nitide e non occupano troppo.
+     */
+    private void importMine(java.util.List<Uri> uris) {
+        final int[] sz = screen();
+        final int maxSide = Math.max(1600, Math.round(Math.max(sz[0], sz[1]) * 1.5f));
+        busy = true;
+        toast(T.t("Carico le immagini…"));
+        exec.execute(() -> {
+            java.util.List<java.io.File> saved = new java.util.ArrayList<>();
+            long now = System.currentTimeMillis();
+            for (int k = 0; k < uris.size(); k++) {
+                try {
+                    Bitmap b = decode(uris.get(k), maxSide);
+                    if (b == null) continue;
+                    float s = Math.min(1f, maxSide / (float) Math.max(b.getWidth(), b.getHeight()));
+                    if (s < 1f) {
+                        Bitmap r = Bitmap.createScaledBitmap(b, Math.round(b.getWidth() * s), Math.round(b.getHeight() * s), true);
+                        if (r != b) b.recycle();
+                        b = r;
+                    }
+                    java.io.File f = new java.io.File(myDir(), "w" + (now + k) + ".jpg");
+                    try (java.io.FileOutputStream out = new java.io.FileOutputStream(f)) {
+                        b.compress(Bitmap.CompressFormat.JPEG, 93, out);
+                    }
+                    b.recycle();
+                    saved.add(f);
+                } catch (Exception ignored) {
+                }
+            }
+            ui.post(() -> {
+                busy = false;
+                if (myGrid != null) ((BaseAdapter) myGrid.getAdapter()).notifyDataSetChanged();
+                if (saved.isEmpty()) toast(T.t("Impossibile leggere le immagini"));
+                else if (saved.size() == 1) new CropEditor(saved.get(0)).show();
+                else toast(saved.size() + " " + T.t("immagini aggiunte ai tuoi sfondi"));
+            });
+        });
+    }
+
+    private Bitmap decodeFile(java.io.File f, int target) {
+        BitmapFactory.Options o = new BitmapFactory.Options();
+        o.inJustDecodeBounds = true;
+        BitmapFactory.decodeFile(f.getPath(), o);
+        int sample = 1;
+        while (Math.max(o.outWidth, o.outHeight) / (sample * 2) >= target) sample *= 2;
+        BitmapFactory.Options o2 = new BitmapFactory.Options();
+        o2.inSampleSize = sample;
+        return BitmapFactory.decodeFile(f.getPath(), o2);
+    }
+
+    private void deleteMine(java.io.File f) {
+        Sheet.confirm(this, th, T.t("Elimina dai miei sfondi"), T.t("L'immagine resta nella tua galleria: si toglie solo da qui."),
+                T.t("Elimina"), () -> {
+                    if (!f.delete()) toast(T.t("Impossibile eliminare"));
+                    thumbs.remove(f.getName());
+                    if (myGrid != null) ((BaseAdapter) myGrid.getAdapter()).notifyDataSetChanged();
+                });
+    }
+
+    private final java.util.Map<String, Bitmap> thumbs = new java.util.HashMap<>();
+
+    private class MyAdapter extends BaseAdapter {
+        private java.io.File[] files = myFiles();
+
+        @Override
+        public void notifyDataSetChanged() {
+            files = myFiles();
+            super.notifyDataSetChanged();
+        }
+
+        @Override public int getCount() { return files.length + 1; }
+        @Override public Object getItem(int i) { return i == 0 ? null : files[i - 1]; }
+        @Override public long getItemId(int i) { return i; }
+
+        @Override
+        public View getView(int pos, View convert, ViewGroup parent) {
+            if (pos == 0) {
+                TextView plus = new TextView(WallpaperActivity.this);
+                plus.setText("+");
+                plus.setTextColor(th.onTile);
+                plus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 44);
+                plus.setGravity(Gravity.CENTER);
+                return card(new ColorDrawable(Theme.alpha(th.onTile, th.light ? 0.07f : 0.1f)), plus,
+                        T.t("Carica un'immagine"), false, cardH, th.onTile);
+            }
+            java.io.File f = files[pos - 1];
+            Bitmap b = thumbs.get(f.getName());
+            if (b == null) {
+                b = decodeFile(f, cardH);
+                if (b != null) thumbs.put(f.getName(), b);
+            }
+            ImageView iv = new ImageView(WallpaperActivity.this);
+            iv.setScaleType(ImageView.ScaleType.CENTER_CROP);
+            if (b != null) iv.setImageBitmap(b);
+            boolean inUse = prefs.getBoolean("wall", false) && prefs.getInt("wallStyle", 0) == -1
+                    && f.getName().equals(prefs.getString("myWall", ""));
+            return card(null, iv, "", inUse, cardH, 0xFFFFFFFF);
+        }
+    }
+
+    /** Schermata per sistemare un'immagine sullo schermo (riempi o adatta, sposta, ingrandisci) e applicarla. */
+    private final class CropEditor {
+        private final java.io.File file;
+        private final android.app.Dialog dlg;
+        private CropView crop;
+        private int bgMode; // 0 automatico (colore dei bordi), 1 nero, 2 bianco
+        private int edge = 0xFF000000;
+
+        CropEditor(java.io.File file) {
+            this.file = file;
+            dlg = new android.app.Dialog(WallpaperActivity.this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        }
+
+        void show() {
+            final int[] sz = screen();
+            Bitmap b = decodeFile(file, Math.round(Math.max(sz[0], sz[1]) * 1.5f));
+            if (b == null) {
+                toast(T.t("Impossibile leggere l'immagine"));
+                return;
+            }
+            edge = CropView.edgeColor(b);
+            crop = new CropView(WallpaperActivity.this, b);
+            crop.setBackgroundFill(edge);
+
+            LinearLayout root = new LinearLayout(WallpaperActivity.this);
+            root.setOrientation(LinearLayout.VERTICAL);
+            root.setGravity(Gravity.CENTER_HORIZONTAL);
+            root.setBackgroundColor(0xFF000000);
+            root.setPadding(Math.round(24 * dp), Math.round(28 * dp), Math.round(24 * dp), Math.round(20 * dp));
+
+            TextView title = new TextView(WallpaperActivity.this);
+            title.setText(T.t("Adatta allo schermo"));
+            title.setTextColor(0xFFFFFFFF);
+            title.setTypeface(th.titleFace);
+            title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 20);
+            root.addView(title);
+
+            int cardH = Math.round(sz[1] * 0.52f), cardW = Math.round(cardH * sz[0] / (float) sz[1]);
+            FrameLayout frame = new FrameLayout(WallpaperActivity.this);
+            final float radius = 22 * dp;
+            frame.setOutlineProvider(new ViewOutlineProvider() {
+                @Override
+                public void getOutline(View v, Outline o) {
+                    o.setRoundRect(0, 0, v.getWidth(), v.getHeight(), radius);
+                }
+            });
+            frame.setClipToOutline(true);
+            frame.addView(crop, new FrameLayout.LayoutParams(cardW, cardH));
+            LinearLayout.LayoutParams fl = new LinearLayout.LayoutParams(cardW, cardH);
+            fl.topMargin = Math.round(14 * dp);
+            root.addView(frame, fl);
+
+            TextView hint = new TextView(WallpaperActivity.this);
+            hint.setText(T.t("Sposta con un dito, ingrandisci con due, doppio tocco per ricominciare"));
+            hint.setTextColor(0xFF9A9A9E);
+            hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            hint.setGravity(Gravity.CENTER);
+            hint.setPadding(0, Math.round(8 * dp), 0, Math.round(10 * dp));
+            root.addView(hint);
+
+            final TextView[] fitChips = new TextView[2];
+            LinearLayout fitRow = chipRow();
+            String[] fitNames = {T.t("Riempi"), T.t("Adatta")};
+            final TextView[] bgChips = new TextView[3];
+            LinearLayout bgRow = chipRow();
+            String[] bgNames = {T.t("Colore dei bordi"), T.t("Nero"), T.t("Bianco")};
+            for (int i = 0; i < 2; i++) {
+                final int k = i;
+                fitChips[i] = chip(fitNames[i], () -> {
+                    crop.setFill(k == 0);
+                    paint(fitChips, k);
+                    bgRow.setVisibility(k == 1 ? View.VISIBLE : View.GONE);
+                });
+                fitRow.addView(fitChips[i]);
+            }
+            for (int i = 0; i < 3; i++) {
+                final int k = i;
+                bgChips[i] = chip(bgNames[i], () -> {
+                    bgMode = k;
+                    crop.setBackgroundFill(k == 0 ? edge : k == 1 ? 0xFF000000 : 0xFFFFFFFF);
+                    paint(bgChips, k);
+                });
+                bgRow.addView(bgChips[i]);
+            }
+            paint(fitChips, 0);
+            paint(bgChips, 0);
+            bgRow.setVisibility(View.GONE);
+            root.addView(fitRow);
+            root.addView(bgRow);
+
+            View space = new View(WallpaperActivity.this);
+            root.addView(space, new LinearLayout.LayoutParams(1, 0, 1f));
+
+            TextView apply = new TextView(WallpaperActivity.this);
+            apply.setText(T.t("Applica sfondo"));
+            apply.setGravity(Gravity.CENTER);
+            apply.setTextColor(0xFF000000);
+            apply.setTypeface(th.titleFace);
+            apply.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+            android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+            g.setCornerRadius(26 * dp);
+            g.setColor(0xFFFFFFFF);
+            apply.setBackground(g);
+            apply.setOnClickListener(v -> askTarget(this::apply));
+            root.addView(apply, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, Math.round(52 * dp)));
+
+            TextView del = new TextView(WallpaperActivity.this);
+            del.setText(T.t("Elimina dai miei sfondi"));
+            del.setTextColor(0xFFBBBBBB);
+            del.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            del.setGravity(Gravity.CENTER);
+            del.setMinHeight(Math.round(44 * dp));
+            del.setOnClickListener(v -> {
+                dlg.dismiss();
+                deleteMine(file);
+            });
+            root.addView(del, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+
+            dlg.setContentView(root);
+            dlg.show();
+        }
+
+        private LinearLayout chipRow() {
+            LinearLayout r = new LinearLayout(WallpaperActivity.this);
+            r.setGravity(Gravity.CENTER);
+            r.setPadding(0, Math.round(4 * dp), 0, Math.round(4 * dp));
+            return r;
+        }
+
+        private TextView chip(String text, Runnable r) {
+            TextView t = new TextView(WallpaperActivity.this);
+            t.setText(text);
+            t.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+            t.setGravity(Gravity.CENTER);
+            t.setMinHeight(Math.round(36 * dp));
+            t.setPadding(Math.round(14 * dp), 0, Math.round(14 * dp), 0);
+            t.setOnClickListener(v -> r.run());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT);
+            lp.leftMargin = lp.rightMargin = Math.round(4 * dp);
+            t.setLayoutParams(lp);
+            return t;
+        }
+
+        private void paint(TextView[] chips, int sel) {
+            for (int i = 0; i < chips.length; i++) {
+                android.graphics.drawable.GradientDrawable g = new android.graphics.drawable.GradientDrawable();
+                g.setCornerRadius(18 * dp);
+                g.setColor(i == sel ? 0xFFFFFFFF : 0xFF2A2A2D);
+                chips[i].setBackground(g);
+                chips[i].setTextColor(i == sel ? 0xFF000000 : 0xFFFFFFFF);
+            }
+        }
+
+        private void apply(int which) {
+            final int[] sz = screen();
+            final Bitmap out = crop.render(sz[0], sz[1]);
+            final boolean home = (which & WallpaperManager.FLAG_SYSTEM) != 0;
+            busy = true;
+            toast(T.t("Applico lo sfondo…"));
+            exec.execute(() -> {
+                try {
+                    WallpaperManager.getInstance(WallpaperActivity.this).setBitmap(out, null, true, which);
+                    if (home) {
+                        Glass.save(WallpaperActivity.this, WallpaperGen.cover(out, sz[0] / 4, sz[1] / 4));
+                        prefs.edit().putInt("wallStyle", -1).putString("myWall", file.getName()).apply();
+                        ui.post(dlg::dismiss);
+                    }
+                    done(which);
+                } catch (Exception e) {
+                    fail();
+                }
+            });
         }
     }
 
