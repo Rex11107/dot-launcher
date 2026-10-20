@@ -43,7 +43,26 @@ final class CameraRing implements SharedPreferences.OnSharedPreferenceChangeList
     /** Avanzamento di un trasferimento: 0..1, -2 se senza percentuale, -1 se non c'è. */
     private static volatile float transfer = -1f;
     /** Timer: istante di fine (ms dall'epoca) e durata totale stimata, 0 se non c'è. */
-    private static volatile long timerEnd, timerTotal;
+    private static volatile long timerEnd, timerTotal, lastTimerSeen;
+    /** Ultimo tempo letto per ogni notifica dell'orologio: {millisecondi che restano, quando}. */
+    private static final java.util.Map<String, long[]> seenTimes = new java.util.HashMap<>();
+
+    /** App dell'orologio (di sistema o del produttore). */
+    private static boolean isClock(String pkg) {
+        String p = pkg == null ? "" : pkg.toLowerCase(java.util.Locale.ROOT);
+        return p.contains("deskclock") || p.endsWith(".clock") || p.contains("clock") && !p.contains("dotlauncher");
+    }
+
+    private static final java.util.regex.Pattern TIME = java.util.regex.Pattern.compile("(?:(\\d{1,2}):)?(\\d{1,2}):(\\d{2})");
+
+    /** Millisecondi da un testo come "04:12" o "1:02:30"; -1 se non c'è un tempo. */
+    private static long timeLeft(CharSequence cs) {
+        if (cs == null) return -1;
+        java.util.regex.Matcher m = TIME.matcher(cs);
+        if (!m.find()) return -1;
+        long h = m.group(1) == null ? 0 : Long.parseLong(m.group(1));
+        return ((h * 60 + Long.parseLong(m.group(2))) * 60 + Long.parseLong(m.group(3))) * 1000L;
+    }
     private static CameraRing instance;
 
     /** Dalle notifiche attive (chiamato dal servizio delle notifiche a ogni cambiamento). */
@@ -60,12 +79,29 @@ final class CameraRing implements SharedPreferences.OnSharedPreferenceChangeList
                 boolean ind = no.extras.getBoolean(Notification.EXTRA_PROGRESS_INDETERMINATE, false);
                 if (max > 0 && tr < 0) tr = Math.max(0f, Math.min(1f, prog / (float) max));
                 else if (ind && tr == -1f) tr = -2f;
-                // timer: notifica con conto alla rovescia (cronometro all'indietro) verso un istante futuro
-                if (no.extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN, false) && no.when > now
-                        && (tEnd == 0 || no.when < tEnd)) tEnd = no.when;
+                // timer: notifica con cronometro che conta verso un istante futuro (conto alla rovescia)…
+                long end = 0;
+                boolean chrono = no.extras.getBoolean(Notification.EXTRA_CHRONOMETER_COUNT_DOWN, false)
+                        || no.extras.getBoolean(Notification.EXTRA_SHOW_CHRONOMETER, false);
+                if (chrono && no.when > now) end = no.when;
+                // …oppure, nell'app Orologio, un testo con il tempo che resta ("04:12", "1:02:30")
+                if (end == 0 && isClock(n.getPackageName())) {
+                    long left = timeLeft(no.extras.getCharSequence(Notification.EXTRA_TITLE));
+                    if (left < 0) left = timeLeft(no.extras.getCharSequence(Notification.EXTRA_TEXT));
+                    // vale solo se scende davvero col passare del tempo: "prossima sveglia 07:30" resta fermo
+                    if (seenTimes.size() > 30) seenTimes.clear();
+                    long[] prev = seenTimes.get(n.getKey());
+                    if (left > 0) {
+                        if (prev != null && left < prev[0] && Math.abs((prev[0] - left) - (now - prev[1])) < 2500) end = now + left;
+                        if (prev == null || left != prev[0]) seenTimes.put(n.getKey(), new long[]{left, now});
+                    }
+                }
+                if (end > 0 && (tEnd == 0 || end < tEnd)) tEnd = end;
             }
         }
         transfer = tr;
+        if (tEnd == 0 && timerEnd > now && now - lastTimerSeen < 3000) tEnd = timerEnd; // tra un aggiornamento e l'altro
+        if (tEnd != 0) lastTimerSeen = now;
         if (tEnd == 0) {
             timerEnd = 0;
             timerTotal = 0;
@@ -199,7 +235,7 @@ final class CameraRing implements SharedPreferences.OnSharedPreferenceChangeList
         private final float[] pos = new float[2];
         private final Theme th;
         private final Typeface digits;
-        private boolean barsHidden, haveCutout, seenBars;
+        private boolean barsHidden, haveCutout, seenBars, legacyFull;
 
         RingView(Context c) {
             super(c);
@@ -210,6 +246,25 @@ final class CameraRing implements SharedPreferences.OnSharedPreferenceChangeList
             } catch (Exception ignored) {
             }
             digits = t != null ? t : Typeface.MONOSPACE;
+            // segnale in più per lo schermo intero: alcune versioni di Android lo comunicano solo così
+            //noinspection deprecation
+            setOnSystemUiVisibilityChangeListener(v -> {
+                legacyFull = (v & View.SYSTEM_UI_FLAG_FULLSCREEN) != 0;
+                invalidate();
+            });
+        }
+
+        @Override
+        protected void onConfigurationChanged(android.content.res.Configuration c) {
+            super.onConfigurationChanged(c);
+            requestApplyInsets();
+            invalidate();
+        }
+
+        /** In orizzontale (video, giochi) o a schermo intero l'anello non si mostra. */
+        private boolean hiddenNow() {
+            if (getResources().getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE) return true;
+            return barsHidden || legacyFull;
         }
 
         @Override
@@ -279,7 +334,10 @@ final class CameraRing implements SharedPreferences.OnSharedPreferenceChangeList
 
         @Override
         protected void onDraw(Canvas c) {
-            if (barsHidden) return;
+            if (hiddenNow()) {
+                postInvalidateDelayed(1000); // si ricontrolla: quando si torna in verticale ricompare
+                return;
+            }
             int mode = mode();
             if (mode == 0) {
                 ui.post(CameraRing.this::refresh); // finito (timer scaduto): la finestra si toglie

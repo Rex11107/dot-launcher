@@ -22,7 +22,7 @@ import java.util.Set;
 final class Backup {
     // dati temporanei che non ha senso copiare
     private static final List<String> SKIP = Arrays.asList(
-            "wjson", "wt", "blurWallId", "askedLoc", "wcity",
+            "wjson", "wt", "blurWallId", "askedLoc", "wcity", "layoutBeforeFit", "pagesBeforeFit",
             "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday", "pendPos", "newsCache", "newsTime",
             "pendIcon", "customIcons", "font", "focusUntil", "focusDndSet", "onboardPage", "crashAt", "crashNew");
 

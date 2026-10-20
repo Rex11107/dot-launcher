@@ -554,6 +554,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onConfigurationChanged(Configuration c) {
         super.onConfigurationChanged(c);
+        // un'app in primo piano ha girato lo schermo: la home resta verticale, non si ricostruisce
+        // (ricostruirla in orizzontale spostava i widget ognuno in una pagina)
+        if (c.orientation == Configuration.ORIENTATION_LANDSCAPE) return;
         // dimensioni dello schermo, densità o grandezza del testo cambiate: tutte le misure vanno ricalcolate
         boolean sizes = c.densityDpi != cfgDpi || c.fontScale != cfgFont || c.screenWidthDp != cfgWidth;
         if (sizes || "auto".equals(prefs.getString("mode", "dark"))) recreate();
@@ -2085,10 +2088,26 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     /** Dopo la prima misura: sposta gli elementi che non entrano nello schermo. */
+    private int fitTries;
+
+    /**
+     * All'avvio, i widget che non entrano nella griglia vengono spostati. Solo con la home misurata in verticale:
+     * se il telefono è in orizzontale (rientrando da un video, per esempio) la griglia sembra piccolissima e
+     * prima tutti i widget finivano ognuno in una pagina, salvati così. Prima di spostare qualcosa si tiene una
+     * copia della disposizione, che si può ripristinare da Impostazioni › Sistema.
+     */
     private void fitToScreen() {
         if (fitted || grids.isEmpty()) return;
+        int rw = root.getWidth(), rh = root.getHeight();
+        boolean portrait = getResources().getConfiguration().orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        if (rw == 0 || rh == 0 || rw > rh || !portrait || grids.get(0).getRows() < 4) {
+            if (++fitTries < 20) root.postDelayed(this::fitToScreen, 500); // si riprova quando torna verticale
+            return;
+        }
         fitted = true;
         int rows = grids.get(0).getRows();
+        String before = Item.listToJson(items);
+        int pagesBefore = pages;
         boolean changed = false;
         for (Item it : new ArrayList<>(items)) {
             if (it.row + it.h <= rows && it.col + it.w <= TileGrid.COLS) continue;
@@ -2101,9 +2120,22 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             changed = true;
         }
         if (changed) {
+            prefs.edit().putString("layoutBeforeFit", before).putInt("pagesBeforeFit", pagesBefore).apply();
             saveLayout();
             buildPages();
         }
+    }
+
+    /** Rimette la disposizione com'era prima dell'ultimo adattamento automatico. */
+    private void restoreBeforeFit() {
+        String l = prefs.getString("layoutBeforeFit", "");
+        if (l.isEmpty()) return;
+        Sheet.confirm(this, th, T.t("Ripristina la disposizione"),
+                T.t("La home torna com'era prima dell'ultimo spostamento automatico dei widget."), T.t("Ripristina"), () -> {
+                    prefs.edit().putString("layout", l).putInt("pages", prefs.getInt("pagesBeforeFit", pages))
+                            .remove("layoutBeforeFit").remove("pagesBeforeFit").apply();
+                    RestartActivity.restart(this);
+                });
     }
 
     private View createView(Item it) {
@@ -7248,6 +7280,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
         st.row(SectionIcons.HOME, T.t("Launcher predefinito"), T.t("Scegli Dot Launcher come schermata Home"),
                 this::requestDefaultLauncher);
+        if (!prefs.getString("layoutBeforeFit", "").isEmpty()) {
+            st.row(SectionIcons.PAGES, T.t("Ripristina la disposizione"),
+                    T.t("Com'era prima che la home spostasse da sola i widget"), this::restoreBeforeFit);
+        }
         st.row(SectionIcons.STAR, T.t("Configurazione guidata"), T.t("Rivedi lingua, stile, icone e permessi"), () -> {
             closeSettings();
             prefs.edit().putBoolean("onboarded", false).apply();
