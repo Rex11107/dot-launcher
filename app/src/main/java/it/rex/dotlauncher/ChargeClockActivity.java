@@ -65,23 +65,32 @@ public class ChargeClockActivity extends Activity {
         lp.screenBrightness = 0.25f; // luce bassa: è un orologio da comodino
         getWindow().setAttributes(lp);
         if (Build.VERSION.SDK_INT >= 27) setShowWhenLocked(true);
+        SharedPreferences prefs = getSharedPreferences("dot", MODE_PRIVATE);
+        face = new Face(this, Theme.build(this, prefs), prefs.getBoolean("h24", DateFormat.is24HourFormat(this)));
+        face.setOnClickListener(v -> finish());
+        face.setContentDescription(T.t("Orologio in carica: tocca per chiudere"));
+        setContentView(face);
+        hideBars();
+    }
+
+    /**
+     * Schermo intero: barre di sistema nascoste (riappaiono scorrendo dal bordo). Va fatto dopo setContentView:
+     * prima la finestra non esiste ancora e su alcuni telefoni (Android 13, Honor) l'app si chiudeva.
+     */
+    private void hideBars() {
+        View decor = getWindow().getDecorView();
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
-            android.view.WindowInsetsController c = getWindow().getInsetsController();
+            android.view.WindowInsetsController c = decor.getWindowInsetsController();
             if (c != null) {
                 c.hide(android.view.WindowInsets.Type.systemBars());
                 c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
         } else {
             //noinspection deprecation
-            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         }
-        SharedPreferences prefs = getSharedPreferences("dot", MODE_PRIVATE);
-        face = new Face(this, Theme.build(this, prefs), prefs.getBoolean("h24", DateFormat.is24HourFormat(this)));
-        face.setOnClickListener(v -> finish());
-        face.setContentDescription(T.t("Orologio in carica: tocca per chiudere"));
-        setContentView(face);
     }
 
     @Override
