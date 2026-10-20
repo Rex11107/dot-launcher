@@ -64,6 +64,7 @@ final class SensorHub implements SensorEventListener {
                 Sensor a = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
                 Sensor m = sm.getDefaultSensor(Sensor.TYPE_MAGNETIC_FIELD);
                 if (a != null && m != null) {
+                    // "&" e non "&&": vanno registrati sempre entrambi i sensori, anche se il primo fallisce
                     compassOn = sm.registerListener(this, a, SensorManager.SENSOR_DELAY_UI)
                             & sm.registerListener(this, m, SensorManager.SENSOR_DELAY_UI);
                 }

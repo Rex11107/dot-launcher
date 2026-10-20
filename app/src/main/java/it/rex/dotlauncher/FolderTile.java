@@ -268,7 +268,7 @@ class FolderTile extends View {
             }
             for (int i = 0; i < Math.min(cap, a.size()); i++) {
                 float cx = x0 + (i % cols) * cell + cell / 2f;
-                float cy = y0 + (i / cols) * cell + cell / 2f;
+                float cy = y0 + (i / cols) * cell + cell / 2f; // i / cols intero: è la riga
                 if (more && i == cap - 1 && a.size() > cap) {
                     int fg = item.tone == 1 ? th.onTileAlt : item.tone == 2 ? th.onAccent : th.onTile;
                     Draw.big(cv, th, "+" + (a.size() - cap + 1), cx, cy, icon * 0.32f, icon, fg, "+",
