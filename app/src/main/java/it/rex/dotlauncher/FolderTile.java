@@ -194,6 +194,8 @@ class FolderTile extends View {
         cv.restore();
     }
 
+    private final java.util.Set<String> seenPkgs = new java.util.HashSet<>(); // riusato a ogni disegno
+
     @Override
     protected void onDraw(Canvas cv) {
         float W = getWidth(), H = getHeight(), m = Math.min(W, H);
@@ -239,16 +241,35 @@ class FolderTile extends View {
             Draw.big(cv, th, String.valueOf(a.size()), ccx, ccy, cs * 0.9f, cs * 1.6f,
                     item.tone == 2 ? th.accent : th.onAccent, "", fg, 0, p, true);
             p.setColor(0xFFFFFFFF);
-        } else if (item.w >= 2 && !(item.w == 2 && item.h == 2)) {
-            // cartella larga: una griglia di app tutte toccabili (fino a 16 con 4 colonne)
-            float[] g = grid(W, H);
-            int cols = (int) g[0], rows = (int) g[1], cap = cols * rows;
-            float cellS = g[2], x0 = g[3], y0 = g[4];
-            float icon = cellS * 0.72f;
+        } else {
+            // cartella larga: una griglia di app tutte toccabili (fino a 16 con 4 colonne);
+            // cartella normale: 4 icone in un quadrato 2×2. L'ultima casella mostra "+N" se non ci stanno tutte.
+            int cols, cap;
+            float cell, x0, y0, icon;
+            boolean more;
+            if (item.w >= 2 && !(item.w == 2 && item.h == 2)) {
+                float[] g = grid(W, H);
+                cols = (int) g[0];
+                cap = cols * (int) g[1];
+                cell = g[2];
+                x0 = g[3];
+                y0 = g[4];
+                icon = cell * 0.72f;
+                more = true;
+            } else {
+                float area = circle ? m * 0.62f : m * 0.84f;
+                cols = 2;
+                cap = 4;
+                cell = area / 2f;
+                x0 = (W - area) / 2f;
+                y0 = (H - area) / 2f;
+                icon = cell * (circle ? 0.86f : 0.82f);
+                more = !circle;
+            }
             for (int i = 0; i < Math.min(cap, a.size()); i++) {
-                float cx = x0 + (i % cols) * cellS + cellS / 2f;
-                float cy = y0 + (i / cols) * cellS + cellS / 2f;
-                if (i == cap - 1 && a.size() > cap) {
+                float cx = x0 + (i % cols) * cell + cell / 2f;
+                float cy = y0 + (i / cols) * cell + cell / 2f; // i / cols intero: è la riga
+                if (more && i == cap - 1 && a.size() > cap) {
                     int fg = item.tone == 1 ? th.onTileAlt : item.tone == 2 ? th.onAccent : th.onTile;
                     Draw.big(cv, th, "+" + (a.size() - cap + 1), cx, cy, icon * 0.32f, icon, fg, "+",
                             item.tone == 2 ? th.onAccent : th.accent, 0, p, true);
@@ -259,30 +280,12 @@ class FolderTile extends View {
                 rf.set(cx - icon / 2f, cy - icon / 2f, cx + icon / 2f, cy + icon / 2f);
                 cv.drawBitmap(b, null, rf, p);
             }
-        } else {
-        float area = circle ? m * 0.62f : m * 0.84f;
-        float cell = area / 2f;
-        float x0 = (W - area) / 2f, y0 = (H - area) / 2f;
-        float icon = cell * (circle ? 0.86f : 0.82f);
-        for (int i = 0; i < Math.min(4, a.size()); i++) {
-            float cx = x0 + (i % 2) * cell + cell / 2f;
-            float cy = y0 + (i / 2) * cell + cell / 2f;
-            if (!circle && i == 3 && a.size() > 4) {
-                int fg = item.tone == 1 ? th.onTileAlt : item.tone == 2 ? th.onAccent : th.onTile;
-                Draw.big(cv, th, "+" + (a.size() - 3), cx, cy, icon * 0.32f, icon, fg, "+",
-                        item.tone == 2 ? th.onAccent : th.accent, 0, p, true);
-                continue;
-            }
-            Bitmap b = src.iconFor(a.get(i), Math.round(icon));
-            if (b == null) continue;
-            rf.set(cx - icon / 2f, cy - icon / 2f, cx + icon / 2f, cy + icon / 2f);
-            cv.drawBitmap(b, null, rf, p);
-        }
         }
         // un pallino sulla cartella se almeno un'app dentro ha notifiche
         // le notifiche sono per pacchetto: due icone della stessa app non si contano due volte
         int total = 0;
-        java.util.Set<String> seen = new java.util.HashSet<>();
+        java.util.Set<String> seen = seenPkgs;
+        seen.clear();
         for (String k : a) {
             int slash = k == null ? -1 : k.indexOf('/');
             if (seen.add(slash > 0 ? k.substring(0, slash) : String.valueOf(k))) total += Math.max(0, src.badge(k));

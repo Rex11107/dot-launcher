@@ -41,6 +41,7 @@ class TileGrid extends ViewGroup {
     private int pMode = PREVIEW_NONE, pCol, pRow, pW, pH;
     private int accent = Theme.RED, neutral = 0x66FFFFFF;
     private final Paint pp = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private DashPathEffect dashBad, dashGuide; // creati una volta, non a ogni fotogramma del trascinamento
     private final RectF pr = new RectF();
     private final float dp;
 
@@ -179,7 +180,8 @@ class TileGrid extends ViewGroup {
         pp.setStyle(Paint.Style.STROKE);
         pp.setStrokeWidth(2 * dp);
         pp.setColor(col);
-        pp.setPathEffect(pMode == PREVIEW_BAD ? new DashPathEffect(new float[]{6 * dp, 6 * dp}, 0) : null);
+        if (dashBad == null) dashBad = new DashPathEffect(new float[]{6 * dp, 6 * dp}, 0);
+        pp.setPathEffect(pMode == PREVIEW_BAD ? dashBad : null);
         pr.inset(dp, dp);
         cv.drawRoundRect(pr, rad, rad, pp);
     }
@@ -203,7 +205,8 @@ class TileGrid extends ViewGroup {
         }
         if (pMode == PREVIEW_BAD) return;
         pp.setColor(Theme.alpha(accent, 0.45f));
-        pp.setPathEffect(new DashPathEffect(new float[]{4 * dp, 5 * dp}, 0));
+        if (dashGuide == null) dashGuide = new DashPathEffect(new float[]{4 * dp, 5 * dp}, 0);
+        pp.setPathEffect(dashGuide);
         float left = padH * 0.5f, right = getWidth() - padH * 0.5f;
         float top = padTop * 0.5f, bottom = padTop + rows * (cell + gap) - gap * 0.5f;
         cv.drawLine(left, y, right, y, pp);

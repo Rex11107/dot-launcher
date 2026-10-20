@@ -3,7 +3,6 @@ package it.rex.dotlauncher;
 import android.graphics.Canvas;
 import android.graphics.Paint;
 
-import java.util.Locale;
 
 /** Funzioni di disegno condivise: testo a puntini, numeri, etichette, icone a puntini. */
 final class Draw {

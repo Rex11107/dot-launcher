@@ -3,7 +3,6 @@ package it.rex.dotlauncher;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.os.Build;
 
 /**
  * Riceve l'ora della sveglia (alba o suono) e la consegna al servizio che la fa suonare.
@@ -19,8 +18,7 @@ public class DotAlarmReceiver extends BroadcastReceiver {
             Intent s = new Intent(c, DotAlarmService.class).setAction(DotAlarmService.ACTION_START)
                     .putExtras(intent);
             try {
-                if (Build.VERSION.SDK_INT >= 26) c.startForegroundService(s);
-                else c.startService(s);
+                c.startForegroundService(s);
             } catch (Exception e) {
                 // ultima risorsa: almeno la schermata della sveglia
                 try {

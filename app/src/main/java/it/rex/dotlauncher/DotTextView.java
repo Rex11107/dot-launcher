@@ -57,11 +57,6 @@ public class DotTextView extends View {
         requestLayout();
     }
 
-    public void setCenter(boolean c) {
-        center = c;
-        invalidate();
-    }
-
     public void setColor(int c) {
         color = c;
         invalidate();

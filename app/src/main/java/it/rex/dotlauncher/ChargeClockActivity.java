@@ -65,23 +65,32 @@ public class ChargeClockActivity extends Activity {
         lp.screenBrightness = 0.25f; // luce bassa: è un orologio da comodino
         getWindow().setAttributes(lp);
         if (Build.VERSION.SDK_INT >= 27) setShowWhenLocked(true);
+        SharedPreferences prefs = getSharedPreferences("dot", MODE_PRIVATE);
+        face = new Face(this, Theme.build(this, prefs), prefs.getBoolean("h24", DateFormat.is24HourFormat(this)));
+        face.setOnClickListener(v -> finish());
+        face.setContentDescription(T.t("Orologio in carica: tocca per chiudere"));
+        setContentView(face);
+        hideBars();
+    }
+
+    /**
+     * Schermo intero: barre di sistema nascoste (riappaiono scorrendo dal bordo). Va fatto dopo setContentView:
+     * prima la finestra non esiste ancora e su alcuni telefoni (Android 13, Honor) l'app si chiudeva.
+     */
+    private void hideBars() {
+        View decor = getWindow().getDecorView();
         if (Build.VERSION.SDK_INT >= 30) {
             getWindow().setDecorFitsSystemWindows(false);
-            android.view.WindowInsetsController c = getWindow().getInsetsController();
+            android.view.WindowInsetsController c = decor.getWindowInsetsController();
             if (c != null) {
                 c.hide(android.view.WindowInsets.Type.systemBars());
                 c.setSystemBarsBehavior(android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE);
             }
         } else {
             //noinspection deprecation
-            getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
+            decor.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN
                     | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION | View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY);
         }
-        SharedPreferences prefs = getSharedPreferences("dot", MODE_PRIVATE);
-        face = new Face(this, Theme.build(this, prefs), prefs.getBoolean("h24", DateFormat.is24HourFormat(this)));
-        face.setOnClickListener(v -> finish());
-        face.setContentDescription(T.t("Orologio in carica: tocca per chiudere"));
-        setContentView(face);
     }
 
     @Override
@@ -108,14 +117,17 @@ public class ChargeClockActivity extends Activity {
     /** Il quadrante: ora a sinistra, data, meteo e batteria a destra (in verticale uno sotto l'altro). */
     static final class Face extends View {
         private final Theme th;
-        private final boolean h24;
         private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG);
+        // formati creati una volta: il quadrante si ridisegna ogni minuto per ore
+        private final SimpleDateFormat timeFmt, dateFmt;
+        private final Date now = new Date();
         int shift;
 
         Face(Context c, Theme th, boolean h24) {
             super(c);
             this.th = th;
-            this.h24 = h24;
+            timeFmt = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc());
+            dateFmt = new SimpleDateFormat("EEEE d MMMM", T.loc());
             setBackgroundColor(0xFF000000);
         }
 
@@ -126,9 +138,9 @@ public class ChargeClockActivity extends Activity {
             float dx = (float) Math.sin(shift * 1.7) * W * 0.02f, dy = (float) Math.cos(shift * 1.3) * H * 0.02f;
             cv.save();
             cv.translate(dx, dy);
-            Date now = new Date();
-            String time = new SimpleDateFormat(h24 ? "HH:mm" : "h:mm", T.loc()).format(now);
-            String date = new SimpleDateFormat("EEEE d MMMM", T.loc()).format(now);
+            now.setTime(System.currentTimeMillis());
+            String time = timeFmt.format(now);
+            String date = dateFmt.format(now);
             int fg = 0xFFE6E6E6, sub = 0xFF8A8A8A;
             int acc = 0xFF000000 | th.accent;
             boolean land = W > H;

@@ -22,7 +22,6 @@ import java.text.Collator;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Locale;
 import java.util.Set;
 
 /**
@@ -201,7 +200,7 @@ class AppSections extends LinearLayout {
         });
         if (visible) {
             pager.setAlpha(0.55f);
-            pager.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
+            pager.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).withLayer().start();
         }
     }
 
@@ -450,7 +449,7 @@ class AppSections extends LinearLayout {
                     current = page;
                     pager.setPageNow(page);
                     updateTabs();
-                    pager.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).start();
+                    pager.animate().alpha(1f).setDuration(Motion.FADE).setInterpolator(Motion.STANDARD).withLayer().start();
                 } else pager.snapTo(page);
             });
             t.setContentDescription(i < sectionCount() ? T.t(model.list.get(i).name) : T.t("Tutte le app"));

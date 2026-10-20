@@ -138,8 +138,7 @@ public class DotAlarmService extends Service {
             active = null;
             if (wake != null && wake.isHeld()) wake.release();
             wake = null;
-            if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE);
-            else stopForeground(true);
+            stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return;
         }
@@ -173,7 +172,7 @@ public class DotAlarmService extends Service {
 
     private void startForegroundNow() {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
-        if (Build.VERSION.SDK_INT >= 26 && nm != null && nm.getNotificationChannel(CHANNEL) == null) {
+        if (nm != null && nm.getNotificationChannel(CHANNEL) == null) {
             NotificationChannel ch = new NotificationChannel(CHANNEL, T.t("Dot Sveglia"), NotificationManager.IMPORTANCE_HIGH);
             ch.setSound(null, null);       // il suono lo gestisce il servizio
             ch.enableVibration(false);
@@ -188,8 +187,7 @@ public class DotAlarmService extends Service {
                 new Intent(this, DotAlarmService.class).setAction(ACTION_STOP), fl);
         PendingIntent snz = PendingIntent.getService(this, 12,
                 new Intent(this, DotAlarmService.class).setAction(ACTION_SNOOZE), fl);
-        Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new Notification.Builder(this, CHANNEL)
-                : new Notification.Builder(this);
+        Notification.Builder b = new Notification.Builder(this, CHANNEL);
         b.setSmallIcon(android.R.drawable.ic_lock_idle_alarm)
                 .setContentTitle(T.t("Dot Sveglia"))
                 .setContentText(T.t("Sveglia in corso"))
@@ -316,8 +314,7 @@ public class DotAlarmService extends Service {
             vibrator = (Vibrator) getSystemService(VIBRATOR_SERVICE);
             if (vibrator != null) {
                 long[] pat = {0, 600, 600};
-                if (Build.VERSION.SDK_INT >= 26) vibrator.vibrate(VibrationEffect.createWaveform(pat, 0));
-                else vibrator.vibrate(pat, 0);
+                vibrator.vibrate(VibrationEffect.createWaveform(pat, 0));
             }
         }
         h.postDelayed(this::stopAlarm, MAX_RING_MS);
@@ -372,8 +369,7 @@ public class DotAlarmService extends Service {
         }
         if (wake != null && wake.isHeld()) wake.release();
         wake = null;
-        if (Build.VERSION.SDK_INT >= 24) stopForeground(STOP_FOREGROUND_REMOVE);
-        else stopForeground(true);
+        stopForeground(STOP_FOREGROUND_REMOVE);
         stopSelf();
     }
 

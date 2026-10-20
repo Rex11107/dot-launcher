@@ -49,6 +49,12 @@ final class StepsPopup {
         return nf.format(m / 1000) + " km";
     }
 
+    /** La home viene distrutta (ricreata o chiusa): non si tiene in memoria il riquadro della vecchia. */
+    static void release() {
+        card = null;
+        backdrop = null;
+    }
+
     static boolean dismiss() {
         if (card == null) return false;
         if (!card.isAttachedToWindow()) {

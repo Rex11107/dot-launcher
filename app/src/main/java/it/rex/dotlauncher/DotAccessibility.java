@@ -6,6 +6,8 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.os.Handler;
 import android.os.Looper;
+import android.accessibilityservice.AccessibilityServiceInfo;
+import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
 import java.util.HashMap;
@@ -18,6 +20,7 @@ import java.util.concurrent.Executors;
  * (bloccare lo schermo, screenshot, app recenti, menu di spegnimento) e, solo se l'utente attiva il
  * "blocco rigido", per riportare alla home quando si apre un'app in pausa (focus o limite raggiunto).
  * Legge solo il nome del pacchetto dell'app in primo piano, mai il contenuto dello schermo.
+ * Se l'utente accende la barra del volume di Dot, riceve anche i tasti (solo quelli del volume vengono usati).
  */
 public class DotAccessibility extends AccessibilityService {
     private static DotAccessibility instance;
@@ -27,6 +30,7 @@ public class DotAccessibility extends AccessibilityService {
     private final Map<String, long[]> limitCache = new HashMap<>();
     private String lastPkg = "";
     private long lastBlock;
+    private VolumePanel volume;
 
     /** Segreto casuale del processo: la home accetta "blocked" solo da qui, non da altre app. */
     static final long TOKEN = new java.security.SecureRandom().nextLong();
@@ -45,6 +49,37 @@ public class DotAccessibility extends AccessibilityService {
     protected void onServiceConnected() {
         super.onServiceConnected();
         instance = this;
+        applyKeyFilter();
+    }
+
+    /** I tasti arrivano al servizio solo con la barra del volume accesa: altrimenti nessun filtro. */
+    private void applyKeyFilter() {
+        try {
+            AccessibilityServiceInfo info = getServiceInfo();
+            if (info == null) return;
+            boolean on = VolumePanel.enabled(getSharedPreferences("dot", Context.MODE_PRIVATE));
+            if (on) info.flags |= AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+            else info.flags &= ~AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS;
+            setServiceInfo(info);
+            if (!on && volume != null) volume.hide();
+        } catch (Exception ignored) {
+        }
+    }
+
+    /** Da chiamare quando si accende o spegne la barra del volume. */
+    static void volumeChanged() {
+        DotAccessibility s = instance;
+        if (s != null) s.ui.post(s::applyKeyFilter);
+    }
+
+    @Override
+    protected boolean onKeyEvent(KeyEvent event) {
+        try {
+            if (volume == null) volume = new VolumePanel(this);
+            return volume.onKey(event);
+        } catch (Exception e) {
+            return false; // in caso di problemi decide il sistema
+        }
     }
 
     @Override
@@ -56,6 +91,7 @@ public class DotAccessibility extends AccessibilityService {
     @Override
     public void onDestroy() {
         instance = null;
+        if (volume != null) volume.hide();
         exec.shutdownNow();
         super.onDestroy();
     }

@@ -102,6 +102,20 @@ jobs:
           for (sev, iid, cat), n in sorted(by_id.items(), key=lambda x: (order.get(x[0][0], 9), -x[1])):
               out.write(f"| {sev} | {iid} | {cat} | {n} |\n")
           out.write("\nIl rapporto completo è nell'artefatto **lint-report**.\n")
+          # elenco compatto per le note della build di prova (leggibile anche senza scaricare artefatti)
+          with open("lint.md", "w") as md:
+              md.write("### Controllo del codice (Android Lint)\n\n")
+              md.write(" · ".join(f"**{n}** {s}" for s, n in by_sev.most_common()) or "Nessun problema")
+              md.write("\n\n<details><summary>Dettagli</summary>\n\n")
+              for i in sorted(issues, key=lambda i: (order.get(i.get("severity"), 9), i.get("id"))):
+                  if i.get("severity") not in ("Fatal", "Error", "Warning"):
+                      continue
+                  loc = i.find("location")
+                  f = loc.get("file", "").split("/app/", 1)[-1] if loc is not None else ""
+                  line = loc.get("line", "") if loc is not None else ""
+                  msg = i.get("message", "").replace("\n", " ").replace("|", "/")[:220]
+                  md.write(f"- {i.get('severity')} `{i.get('id')}` {f}:{line} — {msg}\n")
+              md.write("\n</details>\n")
           # gli errori veri diventano annotazioni visibili nella pagina della build
           shown = 0
           for i in issues:
@@ -113,6 +127,78 @@ jobs:
                   print(f"::warning file=app/{f},line={line},title=Lint {i.get('id')}::{msg}")
                   shown += 1
           EOF
+
+      # Analisi statica in più (PMD, codice duplicato, SpotBugs): solo per le build di prova, non blocca mai nulla
+      - name: Analisi statica
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        run: |
+          set +e
+          cd "$RUNNER_TEMP"
+          curl -sSLf -o pmd.zip https://github.com/pmd/pmd/releases/download/pmd_releases%2F7.7.0/pmd-dist-7.7.0-bin.zip && unzip -q pmd.zip
+          curl -sSLf -o sb.tgz https://repo1.maven.org/maven2/com/github/spotbugs/spotbugs/4.8.6/spotbugs-4.8.6.tgz && tar xzf sb.tgz
+          cat > rules.xml <<'XML'
+          <?xml version="1.0"?>
+          <ruleset name="dot" xmlns="http://pmd.sourceforge.net/ruleset/2.0.0"
+              xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+              xsi:schemaLocation="http://pmd.sourceforge.net/ruleset/2.0.0 https://pmd.sourceforge.io/ruleset_2_0_0.xsd">
+            <description>Controlli utili per Dot Launcher</description>
+            <rule ref="category/java/bestpractices.xml/UnusedPrivateField"/>
+            <rule ref="category/java/bestpractices.xml/UnusedPrivateMethod"/>
+            <rule ref="category/java/bestpractices.xml/UnusedLocalVariable"/>
+            <rule ref="category/java/bestpractices.xml/UnusedAssignment"/>
+            <rule ref="category/java/bestpractices.xml/UnusedFormalParameter"/>
+            <rule ref="category/java/codestyle.xml/UnnecessaryImport"/>
+            <rule ref="category/java/errorprone.xml/CompareObjectsWithEquals"/>
+            <rule ref="category/java/errorprone.xml/EqualsNull"/>
+            <rule ref="category/java/errorprone.xml/BrokenNullCheck"/>
+            <rule ref="category/java/errorprone.xml/MisplacedNullCheck"/>
+            <rule ref="category/java/errorprone.xml/ImplicitSwitchFallThrough"/>
+            <rule ref="category/java/errorprone.xml/IdempotentOperations"/>
+            <rule ref="category/java/errorprone.xml/JumbledIncrementer"/>
+            <rule ref="category/java/errorprone.xml/UselessOperationOnImmutable"/>
+            <rule ref="category/java/errorprone.xml/AvoidBranchingStatementAsLastInLoop"/>
+            <rule ref="category/java/errorprone.xml/ReturnFromFinallyBlock"/>
+            <rule ref="category/java/errorprone.xml/CloseResource"/>
+            <rule ref="category/java/design.xml/SimplifyBooleanReturns"/>
+            <rule ref="category/java/design.xml/CollapsibleIfStatements"/>
+            <rule ref="category/java/design.xml/SimplifiedTernary"/>
+            <rule ref="category/java/multithreading.xml/DoubleCheckedLocking"/>
+          </ruleset>
+          XML
+          src="$GITHUB_WORKSPACE/app/src/main/java"
+          PMD=$(ls -d pmd-bin-*)/bin/pmd
+          {
+            echo "### PMD"; echo; echo '<details><summary>Dettagli</summary>'; echo; echo '```'
+            $PMD check -d "$src" -R rules.xml -f text --no-progress --no-cache 2>/dev/null | sed "s#$src/##" | head -400
+            echo '```'; echo '</details>'; echo
+            echo "### Codice duplicato (CPD, almeno 100 token)"; echo; echo '<details><summary>Dettagli</summary>'; echo; echo '```'
+            $PMD cpd --minimum-tokens 100 -d "$src" --language java -f text 2>/dev/null | sed "s#$src/##" | grep -E "^Found|^Starting at" | head -200
+            echo '```'; echo '</details>'; echo
+            echo "### SpotBugs"; echo; echo '<details><summary>Dettagli</summary>'; echo; echo '```'
+            cls=$(find "$GITHUB_WORKSPACE/app/build/intermediates" -type d -path "*javac/release*classes" | head -1)
+            jar="$ANDROID_HOME/platforms/android-34/android.jar"
+            if [ -z "$cls" ]; then echo "Classi compilate non trovate"; else
+              java -jar spotbugs-*/lib/spotbugs.jar -textui -effort:max -medium -auxclasspath "$jar" -onlyAnalyze 'it.rex.dotlauncher.-' "$cls" > sb.txt 2> sb.err
+              echo "uscita $?, classi in ${cls#$GITHUB_WORKSPACE/}"
+              if [ -s sb.txt ]; then head -400 sb.txt; else echo "Nessun problema di priorità media o alta"; fi
+              grep -v "^WARNING\|^$" sb.err | tail -5
+            fi
+            echo '```'; echo '</details>'
+          } > "$GITHUB_WORKSPACE/analisi.md"
+          wc -l "$GITHUB_WORKSPACE/analisi.md"
+
+      - name: Controllo del codice nelle note della build di prova
+        if: always() && github.event_name == 'pull_request'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -f lint.md ] || [ -f analisi.md ] || exit 0
+          touch lint.md
+          tag="prova-2.0.${{ github.run_number }}"
+          { echo "Versione di prova della pull request #${{ github.event.pull_request.number }}, da non usare come aggiornamento."; echo; cat lint.md; echo; [ -f analisi.md ] && cat analisi.md; } | head -c 120000 > notes.md
+          gh release edit "$tag" --notes-file notes.md -R "${{ github.repository }}"
 
       - uses: actions/upload-artifact@v7
         if: always()

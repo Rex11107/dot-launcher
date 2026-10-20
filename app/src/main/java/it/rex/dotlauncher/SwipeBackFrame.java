@@ -36,6 +36,9 @@ class SwipeBackFrame extends FrameLayout {
         swipeBack = true;
     }
 
+    private final android.graphics.Rect exLeft = new android.graphics.Rect(), exRight = new android.graphics.Rect();
+    private final java.util.List<android.graphics.Rect> exRects = java.util.Arrays.asList(exLeft, exRight);
+
     @Override
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
         super.onLayout(changed, l, t, r, b);
@@ -44,10 +47,9 @@ class SwipeBackFrame extends FrameLayout {
             // Android ne concede al massimo 200 dp per lato; si lascia libero l'angolo in basso (gesto Home).
             int w = r - l, h = b - t, band = px(200), edge = px(32);
             int bottom = h - getPaddingBottom() - px(56), top = Math.max(0, bottom - band);
-            java.util.List<android.graphics.Rect> ex = new java.util.ArrayList<>();
-            ex.add(new android.graphics.Rect(0, top, edge, bottom));
-            ex.add(new android.graphics.Rect(w - edge, top, w, bottom));
-            setSystemGestureExclusionRects(ex);
+            exLeft.set(0, top, edge, bottom);
+            exRight.set(w - edge, top, w, bottom);
+            setSystemGestureExclusionRects(exRects);
         }
     }
 

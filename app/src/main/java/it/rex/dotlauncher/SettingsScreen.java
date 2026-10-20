@@ -1,10 +1,6 @@
 package it.rex.dotlauncher;
 
 import android.app.Activity;
-import android.content.Context;
-import android.graphics.Canvas;
-import android.graphics.Paint;
-import android.graphics.RectF;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.text.TextUtils;
@@ -12,13 +8,11 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.FrameLayout;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
-import java.util.Locale;
 
 /** Pagina delle impostazioni a schermo intero: gruppi di voci con icona, valore e interruttori. */
 class SettingsScreen extends SwipeBackFrame {
@@ -117,7 +111,7 @@ class SettingsScreen extends SwipeBackFrame {
         scroll.animate().cancel();
         scroll.setTranslationX((forward ? 1 : -1) * px(36));
         scroll.setAlpha(0f);
-        scroll.animate().translationX(0).alpha(1f).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).start();
+        scroll.animate().translationX(0).alpha(1f).setDuration(Motion.ENTER).setInterpolator(Motion.EASE_OUT).withLayer().start();
     }
 
     /** Titolo in alto (null = "Impostazioni"). */

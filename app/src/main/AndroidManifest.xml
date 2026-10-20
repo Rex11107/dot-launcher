@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <!-- lo sfondo animato è facoltativo: l'app si installa anche dove non è supportato -->
+    <uses-feature
+        android:name="android.software.live_wallpaper"
+        android:required="false" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.EXPAND_STATUS_BAR" />
@@ -14,6 +18,8 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
     <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <!-- Android 14+: "Seleziona foto e video" (accesso solo ad alcune foto) vale come permesso concesso -->
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
@@ -223,6 +229,34 @@
                 <data android:mimeType="application/json" />
             </intent-filter>
         </activity>
+
+        <!-- Sfondi animati realistici, disegnati dalla scheda grafica (buco nero, aurora, nebulosa, gradiente) -->
+        <service
+            android:name=".ShaderWallpaper"
+            android:exported="true"
+            android:label="@string/live_real_label"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/live_wallpaper_real" />
+        </service>
+
+        <!-- Sfondo animato a puntini (buco nero, meteo dal vivo, onda) -->
+        <service
+            android:name=".DotLiveWallpaper"
+            android:exported="true"
+            android:label="@string/live_label"
+            android:permission="android.permission.BIND_WALLPAPER">
+            <intent-filter>
+                <action android:name="android.service.wallpaper.WallpaperService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.wallpaper"
+                android:resource="@xml/live_wallpaper" />
+        </service>
 
         <activity
             android:name=".WallpaperActivity"

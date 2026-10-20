@@ -22,18 +22,20 @@ import java.util.Set;
 final class Backup {
     // dati temporanei che non ha senso copiare
     private static final List<String> SKIP = Arrays.asList(
-            "wjson", "wt", "blurWallId", "askedLoc", "widgets", "wcity",
+            "wjson", "wt", "blurWallId", "askedLoc", "wcity",
             "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday", "pendPos", "newsCache", "newsTime",
             "pendIcon", "customIcons", "font", "focusUntil", "focusDndSet", "onboardPage", "crashAt", "crashNew");
 
     // tipi attesi delle impostazioni lette come numeri o sì/no (le altre sono testi o insiemi)
     private static final Set<String> BOOLS = new HashSet<>(Arrays.asList("anim", "askedLoc", "dockInit",
-            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock", "hiddenSearch", "standby", "oneHand"));
+            "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock", "hiddenSearch", "standby", "oneHand",
+            "inboxSeen", "workSec", "volPanel"));
     private static final Set<String> INTS = new HashSet<>(Arrays.asList("blurWallId", "cols", "pages", "stepAcc",
             "stepGoal", "stepToday", "wallVer", "dockRows", "accentC", "iconShape", "rows", "dockMax", "pageAnim", "menuAnim", "animSpeed", "openAnim",
-            "badgeStyle", "badgeSize", "badgePos", "badgeColor"));
+            "badgeStyle", "badgeSize", "badgePos", "badgeColor",
+            "wallStyle", "wallTab", "liveStyle", "glStyle", "volDots"));
     private static final Set<String> LONGS = new HashSet<>(Arrays.asList("mlat", "mlon", "newsTime", "updCheck", "wt"));
-    private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast", "iconScale"));
+    private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast", "iconScale", "stride"));
 
     private static boolean typeOk(String k, String t) {
         if (BOOLS.contains(k)) return "b".equals(t);
@@ -57,7 +59,7 @@ final class Backup {
             "dock", "dockMax", "dockRows", "dockBg", "labels", "h24", "hideStatus", "wall", "wallStyle", "wallVer", "ghost",
             "anim", "animSpeed", "pageAnim", "menuAnim", "openAnim", "badges", "badgeStyle", "badgeSize", "badgePos",
             "badgeColor", "drawerOrder", "drawerAll", "sections", "panel", "panelOrder", "panelOff", "engine",
-            "swipeActs", "redApps", "origApps", "glyphApps", "layout", "oneHand"));
+            "swipeActs", "redApps", "origApps", "glyphApps", "layout", "oneHand", "liveStyle", "glStyle"));
     /** Widget con contenuti personali: nel layout condiviso restano, ma vuoti. */
     private static final Set<String> PERSONAL_WIDGETS = new HashSet<>(Arrays.asList("note", "photo", "countdown", "counter"));
 

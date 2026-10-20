@@ -1,9 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Solo il cambio di app in primo piano (nome del pacchetto), nessun accesso ai contenuti dello schermo -->
+<!-- Solo il cambio di app in primo piano (nome del pacchetto), nessun accesso ai contenuti dello schermo.
+     I tasti del volume si ricevono solo se l'utente accende la barra del volume di Dot (filtro attivato al volo). -->
 <accessibility-service xmlns:android="http://schemas.android.com/apk/res/android"
     android:accessibilityEventTypes="typeWindowStateChanged"
     android:accessibilityFeedbackType="feedbackGeneric"
     android:accessibilityFlags="flagDefault"
     android:canRetrieveWindowContent="false"
+    android:canRequestFilterKeyEvents="true"
     android:notificationTimeout="1000"
     android:description="@string/a11y_desc" />
