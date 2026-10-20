@@ -152,10 +152,17 @@ public class DotNotifications extends NotificationListenerService {
         rebuild();
     }
 
+    /** L'anello della fotocamera si è appena acceso: rilegge subito le notifiche (trasferimenti, timer). */
+    static void requestRing() {
+        DotNotifications s = instance;
+        if (s != null) UI.post(s::rebuild);
+    }
+
     private void rebuild() {
         Map<String, List<StatusBarNotification>> m = new HashMap<>();
         try {
             StatusBarNotification[] all = getActiveNotifications();
+            CameraRing.readNotifications(all); // anche quelle fisse: download, caricamenti e timer lo sono
             if (all != null) {
                 for (StatusBarNotification n : all) {
                     Notification no = n.getNotification();

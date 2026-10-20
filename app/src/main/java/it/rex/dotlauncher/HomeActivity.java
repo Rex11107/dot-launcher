@@ -6973,6 +6973,93 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                                 refillSettings();
                             }));
         }
+        ringSettings(st);
+    }
+
+    /** Anello attorno alla fotocamera: download e caricamenti, timer, ricarica. */
+    private void ringSettings(SettingsScreen st) {
+        st.section(T.t("Anello della fotocamera"));
+        st.toggle(SectionIcons.CAMERA, T.t("Anello attorno alla fotocamera"),
+                T.t("Mostra download, caricamenti, timer e ricarica attorno al foro della fotocamera (usa il servizio di accessibilità e l'accesso alle notifiche)"),
+                CameraRing.enabled(prefs), on -> {
+                    prefs.edit().putBoolean(CameraRing.PREF, on).apply();
+                    DotAccessibility.ringChanged();
+                    if (on && !DotAccessibility.active()) {
+                        askAccessibility(T.t("Attiva il servizio"),
+                                T.t("L'anello si disegna sopra le altre app con il servizio \"Gesti di Dot Launcher\" in Accessibilità: ")
+                                        + T.t("non legge il contenuto dello schermo e non riceve tocchi.\n\n"));
+                    } else if (on && !DotNotifications.active()) {
+                        askNotificationAccess();
+                    }
+                    refillSettings();
+                });
+        if (!CameraRing.enabled(prefs)) return;
+        final boolean line = "line".equals(prefs.getString("ringStyle", "dots"));
+        st.row(SectionIcons.CAMERA, T.t("Stile dell'anello"), line ? T.t("Linea continua sottile") : T.t("A puntini"),
+                () -> Sheet.list(this, th, T.t("Stile dell'anello"), new String[]{T.t("A puntini"), T.t("Linea continua sottile")},
+                        line ? 1 : 0, w -> {
+                            prefs.edit().putString("ringStyle", w == 1 ? "line" : "dots").apply();
+                            refillSettings();
+                        }));
+        st.toggle(SectionIcons.FONT, T.t("Numero accanto all'anello"), T.t("Percentuale o tempo che resta"),
+                prefs.getBoolean("ringText", true), on -> prefs.edit().putBoolean("ringText", on).apply());
+        st.toggle(SectionIcons.ARROW_DOWN, T.t("Download e caricamenti"), T.t("Dalle notifiche con la barra di avanzamento"),
+                prefs.getBoolean("ringTransfer", true), on -> prefs.edit().putBoolean("ringTransfer", on).apply());
+        st.toggle(SectionIcons.CALENDAR, T.t("Timer"), T.t("Il tempo che resta di un timer dell'orologio"),
+                prefs.getBoolean("ringTimer", true), on -> prefs.edit().putBoolean("ringTimer", on).apply());
+        st.toggle(SectionIcons.WAVE, T.t("Ricarica"), T.t("La percentuale della batteria mentre è in carica"),
+                prefs.getBoolean("ringCharge", true), on -> prefs.edit().putBoolean("ringCharge", on).apply());
+        st.row(SectionIcons.RESIZE, T.t("Posizione e dimensione"), T.t("Se l'anello non è centrato sulla fotocamera"),
+                this::calibrateRing);
+    }
+
+    /** Regolazione dell'anello: mentre la finestra è aperta l'anello mostra un 75% di prova e si sposta in diretta. */
+    private void calibrateRing() {
+        if (!DotAccessibility.active()) {
+            askAccessibility(T.t("Attiva il servizio"),
+                    T.t("Per vedere l'anello serve il servizio \"Gesti di Dot Launcher\" in Accessibilità.\n\n"));
+            return;
+        }
+        prefs.edit().putBoolean("ringTest", true).apply();
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(px(20), px(8), px(20), px(8));
+        String[][] rows = {{"ringDx", T.t("Orizzontale")}, {"ringDy", T.t("Verticale")}, {"ringSize", T.t("Dimensione")}};
+        for (String[] r : rows) {
+            final String key = r[0];
+            TextView t = new TextView(this);
+            t.setText(r[1]);
+            t.setTextColor(th.onTile);
+            t.setTypeface(th.bodyFace);
+            t.setPadding(0, px(10), 0, 0);
+            box.addView(t);
+            android.widget.SeekBar sb = new android.widget.SeekBar(this);
+            sb.setMax(80); // da -40 a +40 (mezzi dp, o ventesimi per la dimensione)
+            sb.setProgress(prefs.getInt(key, 0) + 40);
+            sb.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(android.widget.SeekBar b, int v, boolean user) {
+                    if (user) prefs.edit().putInt(key, v - 40).apply();
+                }
+
+                @Override public void onStartTrackingTouch(android.widget.SeekBar b) { }
+                @Override public void onStopTrackingTouch(android.widget.SeekBar b) { }
+            });
+            box.addView(sb);
+        }
+        TextView reset = new TextView(this);
+        reset.setText(T.t("Ripristina"));
+        reset.setTextColor(th.accent);
+        reset.setPadding(0, px(14), 0, px(6));
+        reset.setOnClickListener(v -> {
+            prefs.edit().putInt("ringDx", 0).putInt("ringDy", 0).putInt("ringSize", 0).apply();
+            for (int i = 0; i < box.getChildCount(); i++)
+                if (box.getChildAt(i) instanceof android.widget.SeekBar) ((android.widget.SeekBar) box.getChildAt(i)).setProgress(40);
+        });
+        box.addView(reset);
+        android.app.Dialog d = Sheet.custom(this, th, T.t("Posizione e dimensione"), box);
+        if (d != null) d.setOnDismissListener(x -> prefs.edit().putBoolean("ringTest", false).apply());
+        else prefs.edit().putBoolean("ringTest", false).apply();
     }
 
     private void settingsHome(SettingsScreen st) {
