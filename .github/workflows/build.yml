@@ -23,8 +23,6 @@ jobs:
           java-version: '17'
 
       - uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.9'
 
       - name: Prepara la chiave di firma
         env:
@@ -34,8 +32,12 @@ jobs:
             echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/dot.jks"
             echo "KEYSTORE_FILE=$RUNNER_TEMP/dot.jks" >> "$GITHUB_ENV"
             echo "::notice::Firma: chiave personale"
+          elif [ "${{ github.event_name }}" = "push" ]; then
+            # una versione ufficiale con una chiave diversa non si installa sopra la precedente
+            echo "::error title=Manca la chiave di firma::Il segreto KEYSTORE_B64 è vuoto: la release ufficiale non viene pubblicata."
+            exit 1
           else
-            echo "::notice::Firma: chiave temporanea"
+            echo "::notice::Firma: chiave temporanea (solo build di prova)"
           fi
 
       - name: Compila
@@ -43,7 +45,7 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: |
           set -o pipefail
-          if ! gradle assembleRelease --stacktrace 2>&1 | tee build.log; then
+          if ! ./gradlew assembleRelease --stacktrace 2>&1 | tee build.log; then
             # il motivo dell'errore diventa un'annotazione leggibile senza scaricare i log
             msg=$(grep -E "error:|What went wrong|^e: |Lint found|Error:|\.xml:[0-9]+|FAILED" -A4 build.log | grep -v "^\s*at " | head -60 | sed ':a;N;$!ba;s/%/%25/g;s/\r//g;s/\n/%0A/g')
             echo "::error title=Build fallita::$msg"

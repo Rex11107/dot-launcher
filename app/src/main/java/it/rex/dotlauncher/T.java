@@ -668,6 +668,7 @@ final class T {
             "Nessuna galleria disponibile", "No gallery available",
             "Originale", "Original",
             "A puntini (colori)", "Dotted (color)",
+            "Il file viene da una versione più recente di Dot Launcher: aggiorna l'app", "The file comes from a newer version of Dot Launcher: update the app",
             "Come si mostra", "How it looks",
             "Capsula in alto", "Capsule at the top",
             "Pillola laterale", "Side pill",
