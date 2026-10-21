@@ -197,6 +197,25 @@ class UniversalSearch extends ScrollView {
             if (firstAction == null) firstAction = set;
         }
 
+        // "timer" da solo: scelte rapide del timer di Dot (altrimenti compaiono solo le app Orologio)
+        if (sec <= 0 && (norm.equals("timer") || norm.equals("timer "))) {
+            header(T.t("Timer"));
+            for (int m : new int[]{1, 5, 10, 30}) {
+                final int s = m * 60;
+                final String d = SearchTools.duration(s);
+                Runnable set = () -> {
+                    DotTimer.start(act, s);
+                    host.toast(T.t("Timer di ") + d + T.t(" avviato"));
+                };
+                row(SectionIcons.bitmap(SectionIcons.TIMER, px(40), th.onTile, th.accent, circle()),
+                        T.t("Timer di ") + d, T.t("Timer di Dot Launcher"), set, null);
+                if (firstAction == null) firstAction = set;
+            }
+            row(SectionIcons.bitmap(SectionIcons.TIMER, px(40), th.onTile, th.accent, circle()),
+                    T.t("Altro…"), T.t("Timer di Dot Launcher"),
+                    () -> host.startSafe(new Intent(act, AlarmsActivity.class)), null);
+        }
+
         // 1) calcolatrice
         if (SearchTools.looksLikeMath(query)) {
             Double v = SearchTools.calc(query);
