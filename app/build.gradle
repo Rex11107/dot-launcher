@@ -40,8 +40,17 @@ android {
         targetCompatibility JavaVersion.VERSION_17
     }
 
+    testOptions {
+        // le classi di Android nei test non fanno nulla: le prove riguardano la logica pura
+        unitTests.returnDefaultValues = true
+    }
+
     lint {
         abortOnError false
         checkReleaseBuilds false
     }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
 }
