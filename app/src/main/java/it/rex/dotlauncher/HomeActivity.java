@@ -3976,6 +3976,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                             : T.t("Configurazione importata"));
                     recreate();
                 }
+            } catch (Backup.NewerVersion e) {
+                toast(T.t("Il file viene da una versione più recente di Dot Launcher: aggiorna l'app"));
             } catch (Exception e) {
                 toast(req == REQ_EXPORT ? T.t("Esportazione non riuscita") : T.t("File di configurazione non valido"));
             }
@@ -7477,6 +7479,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                                 ? T.t("Layout applicato. ") + dropped + T.n(dropped, " widget di sistema va riaggiunto", " widget di sistema vanno riaggiunti")
                                 : T.t("Layout applicato"));
                         recreate();
+                    } catch (Backup.NewerVersion e) {
+                        toast(T.t("Il file viene da una versione più recente di Dot Launcher: aggiorna l'app"));
                     } catch (Exception e) {
                         toast(T.t("File di configurazione non valido"));
                     }
