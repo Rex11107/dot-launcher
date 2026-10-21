@@ -86,7 +86,7 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          gradle lintRelease --continue > lint.log 2>&1 || true
+          ./gradlew lintRelease --continue > lint.log 2>&1 || true
           python3 - <<'EOF'
           import os, collections, xml.etree.ElementTree as ET
           path = "app/build/reports/lint-results-release.xml"
