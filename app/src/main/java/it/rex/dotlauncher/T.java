@@ -705,6 +705,7 @@ final class T {
             "Per vedere l'anello serve il servizio \"Gesti di Dot Launcher\" in Accessibilità.\n\n", "To see the ring you need the \"Dot Launcher gestures\" service in Accessibility.\n\n",
             "Orizzontale", "Horizontal",
             "Verticale", "Vertical",
+            "Il file viene da una versione più recente di Dot Launcher: aggiorna l'app", "The file comes from a newer version of Dot Launcher: update the app",
             "Come si mostra", "How it looks",
             "Capsula in alto", "Capsule at the top",
             "Pillola laterale", "Side pill",
