@@ -216,6 +216,15 @@ class UniversalSearch extends ScrollView {
                     () -> host.startSafe(new Intent(act, AlarmsActivity.class)), null);
         }
 
+        // "sveglia" da sola: Dot Sveglia, anche se il widget usa ancora l'app di sistema
+        if (at == null && (norm.equals("sveglia") || norm.equals("sveglie") || norm.equals("alarm"))) {
+            header(T.t("Sveglia"));
+            Runnable open = () -> host.startSafe(new Intent(act, AlarmsActivity.class));
+            row(SectionIcons.bitmap(SettingsScreen.CLOCK, px(40), th.onTile, th.accent, circle()),
+                    T.t("Dot Sveglia"), T.t("Le tue sveglie, con l'alba"), open, null);
+            if (firstAction == null) firstAction = open;
+        }
+
         // 1) calcolatrice
         if (SearchTools.looksLikeMath(query)) {
             Double v = SearchTools.calc(query);

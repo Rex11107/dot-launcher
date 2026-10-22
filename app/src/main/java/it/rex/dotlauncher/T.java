@@ -923,6 +923,7 @@ final class T {
             "Prima attiva \"Sveglie e promemoria\"", "First turn on \"Alarms & reminders\"",
             "Prova programmata: suona tra 1 minuto. Spegni lo schermo.", "Test scheduled: it rings in 1 minute. Turn off the screen.",
             "Dot Sveglia", "Dot Alarm",
+            "Le tue sveglie, con l'alba", "Your alarms, with sunrise",
             "Orologio", "Clock",
             "Dot Sveglia (con alba)", "Dot Alarm (with sunrise)",
             "Orologio di sistema", "System clock",
