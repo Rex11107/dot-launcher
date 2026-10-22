@@ -22,18 +22,18 @@ import java.util.Set;
 final class Backup {
     // dati temporanei che non ha senso copiare
     private static final List<String> SKIP = Arrays.asList(
-            "wjson", "wt", "blurWallId", "askedLoc", "wcity",
+            "wjson", "wt", "blurWallId", "askedLoc", "wcity", "layoutBeforeFit", "pagesBeforeFit",
             "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday", "pendPos", "newsCache", "newsTime",
             "pendIcon", "customIcons", "font", "focusUntil", "focusDndSet", "onboardPage", "crashAt", "crashNew");
 
     // tipi attesi delle impostazioni lette come numeri o sì/no (le altre sono testi o insiemi)
     private static final Set<String> BOOLS = new HashSet<>(Arrays.asList("anim", "askedLoc", "dockInit",
             "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock", "hiddenSearch", "standby", "oneHand",
-            "inboxSeen", "workSec", "volPanel"));
+            "inboxSeen", "workSec", "volPanel", "ringOn", "ringText", "ringTransfer", "ringTimer", "ringCharge"));
     private static final Set<String> INTS = new HashSet<>(Arrays.asList("blurWallId", "cols", "pages", "stepAcc",
             "stepGoal", "stepToday", "wallVer", "dockRows", "accentC", "iconShape", "rows", "dockMax", "pageAnim", "menuAnim", "animSpeed", "openAnim",
             "badgeStyle", "badgeSize", "badgePos", "badgeColor",
-            "wallStyle", "wallTab", "liveStyle", "glStyle", "volDots"));
+            "wallStyle", "wallTab", "liveStyle", "glStyle", "volDots", "ringDx", "ringDy", "ringSize"));
     private static final Set<String> LONGS = new HashSet<>(Arrays.asList("mlat", "mlon", "newsTime", "updCheck", "wt"));
     private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast", "iconScale", "stride"));
 
@@ -126,7 +126,7 @@ final class Backup {
         }
         JSONObject root = new JSONObject();
         root.put("app", "DotLauncher");
-        root.put("version", 1);
+        root.put("version", VERSION);
         root.put("share", true);
         root.put("prefs", data);
         try (OutputStream out = new java.io.FileOutputStream(f)) {
@@ -134,10 +134,20 @@ final class Backup {
         }
     }
 
+    /** Formato dei file di configurazione. Va alzato quando cambia il modo di scriverli e leggerli. */
+    static final int VERSION = 1;
+
+    /** Il file è stato creato da una versione di Dot Launcher più recente di questa. */
+    static final class NewerVersion extends Exception {
+        NewerVersion() {
+            super("newer backup version");
+        }
+    }
+
     static void export(Context c, SharedPreferences prefs, Uri uri) throws Exception {
         JSONObject root = new JSONObject();
         root.put("app", "DotLauncher");
-        root.put("version", 1);
+        root.put("version", VERSION);
         JSONObject data = new JSONObject();
         for (Map.Entry<String, ?> e : prefs.getAll().entrySet()) {
             if (skip(e.getKey())) continue;
@@ -174,6 +184,8 @@ final class Backup {
         }
         JSONObject root = new JSONObject(sb.toString());
         if (!"DotLauncher".equals(root.optString("app"))) throw new Exception("not a backup");
+        // un file di una versione più recente può avere un formato che qui non si capisce: meglio fermarsi
+        if (root.optInt("version", 1) > VERSION) throw new NewerVersion();
         JSONObject data = root.getJSONObject("prefs");
         // un layout condiviso cambia solo aspetto e disposizione: le altre impostazioni restano come sono
         final boolean share = root.optBoolean("share", false);

@@ -554,6 +554,9 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     @Override
     public void onConfigurationChanged(Configuration c) {
         super.onConfigurationChanged(c);
+        // un'app in primo piano ha girato lo schermo: la home resta verticale, non si ricostruisce
+        // (ricostruirla in orizzontale spostava i widget ognuno in una pagina)
+        if (c.orientation == Configuration.ORIENTATION_LANDSCAPE) return;
         // dimensioni dello schermo, densità o grandezza del testo cambiate: tutte le misure vanno ricalcolate
         boolean sizes = c.densityDpi != cfgDpi || c.fontScale != cfgFont || c.screenWidthDp != cfgWidth;
         if (sizes || "auto".equals(prefs.getString("mode", "dark"))) recreate();
@@ -2085,10 +2088,26 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
     }
 
     /** Dopo la prima misura: sposta gli elementi che non entrano nello schermo. */
+    private int fitTries;
+
+    /**
+     * All'avvio, i widget che non entrano nella griglia vengono spostati. Solo con la home misurata in verticale:
+     * se il telefono è in orizzontale (rientrando da un video, per esempio) la griglia sembra piccolissima e
+     * prima tutti i widget finivano ognuno in una pagina, salvati così. Prima di spostare qualcosa si tiene una
+     * copia della disposizione, che si può ripristinare da Impostazioni › Sistema.
+     */
     private void fitToScreen() {
         if (fitted || grids.isEmpty()) return;
+        int rw = root.getWidth(), rh = root.getHeight();
+        boolean portrait = getResources().getConfiguration().orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE;
+        if (rw == 0 || rh == 0 || rw > rh || !portrait || grids.get(0).getRows() < 4) {
+            if (++fitTries < 20) root.postDelayed(this::fitToScreen, 500); // si riprova quando torna verticale
+            return;
+        }
         fitted = true;
         int rows = grids.get(0).getRows();
+        String before = Item.listToJson(items);
+        int pagesBefore = pages;
         boolean changed = false;
         for (Item it : new ArrayList<>(items)) {
             if (it.row + it.h <= rows && it.col + it.w <= TileGrid.COLS) continue;
@@ -2101,9 +2120,22 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
             changed = true;
         }
         if (changed) {
+            prefs.edit().putString("layoutBeforeFit", before).putInt("pagesBeforeFit", pagesBefore).apply();
             saveLayout();
             buildPages();
         }
+    }
+
+    /** Rimette la disposizione com'era prima dell'ultimo adattamento automatico. */
+    private void restoreBeforeFit() {
+        String l = prefs.getString("layoutBeforeFit", "");
+        if (l.isEmpty()) return;
+        Sheet.confirm(this, th, T.t("Ripristina la disposizione"),
+                T.t("La home torna com'era prima dell'ultimo spostamento automatico dei widget."), T.t("Ripristina"), () -> {
+                    prefs.edit().putString("layout", l).putInt("pages", prefs.getInt("pagesBeforeFit", pages))
+                            .remove("layoutBeforeFit").remove("pagesBeforeFit").apply();
+                    RestartActivity.restart(this);
+                });
     }
 
     private View createView(Item it) {
@@ -3976,6 +4008,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                             : T.t("Configurazione importata"));
                     recreate();
                 }
+            } catch (Backup.NewerVersion e) {
+                toast(T.t("Il file viene da una versione più recente di Dot Launcher: aggiorna l'app"));
             } catch (Exception e) {
                 toast(req == REQ_EXPORT ? T.t("Esportazione non riuscita") : T.t("File di configurazione non valido"));
             }
@@ -6973,6 +7007,93 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                                 refillSettings();
                             }));
         }
+        ringSettings(st);
+    }
+
+    /** Anello attorno alla fotocamera: download e caricamenti, timer, ricarica. */
+    private void ringSettings(SettingsScreen st) {
+        st.section(T.t("Anello della fotocamera"));
+        st.toggle(SectionIcons.CAMERA, T.t("Anello attorno alla fotocamera"),
+                T.t("Mostra download, caricamenti, timer e ricarica attorno al foro della fotocamera (usa il servizio di accessibilità e l'accesso alle notifiche)"),
+                CameraRing.enabled(prefs), on -> {
+                    prefs.edit().putBoolean(CameraRing.PREF, on).apply();
+                    DotAccessibility.ringChanged();
+                    if (on && !DotAccessibility.active()) {
+                        askAccessibility(T.t("Attiva il servizio"),
+                                T.t("L'anello si disegna sopra le altre app con il servizio \"Gesti di Dot Launcher\" in Accessibilità: ")
+                                        + T.t("non legge il contenuto dello schermo e non riceve tocchi.\n\n"));
+                    } else if (on && !DotNotifications.active()) {
+                        askNotificationAccess();
+                    }
+                    refillSettings();
+                });
+        if (!CameraRing.enabled(prefs)) return;
+        final boolean line = "line".equals(prefs.getString("ringStyle", "dots"));
+        st.row(SectionIcons.CAMERA, T.t("Stile dell'anello"), line ? T.t("Linea continua sottile") : T.t("A puntini"),
+                () -> Sheet.list(this, th, T.t("Stile dell'anello"), new String[]{T.t("A puntini"), T.t("Linea continua sottile")},
+                        line ? 1 : 0, w -> {
+                            prefs.edit().putString("ringStyle", w == 1 ? "line" : "dots").apply();
+                            refillSettings();
+                        }));
+        st.toggle(SectionIcons.FONT, T.t("Numero accanto all'anello"), T.t("Percentuale o tempo che resta"),
+                prefs.getBoolean("ringText", true), on -> prefs.edit().putBoolean("ringText", on).apply());
+        st.toggle(SectionIcons.ARROW_DOWN, T.t("Download e caricamenti"), T.t("Dalle notifiche con la barra di avanzamento"),
+                prefs.getBoolean("ringTransfer", true), on -> prefs.edit().putBoolean("ringTransfer", on).apply());
+        st.toggle(SectionIcons.CALENDAR, T.t("Timer"), T.t("Il timer di Dot Launcher (e quello dell'Orologio, se il telefono lo permette)"),
+                prefs.getBoolean("ringTimer", true), on -> prefs.edit().putBoolean("ringTimer", on).apply());
+        st.toggle(SectionIcons.WAVE, T.t("Ricarica"), T.t("La percentuale della batteria mentre è in carica"),
+                prefs.getBoolean("ringCharge", true), on -> prefs.edit().putBoolean("ringCharge", on).apply());
+        st.row(SectionIcons.RESIZE, T.t("Posizione e dimensione"), T.t("Se l'anello non è centrato sulla fotocamera"),
+                this::calibrateRing);
+    }
+
+    /** Regolazione dell'anello: mentre la finestra è aperta l'anello mostra un 75% di prova e si sposta in diretta. */
+    private void calibrateRing() {
+        if (!DotAccessibility.active()) {
+            askAccessibility(T.t("Attiva il servizio"),
+                    T.t("Per vedere l'anello serve il servizio \"Gesti di Dot Launcher\" in Accessibilità.\n\n"));
+            return;
+        }
+        prefs.edit().putBoolean("ringTest", true).apply();
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(px(20), px(8), px(20), px(8));
+        String[][] rows = {{"ringDx", T.t("Orizzontale")}, {"ringDy", T.t("Verticale")}, {"ringSize", T.t("Dimensione")}};
+        for (String[] r : rows) {
+            final String key = r[0];
+            TextView t = new TextView(this);
+            t.setText(r[1]);
+            t.setTextColor(th.onTile);
+            t.setTypeface(th.bodyFace);
+            t.setPadding(0, px(10), 0, 0);
+            box.addView(t);
+            android.widget.SeekBar sb = new android.widget.SeekBar(this);
+            sb.setMax(80); // da -40 a +40 (mezzi dp, o ventesimi per la dimensione)
+            sb.setProgress(prefs.getInt(key, 0) + 40);
+            sb.setOnSeekBarChangeListener(new android.widget.SeekBar.OnSeekBarChangeListener() {
+                @Override
+                public void onProgressChanged(android.widget.SeekBar b, int v, boolean user) {
+                    if (user) prefs.edit().putInt(key, v - 40).apply();
+                }
+
+                @Override public void onStartTrackingTouch(android.widget.SeekBar b) { }
+                @Override public void onStopTrackingTouch(android.widget.SeekBar b) { }
+            });
+            box.addView(sb);
+        }
+        TextView reset = new TextView(this);
+        reset.setText(T.t("Ripristina"));
+        reset.setTextColor(th.accent);
+        reset.setPadding(0, px(14), 0, px(6));
+        reset.setOnClickListener(v -> {
+            prefs.edit().putInt("ringDx", 0).putInt("ringDy", 0).putInt("ringSize", 0).apply();
+            for (int i = 0; i < box.getChildCount(); i++)
+                if (box.getChildAt(i) instanceof android.widget.SeekBar) ((android.widget.SeekBar) box.getChildAt(i)).setProgress(40);
+        });
+        box.addView(reset);
+        android.app.Dialog d = Sheet.custom(this, th, T.t("Posizione e dimensione"), box);
+        if (d != null) d.setOnDismissListener(x -> prefs.edit().putBoolean("ringTest", false).apply());
+        else prefs.edit().putBoolean("ringTest", false).apply();
     }
 
     private void settingsHome(SettingsScreen st) {
@@ -7161,6 +7282,10 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
         });
         st.row(SectionIcons.HOME, T.t("Launcher predefinito"), T.t("Scegli Dot Launcher come schermata Home"),
                 this::requestDefaultLauncher);
+        if (!prefs.getString("layoutBeforeFit", "").isEmpty()) {
+            st.row(SectionIcons.PAGES, T.t("Ripristina la disposizione"),
+                    T.t("Com'era prima che la home spostasse da sola i widget"), this::restoreBeforeFit);
+        }
         st.row(SectionIcons.STAR, T.t("Configurazione guidata"), T.t("Rivedi lingua, stile, icone e permessi"), () -> {
             closeSettings();
             prefs.edit().putBoolean("onboarded", false).apply();
@@ -7477,6 +7602,8 @@ public class HomeActivity extends Activity implements TileGrid.Host, AppTile.Sou
                                 ? T.t("Layout applicato. ") + dropped + T.n(dropped, " widget di sistema va riaggiunto", " widget di sistema vanno riaggiunti")
                                 : T.t("Layout applicato"));
                         recreate();
+                    } catch (Backup.NewerVersion e) {
+                        toast(T.t("Il file viene da una versione più recente di Dot Launcher: aggiorna l'app"));
                     } catch (Exception e) {
                         toast(T.t("File di configurazione non valido"));
                     }
