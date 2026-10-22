@@ -198,7 +198,7 @@ class UniversalSearch extends ScrollView {
         }
 
         // "timer" da solo: scelte rapide del timer di Dot (altrimenti compaiono solo le app Orologio)
-        if (sec <= 0 && (norm.equals("timer") || norm.equals("timer "))) {
+        if (sec <= 0 && (norm.equals("TIMER") || norm.equals("COUNTDOWN"))) {
             header(T.t("Timer"));
             for (int m : new int[]{1, 5, 10, 30}) {
                 final int s = m * 60;
@@ -217,7 +217,7 @@ class UniversalSearch extends ScrollView {
         }
 
         // "sveglia" da sola: Dot Sveglia, anche se il widget usa ancora l'app di sistema
-        if (at == null && (norm.equals("sveglia") || norm.equals("sveglie") || norm.equals("alarm"))) {
+        if (at == null && (norm.equals("SVEGLIA") || norm.equals("SVEGLIE") || norm.equals("ALARM"))) {
             header(T.t("Sveglia"));
             Runnable open = () -> host.startSafe(new Intent(act, AlarmsActivity.class));
             row(SectionIcons.bitmap(SettingsScreen.CLOCK, px(40), th.onTile, th.accent, circle()),
