@@ -142,6 +142,28 @@ class UniversalSearch extends ScrollView {
         }
     }
 
+    /** La ricerca è l'inizio della parola (almeno due lettere): "ti" → "TIMER". */
+    private static boolean startsWord(String word, String norm) {
+        return norm.length() >= 2 && word.startsWith(norm);
+    }
+
+    private void startTimer(int sec) {
+        DotTimer.start(act, sec);
+        host.toast(T.t("Timer di ") + SearchTools.duration(sec) + T.t(" avviato"));
+    }
+
+    /** Scelta della durata del timer di Dot, senza uscire dalla ricerca. */
+    private void pickTimer() {
+        final int[] mins = {1, 3, 5, 10, 15, 20, 30, 45, 60};
+        String[] names = new String[mins.length + 1];
+        for (int i = 0; i < mins.length; i++) names[i] = SearchTools.duration(mins[i] * 60);
+        names[mins.length] = T.t("Altro…");
+        Sheet.list(act, th, T.t("Avvia un timer"), names, -1, w -> {
+            if (w < mins.length) startTimer(mins[w] * 60);
+            else host.startSafe(new Intent(act, AlarmsActivity.class));
+        });
+    }
+
     /** Invio sulla tastiera: apre il primo risultato. */
     boolean openFirst() {
         if (firstAction != null) {
@@ -197,27 +219,28 @@ class UniversalSearch extends ScrollView {
             if (firstAction == null) firstAction = set;
         }
 
-        // "timer" da solo: scelte rapide del timer di Dot (altrimenti compaiono solo le app Orologio)
-        if (sec <= 0 && (norm.equals("TIMER") || norm.equals("COUNTDOWN"))) {
+        // "timer" da solo: scelte rapide del timer di Dot. Già dalle prime lettere ("ti", "tim"…) una riga sola,
+        // come fa l'Orologio con le sue azioni, così le app restano in vista
+        if (sec <= 0 && (startsWord("TIMER", norm) || norm.equals("COUNTDOWN"))) {
             header(T.t("Timer"));
-            for (int m : new int[]{1, 5, 10, 30}) {
-                final int s = m * 60;
-                final String d = SearchTools.duration(s);
-                Runnable set = () -> {
-                    DotTimer.start(act, s);
-                    host.toast(T.t("Timer di ") + d + T.t(" avviato"));
-                };
-                row(SectionIcons.bitmap(SectionIcons.TIMER, px(40), th.onTile, th.accent, circle()),
-                        T.t("Timer di ") + d, T.t("Timer di Dot Launcher"), set, null);
-                if (firstAction == null) firstAction = set;
+            if (norm.equals("TIMER") || norm.equals("COUNTDOWN")) {
+                for (int m : new int[]{1, 5, 10, 30}) {
+                    final int s = m * 60;
+                    Runnable set = () -> startTimer(s);
+                    row(SectionIcons.bitmap(SectionIcons.TIMER, px(40), th.onTile, th.accent, circle()),
+                            T.t("Timer di ") + SearchTools.duration(s), T.t("Timer di Dot Launcher"), set, null);
+                    if (firstAction == null) firstAction = set;
+                }
             }
+            Runnable pick = this::pickTimer;
             row(SectionIcons.bitmap(SectionIcons.TIMER, px(40), th.onTile, th.accent, circle()),
-                    T.t("Altro…"), T.t("Timer di Dot Launcher"),
-                    () -> host.startSafe(new Intent(act, AlarmsActivity.class)), null);
+                    norm.equals("TIMER") || norm.equals("COUNTDOWN") ? T.t("Altro…") : T.t("Nuovo timer"),
+                    T.t("Timer di Dot Launcher"), pick, null);
+            if (firstAction == null) firstAction = pick;
         }
 
         // "sveglia" da sola: Dot Sveglia, anche se il widget usa ancora l'app di sistema
-        if (at == null && (norm.equals("SVEGLIA") || norm.equals("SVEGLIE") || norm.equals("ALARM"))) {
+        if (at == null && (startsWord("SVEGLIA", norm) || startsWord("SVEGLIE", norm) || norm.equals("ALARM"))) {
             header(T.t("Sveglia"));
             Runnable open = () -> host.startSafe(new Intent(act, AlarmsActivity.class));
             row(SectionIcons.bitmap(SettingsScreen.CLOCK, px(40), th.onTile, th.accent, circle()),

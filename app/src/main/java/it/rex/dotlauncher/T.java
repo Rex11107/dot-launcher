@@ -680,6 +680,7 @@ final class T {
             "Annulla il timer", "Cancel the timer",
             "Altro…", "Other…",
             "Avvia un timer", "Start a timer",
+            "Nuovo timer", "New timer",
             "Lo vede anche l'anello della fotocamera", "The camera ring shows it too",
             "Minuti", "Minutes",
             "Ripristina la disposizione", "Restore the layout",
