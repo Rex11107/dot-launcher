@@ -31,6 +31,7 @@ public class DotAccessibility extends AccessibilityService {
     private String lastPkg = "";
     private long lastBlock;
     private VolumePanel volume;
+    private CameraRing ring;
 
     /** Segreto casuale del processo: la home accetta "blocked" solo da qui, non da altre app. */
     static final long TOKEN = new java.security.SecureRandom().nextLong();
@@ -50,6 +51,25 @@ public class DotAccessibility extends AccessibilityService {
         super.onServiceConnected();
         instance = this;
         applyKeyFilter();
+        applyRing();
+    }
+
+    /** Anello della fotocamera: acceso o spento secondo le impostazioni. */
+    private void applyRing() {
+        boolean on = CameraRing.enabled(getSharedPreferences("dot", Context.MODE_PRIVATE));
+        if (on && ring == null) {
+            ring = new CameraRing(this);
+            ring.start();
+        } else if (!on && ring != null) {
+            ring.stop();
+            ring = null;
+        }
+    }
+
+    /** Da chiamare quando si accende o spegne l'anello della fotocamera. */
+    static void ringChanged() {
+        DotAccessibility s = instance;
+        if (s != null) s.ui.post(s::applyRing);
     }
 
     /** I tasti arrivano al servizio solo con la barra del volume accesa: altrimenti nessun filtro. */
@@ -92,6 +112,7 @@ public class DotAccessibility extends AccessibilityService {
     public void onDestroy() {
         instance = null;
         if (volume != null) volume.hide();
+        if (ring != null) ring.stop();
         exec.shutdownNow();
         super.onDestroy();
     }

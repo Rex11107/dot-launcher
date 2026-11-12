@@ -78,6 +78,7 @@ public class DotAlarmService extends Service {
         startForegroundNow();
         int id = intent.getIntExtra(DotAlarms.EXTRA_ID, -1);
         boolean test = intent.getBooleanExtra(DotAlarms.EXTRA_TEST, false);
+        boolean timer = intent.getBooleanExtra(DotTimer.EXTRA_TIMER, false);
         long ring = intent.getLongExtra(DotAlarms.EXTRA_RING, 0);
         if (running && active != null && active.id == id && !test) return START_REDELIVER_INTENT; // alba già in corso
 
@@ -85,7 +86,7 @@ public class DotAlarmService extends Service {
         if (al == null) {
             al = new DotAlarms.Alarm();
             al.id = -1;
-            al.name = test ? T.t("Prova della sveglia") : "";
+            al.name = timer ? T.t("Timer finito") : test ? T.t("Prova della sveglia") : "";
             al.wake = 0;
             DotAlarms.Alarm first = firstAlarm();
             if (first != null) { // la prova usa colore, luce e suono della prima sveglia
@@ -98,6 +99,8 @@ public class DotAlarmService extends Service {
         }
         long now = System.currentTimeMillis();
         if (test) ring = now + 30000L;               // la prova: 30 secondi di alba, poi il suono
+        if (timer) ring = now;                       // il timer: suona subito, senza alba
+        if (timer) al.snooze = 0;                    // e senza "Posticipa"
         if (ring <= 0 || ring < now - 60000L) ring = now; // in ritardo: si suona subito
         stopEffects();
         active = al;

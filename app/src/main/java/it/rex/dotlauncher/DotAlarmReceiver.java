@@ -14,7 +14,16 @@ public class DotAlarmReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context c, Intent intent) {
         String a = intent == null ? null : intent.getAction();
+        if (DotTimer.ACTION_CANCEL.equals(a)) {
+            DotTimer.cancel(c);
+            return;
+        }
+        if (DotTimer.ACTION_ADD.equals(a)) {
+            DotTimer.add(c, 60);
+            return;
+        }
         if (ACTION_FIRE.equals(a)) {
+            if (intent.getBooleanExtra(DotTimer.EXTRA_TIMER, false)) DotTimer.finished(c); // timer a zero: suona
             Intent s = new Intent(c, DotAlarmService.class).setAction(DotAlarmService.ACTION_START)
                     .putExtras(intent);
             try {
@@ -29,7 +38,8 @@ public class DotAlarmReceiver extends BroadcastReceiver {
             }
             return;
         }
-        // riavvio, ora cambiata, app aggiornata: si riprogramma
+        // riavvio, ora cambiata, app aggiornata: si riprogramma (anche un timer in corso)
         DotAlarms.schedule(c);
+        DotTimer.reschedule(c);
     }
 }

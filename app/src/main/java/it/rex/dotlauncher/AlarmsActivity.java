@@ -132,6 +132,48 @@ public class AlarmsActivity extends Activity {
 
     // ---------- elenco ----------
 
+    /** Timer di Dot Launcher: in corso (con +1 min e Annulla) oppure da avviare con un tocco. */
+    private void timerSection() {
+        st.section(T.t("Timer"));
+        long end = DotTimer.end(this);
+        if (end > 0) {
+            long left = (end - System.currentTimeMillis() + 999) / 1000;
+            String rest = (left / 60) + ":" + (left % 60 < 10 ? "0" : "") + (left % 60);
+            st.row(SectionIcons.TIMER, T.t("Timer in corso"), T.t("Restano ") + rest + " · "
+                    + T.t("finisce alle ") + DateFormat.getTimeFormat(this).format(new Date(end)), () ->
+                    Sheet.list(this, th, T.t("Timer"), new String[]{T.t("+1 minuto"), T.t("+5 minuti"), T.t("Annulla il timer")}, -1, w -> {
+                        if (w == 2) DotTimer.cancel(this);
+                        else DotTimer.add(this, w == 0 ? 60 : 300);
+                        build();
+                    }));
+            return;
+        }
+        final int[] mins = {1, 3, 5, 10, 15, 20, 30, 45, 60};
+        String[] names = new String[mins.length + 1];
+        for (int i = 0; i < mins.length; i++) names[i] = mins[i] + " min";
+        names[mins.length] = T.t("Altro…");
+        st.row(SectionIcons.TIMER, T.t("Avvia un timer"), T.t("Lo vede anche l'anello della fotocamera"), () ->
+                Sheet.list(this, th, T.t("Avvia un timer"), names, -1, w -> {
+                    if (w < mins.length) {
+                        DotTimer.start(this, mins[w] * 60);
+                        build();
+                        return;
+                    }
+                    Sheet.input(this, th, T.t("Minuti"), "25", "", t -> {
+                        int m;
+                        try {
+                            m = Integer.parseInt(t.trim());
+                        } catch (Exception e) {
+                            return;
+                        }
+                        if (m > 0 && m <= 24 * 60) {
+                            DotTimer.start(this, m * 60);
+                            build();
+                        }
+                    });
+                }));
+    }
+
     private void buildList() {
         boolean dot = DotAlarms.enabled(this);
         if (!dot) {
@@ -162,6 +204,8 @@ public class AlarmsActivity extends Activity {
             });
             if (a != null) st.custom(nextButtons(a.id));
         }
+
+        timerSection();
 
         st.section(T.t("Sveglie"));
         List<DotAlarms.Alarm> list = DotAlarms.load(this);

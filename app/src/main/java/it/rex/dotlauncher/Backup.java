@@ -22,18 +22,18 @@ import java.util.Set;
 final class Backup {
     // dati temporanei che non ha senso copiare
     private static final List<String> SKIP = Arrays.asList(
-            "wjson", "wt", "blurWallId", "askedLoc", "wcity",
+            "wjson", "wt", "blurWallId", "askedLoc", "wcity", "layoutBeforeFit", "pagesBeforeFit",
             "stepDay", "stepBase", "stepLast", "stepAcc", "stepToday", "pendPos", "newsCache", "newsTime",
             "pendIcon", "customIcons", "font", "focusUntil", "focusDndSet", "onboardPage", "crashAt", "crashNew");
 
     // tipi attesi delle impostazioni lette come numeri o sì/no (le altre sono testi o insiemi)
     private static final Set<String> BOOLS = new HashSet<>(Arrays.asList("anim", "askedLoc", "dockInit",
             "drawerAll", "ghost", "labels", "panel", "scHint", "wall", "h24", "badges", "dockBg", "hideStatus", "locked", "focusDnd", "hardBlock", "onboarded", "hiddenLock", "hiddenSearch", "standby", "oneHand",
-            "inboxSeen", "workSec", "volPanel"));
+            "inboxSeen", "workSec", "volPanel", "ringOn", "ringText", "ringTransfer", "ringTimer", "ringCharge"));
     private static final Set<String> INTS = new HashSet<>(Arrays.asList("blurWallId", "cols", "pages", "stepAcc",
             "stepGoal", "stepToday", "wallVer", "dockRows", "accentC", "iconShape", "rows", "dockMax", "pageAnim", "menuAnim", "animSpeed", "openAnim",
             "badgeStyle", "badgeSize", "badgePos", "badgeColor",
-            "wallStyle", "wallTab", "liveStyle", "glStyle", "volDots"));
+            "wallStyle", "wallTab", "liveStyle", "glStyle", "volDots", "ringDx", "ringDy", "ringSize"));
     private static final Set<String> LONGS = new HashSet<>(Arrays.asList("mlat", "mlon", "newsTime", "updCheck", "wt"));
     private static final Set<String> FLOATS = new HashSet<>(Arrays.asList("stepBase", "stepLast", "iconScale", "stride"));
 
