@@ -40,6 +40,9 @@ jobs:
             echo "::notice::Firma: chiave temporanea (solo build di prova)"
           fi
 
+      - name: Test
+        run: ./gradlew testDebugUnitTest --stacktrace
+
       - name: Compila
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
